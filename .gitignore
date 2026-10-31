@@ -1,0 +1,22 @@
+# SwiftPM / Xcode
+.build/
+.swiftpm/
+*.xcodeproj/
+xcuserdata/
+DerivedData/
+
+# Local packaging, evidence and logs
+build/
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Local tool configuration
+.claude/
+
+# Internal stage-by-stage handoffs and local verification history
+docs/archive/pre-mvp-development/

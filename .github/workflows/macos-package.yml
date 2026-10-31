@@ -1,0 +1,46 @@
+name: macOS build and package
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-package:
+    runs-on: macos-15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Check tag version
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          test "${TAG_NAME#v}" = "$(cat VERSION)"
+
+      - name: Build and test
+        run: |
+          swift --version
+          swift test --no-parallel --skip EditingColorWellTests
+          python3 -m unittest discover -s Tests/TrayletToolingTests
+
+      - name: Package unsigned app
+        if: github.event_name != 'pull_request'
+        run: scripts/package-ci.sh
+
+      - name: Upload package artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Traylet-macos-arm64-build-${{ github.run_number }}
+          path: |
+            build/ci-artifacts/Traylet-macos-arm64-*/*.zip
+            build/ci-artifacts/Traylet-macos-arm64-*/*.sha256
+          if-no-files-found: error
+          retention-days: 14
