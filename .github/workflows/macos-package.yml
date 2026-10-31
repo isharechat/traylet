@@ -6,6 +6,7 @@ on:
   push:
     tags:
       - "v*"
+      - "v*-preview"
 
 permissions:
   contents: read
@@ -13,19 +14,29 @@ permissions:
 jobs:
   test-and-package:
     runs-on: xcode-27
+    outputs:
+      release_channel: ${{ steps.release_channel.outputs.channel }}
     steps:
       - name: Check out source
         uses: actions/checkout@v6
 
       - name: Check tag version
         if: startsWith(github.ref, 'refs/tags/')
+        id: release_channel
         env:
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          test "${TAG_NAME#v}" = "$(cat VERSION)"
+          version="$(cat VERSION)"
+          tag="${TAG_NAME#v}"
+          case "$tag" in
+            "$version") channel="signed" ;;
+            "$version-preview") channel="preview" ;;
+            *) echo "Tag $TAG_NAME does not match VERSION $version" >&2; exit 1 ;;
+          esac
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
 
       - name: Prepare Developer ID signing and notarization
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && !endsWith(github.ref_name, '-preview')
         env:
           CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_P12_BASE64 }}
           CERTIFICATE_P12_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
@@ -104,15 +115,27 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ github.ref_name }}
+          RELEASE_CHANNEL: ${{ needs.test-and-package.outputs.release_channel }}
         run: |
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
             echo "Release already exists for $TAG_NAME; refusing to replace it."
             exit 1
           fi
+          if [[ "$RELEASE_CHANNEL" == "preview" ]]; then
+            channel_note="预览版本：未使用 Developer ID 签名，也未经过 Apple 公证，系统可能提示应用无法验证或已损坏。适合愿意自行排查的开发者，普通用户请等待正式签名版。"
+          else
+            channel_note="已使用 Developer ID 签名并完成 Apple 公证。"
+          fi
+          {
+            printf '%s\n\n' "$channel_note"
+            printf '安装：下载 ZIP 后解压得到 `Traylet.app`，拖入「应用程序」文件夹。首次启动后，屏幕捕获与辅助功能需在「系统设置 → 隐私与安全性」中按提示授权。\n\n'
+            printf '校验：`shasum -a 256 -c Traylet-macos-arm64-*.zip.sha256`\n'
+            printf '\n也可以直接从源码构建：`scripts/build-from-source.sh`\n'
+          } > "$RUNNER_TEMP/release-notes.md"
           gh release create "$TAG_NAME" \
             release-assets/Traylet-macos-arm64-*/*.zip \
             release-assets/Traylet-macos-arm64-*/*.sha256 \
             --verify-tag \
             --prerelease \
-            --generate-notes \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
             --title "Traylet $TAG_NAME"
