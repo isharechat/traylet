@@ -47,7 +47,7 @@ jobs:
 
   publish-release:
     needs: test-and-package
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       actions: read
