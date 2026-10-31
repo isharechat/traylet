@@ -24,7 +24,7 @@ scripts/package-local.sh
 
 ## GitHub Actions
 
-`.github/workflows/macos-package.yml` 在 macOS 15 runner 上运行 Swift 和 Python 测试。手动触发会上传保留 14 天的未签名 ZIP artifact。推送 `v0.1.0-beta.1` 这类与 `VERSION` 完全匹配的 tag 时，测试与打包成功后会自动创建 GitHub prerelease，并将 ZIP 与 SHA-256 文件作为 Release 资产上传。CI 使用提交在 `BUILD_NUMBER` 中的构建号，GitHub run number 只用于区分工作流产物。
+`.github/workflows/macos-package.yml` 在 macOS 26 runner 上运行 Swift 和 Python 测试，以匹配工程使用的 macOS 26 SDK。手动触发会上传保留 14 天的未签名 ZIP artifact。推送与 `VERSION` 完全匹配的 `v0.1.0-beta.1` tag 时，测试与打包成功后会自动创建 GitHub prerelease，并将 ZIP 与 SHA-256 文件作为 Release 资产上传。CI 使用提交在 `BUILD_NUMBER` 中的构建号，GitHub run number 只用于区分工作流产物。
 
 CI 包含 SwiftPM release 二进制、app 图标、资源 bundle、版本 plist 和 `THIRD_PARTY_NOTICES.md`。CI 不签名、不公证、不安装或启动应用。Release 只在通过 tag 触发且测试/打包成功后创建；工作流会拒绝覆盖同 tag 的已有 Release。未签名包可能显示 Gatekeeper 提示。
 
