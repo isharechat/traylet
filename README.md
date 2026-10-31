@@ -8,7 +8,7 @@
 
 Traylet 使用 Swift、SwiftUI 和 AppKit 构建。首个 MVP 聚焦三类本机任务：截取并标注图片、翻译输入或截图文字、管理用户主动记录的近期剪贴板内容。
 
-> **当前修正版目标：** `0.1.0-beta.2`（build `2`）。Beta 1 已因签名封装错误撤回；修正版要求 Developer ID 签名和 Apple 公证通过后才会发布。
+> **当前修正版目标：** `0.1.0-beta.2`（build `2`）。Beta 1 的安装包因签名封装错误被系统判定为损坏，已撤回；该问题已修复，可直接从源码构建使用。GitHub Release 需 Developer ID 签名和 Apple 公证通过后才会发布。
 
 ## MVP 功能
 
@@ -33,7 +33,13 @@ Traylet 使用 Swift、SwiftUI 和 AppKit 构建。首个 MVP 聚焦三类本机
 scripts/swift-local.sh build
 ```
 
-本地开发与验证命令见[开发与验证](docs/development/verification.md)。屏幕捕获与辅助功能需要用户通过 macOS 正常授权流程批准。
+想直接得到可运行的 `Traylet.app`（不需要任何证书）：
+
+```sh
+scripts/build-from-source.sh
+```
+
+产物在 `build/source/Traylet.app`，移动到 `/Applications` 即可安装。屏幕捕获与辅助功能需要用户通过 macOS 正常授权流程批准。本地开发与验证命令见[开发与验证](docs/development/verification.md)。
 
 ## Beta 打包
 

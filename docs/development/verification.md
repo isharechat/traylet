@@ -9,6 +9,10 @@
 - 公开 Beta 2 流程已设为失败关闭：需要 Developer ID Application P12 和 App Store Connect API key；签名后提交 Apple 公证、staple 票据、运行 `codesign` 与 `spctl` 验证，全部成功才创建 Release。
 - 当前开发机 `security find-identity` 找到 0 个有效签名身份，GitHub 仓库没有配置所需签名/公证 secrets。Beta 2 检查包 CI `41226136185` 的 Swift/Python 测试、ZIP SHA-256 与完整 app 签名封印验证通过；因其为 ad-hoc 签名，`spctl` 按预期拒绝，未作为 Release 发布。Developer ID 签名和公证仍未完成，不能承诺可供公众下载运行。
 - Beta 1 的 CI 编译和 Swift/Python 测试曾通过，但不构成当前 Beta 2 的签名、公证或系统运行验证。真实权限、视觉、安装和应用功能验收仍待完成。
+- 已抽出 `scripts/assemble-app.sh` 作为唯一的应用组装与签名入口，`build-from-source.sh`、`package-local.sh`、`package-ci.sh` 都调用它，避免再次出现只签二进制、缺少资源封印的包。
+- 本地实测：`scripts/build-from-source.sh` 成功产出 `build/source/Traylet.app`；`codesign --verify --deep --strict` 通过，`Sealed Resources version=2 rules=13 files=8`，`Info.plist` 为 `0.1.0` / build `2` / `0.1.0-beta.2`，无 quarantine 属性，二进制以 `--v2-native-evidence` 启动并正常退出（exit 0）。
+- Swift 测试 `scripts/swift-local.sh test --no-parallel --skip EditingColorWellTests`：350 个测试、72 个 suite 全部通过。Python 工具测试 38 个全部通过，其中新增 `test_app_assembly.py` 覆盖资源封印回归。
+- Beta 2 仍未发布为公开 Release：缺少 Developer ID 证书与公证凭据，Gatekeeper 信任未建立。
 
 ## 执行命令
 

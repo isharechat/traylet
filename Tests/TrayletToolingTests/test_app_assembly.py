@@ -1,0 +1,38 @@
+import subprocess
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+ASSEMBLER = ROOT / 'scripts' / 'assemble-app.sh'
+
+
+class AppAssemblyTests(unittest.TestCase):
+    """Guards the resource-seal defect that made Beta 1 launch as damaged."""
+
+    def test_assembler_signs_the_completed_bundle_not_just_the_binary(self):
+        script = ASSEMBLER.read_text()
+        self.assertIn('codesign --force --deep --sign -', script)
+        # The signature must be applied to the assembled .app so the resource
+        # seal covers Info.plist and the bundled resources.
+        self.assertIn('"$app"', script)
+        self.assertIn('codesign --verify --deep --strict', script)
+
+    def test_assembler_writes_the_info_plist_before_signing(self):
+        script = ASSEMBLER.read_text()
+        self.assertLess(script.index('Contents/Info.plist'), script.index('codesign --force'))
+
+    def test_packaging_scripts_delegate_to_the_shared_assembler(self):
+        for name in ('package-ci.sh', 'package-local.sh'):
+            with self.subTest(script=name):
+                self.assertIn('scripts/assemble-app.sh', (ROOT / 'scripts' / name).read_text())
+
+    def test_public_release_requires_notarization_credentials(self):
+        script = (ROOT / 'scripts' / 'package-ci.sh').read_text()
+        self.assertIn('TRAYLET_NOTARY_KEY_PATH', script)
+        self.assertIn('xcrun notarytool submit', script)
+        self.assertIn('xcrun stapler staple', script)
+        self.assertIn('spctl --assess', script)
+
+
+if __name__ == '__main__':
+    unittest.main()

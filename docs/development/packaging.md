@@ -12,6 +12,16 @@
 
 版本文本和构建号分别用于预发布标识与 Apple bundle 数值版本。每次新的 Beta 构建递增 build；产品版本变化时同步更新 `VERSION` 和对应 Git tag。关于页显示完整的 `0.1.0-beta.2 (构建 2)`。
 
+## 从源码构建（无需证书）
+
+```sh
+scripts/build-from-source.sh
+```
+
+开源用户与贡献者用这个入口直接从源码得到可运行的 `Traylet.app`。脚本组装 Info.plist 与资源后对整个 `.app` 做 ad-hoc 签名，资源封印有效，因此本机构建的应用可以正常启动，不会被判定为损坏。ad-hoc 签名不受系统安全校验信任，所以它只适用于本机构建，不作为公开下载包分发。
+
+输出在 `build/source/Traylet.app`，把它移动到 `/Applications` 即可安装。
+
 ## 本地签名候选
 
 ```sh
@@ -19,6 +29,8 @@ scripts/package-local.sh
 ```
 
 脚本使用 `Traylet Local Signing` 身份并进行严格签名检查。身份缺失时停止，不改用 ad-hoc、不创建证书、不修改信任设置。候选输出在 `build/`；生成候选本身不代表通过测试、安装或发行验收。
+
+三个打包入口（`build-from-source.sh`、`package-local.sh`、`package-ci.sh`）都调用 `scripts/assemble-app.sh` 完成组装与签名，避免只签二进制、不签资源而再次产生“已损坏”提示。
 
 完整本地交付入口 `scripts/deliver-local.sh` 会先运行本地验证并交给受保护的安装器。运行状态未知时暂存；不会强退应用或修改 TCC/Gatekeeper。修正版 Beta 发布前不调用该安装流程。
 
