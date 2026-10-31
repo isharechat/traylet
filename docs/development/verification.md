@@ -7,7 +7,7 @@
 - Beta 1 Release 已转为草稿并标注不可用，旧下载资产未删除，以保留追溯证据。
 - 已修正 CI 包脚本：完成 Info.plist 和资源组装后签名整个 `.app`，并严格验证资源封印。手动 CI 产物使用 ad-hoc 签名，仅供检查，不受 Gatekeeper 信任。
 - 公开 Beta 2 流程已设为失败关闭：需要 Developer ID Application P12 和 App Store Connect API key；签名后提交 Apple 公证、staple 票据、运行 `codesign` 与 `spctl` 验证，全部成功才创建 Release。
-- 当前开发机 `security find-identity` 找到 0 个有效签名身份，GitHub 仓库没有配置所需签名/公证 secrets。因此 Beta 2 尚未构建或发布；不能承诺可供下载运行。
+- 当前开发机 `security find-identity` 找到 0 个有效签名身份，GitHub 仓库没有配置所需签名/公证 secrets。Beta 2 检查包 CI `41226136185` 的 Swift/Python 测试、ZIP SHA-256 与完整 app 签名封印验证通过；因其为 ad-hoc 签名，`spctl` 按预期拒绝，未作为 Release 发布。Developer ID 签名和公证仍未完成，不能承诺可供公众下载运行。
 - Beta 1 的 CI 编译和 Swift/Python 测试曾通过，但不构成当前 Beta 2 的签名、公证或系统运行验证。真实权限、视觉、安装和应用功能验收仍待完成。
 
 ## 执行命令
