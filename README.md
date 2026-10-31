@@ -43,7 +43,7 @@ scripts/swift-local.sh build
 scripts/package-local.sh
 ```
 
-本地签名需要已有 `Traylet Local Signing` 身份。GitHub Actions 的手动运行或推送匹配版本 tag 时，会构建未签名 `.app`，上传 ZIP 和 SHA-256 校验文件。CI 不签名、不安装或发布 GitHub Release；未签名包仅供开发检查。
+本地签名需要已有 `Traylet Local Signing` 身份。GitHub Actions 手动运行时会上传 14 天有效的 ZIP artifact；推送匹配版本 tag 时，先运行测试和打包，再自动创建 GitHub Beta Release 并附上 ZIP 与 SHA-256 校验文件。CI 不签名或安装；当前 Release 包未签名，仅供 Beta 开发检查。
 
 完整流程与边界见[Beta 打包说明](docs/development/packaging.md)。
 

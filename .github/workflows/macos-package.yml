@@ -44,3 +44,34 @@ jobs:
             build/ci-artifacts/Traylet-macos-arm64-*/*.sha256
           if-no-files-found: error
           retention-days: 14
+
+  publish-release:
+    needs: test-and-package
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download tested package
+        uses: actions/download-artifact@v5
+        with:
+          name: Traylet-macos-arm64-build-${{ github.run_number }}
+          path: release-assets
+
+      - name: Create GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Release already exists for $TAG_NAME; refusing to replace it."
+            exit 1
+          fi
+          gh release create "$TAG_NAME" \
+            release-assets/Traylet-macos-arm64-*/*.zip \
+            release-assets/Traylet-macos-arm64-*/*.sha256 \
+            --verify-tag \
+            --prerelease \
+            --generate-notes \
+            --title "Traylet $TAG_NAME"
