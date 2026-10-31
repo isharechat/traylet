@@ -26,6 +26,17 @@
 
 边界：该包为 ad-hoc 签名，`spctl --assess --type execute` 按预期拒绝（`Invalid argument`）。因此它可以作为源码/结构检查与本机运行的可信来源，但**不能**作为对公众分发、让陌生用户双击安装的正式包。公开分发仍需 Developer ID 签名加 Apple 公证。系统日志未出现拒绝记录不等于 Apple 已接受该包；未做真实第三方机器的干净环境安装验收。
 
+## 预览 Release 实测（2026-11-01）
+
+预览通道 `v0.1.0-beta.2-preview` 的 Release 已发布（CI run `41229278881` 成功），资产为 `Traylet-macos-arm64-v0.1.0-beta.2-build2.zip` 与对应 `.sha256`。从 Release 下载后实测：
+
+- SHA-256 校验通过；`codesign --verify --deep --strict` 通过。
+- 包内元数据正确：`TrayletReleaseVersion=0.1.0-beta.2`、`CFBundleVersion=2`。
+- 放入 `~/Downloads`、写入 `com.apple.quarantine` 隔离属性后，`open`（等价双击）启动成功，进程持续运行，`System Events` 可见 `Traylet` 菜单栏状态项（`Apple, Traylet, 编辑`），未出现「已损坏」提示。
+- 结论：Beta 1 的「已损坏」问题在 Beta 2 预览包上已不复现，用户可正常下载解压并启动。
+
+边界：该包为 ad-hoc 签名、无公证票据，属于预览通道，Release 说明中已标注。普通用户在干净机器上仍可能遇到「无法验证开发者」，此时应改用 `scripts/build-from-source.sh`。正式签名版仍待 Developer ID 凭据配置后用正式 tag 发布。真实第三方机器的安装验收尚未进行。
+
 ## 执行命令
 
 ```sh
