@@ -20,6 +20,8 @@ class ManifestEvidenceTests(unittest.TestCase):
             (root / 'assets/brand').mkdir(parents=True)
             for name in ('Package.swift', 'AGENTS.md', 'assets/brand/Traylet.icns', 'build/candidate/Traylet.app/Contents/Info.plist', 'build/candidate/Traylet.app/Contents/MacOS/Traylet'):
                 (root / name).write_text('SYNTHETIC FIXTURE')
+            for name in ('VERSION', 'BUILD_NUMBER', 'THIRD_PARTY_NOTICES.md'):
+                (root / name).write_text('SYNTHETIC FIXTURE')
             if newer_source:
                 (root / 'Sources').mkdir()
                 source = root / 'Sources/New.swift'
