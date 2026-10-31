@@ -51,8 +51,39 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 plutil -lint "$app/Contents/Info.plist"
+# The Swift linker signs the executable ad hoc. Re-sign the completed app bundle
+# after its Info.plist and resources are in place so its resource seal is valid.
+if [[ -n "${TRAYLET_SIGN_IDENTITY:-}" ]]; then
+  codesign --force --options runtime --timestamp --sign "$TRAYLET_SIGN_IDENTITY" "$app"
+  codesign --verify --deep --strict --verbose=2 "$app"
+  if [[ -z "${TRAYLET_NOTARY_KEY_PATH:-}" || -z "${TRAYLET_NOTARY_KEY_ID:-}" || -z "${TRAYLET_NOTARY_ISSUER_ID:-}" ]]; then
+    print -u2 "Notarization credentials are required for Developer ID release packages"
+    exit 2
+  fi
+  submission_archive="$output/.notarization-submission.zip"
+  ditto -c -k --sequesterRsrc --keepParent "$app" "$submission_archive"
+  xcrun notarytool submit "$submission_archive" \
+    --key "$TRAYLET_NOTARY_KEY_PATH" \
+    --key-id "$TRAYLET_NOTARY_KEY_ID" \
+    --issuer "$TRAYLET_NOTARY_ISSUER_ID" \
+    --wait
+  xcrun stapler staple "$app"
+  xcrun stapler validate "$app"
+  codesign --verify --deep --strict --verbose=2 "$app"
+  spctl --assess --type execute --verbose=2 "$app"
+  python3 -c 'from pathlib import Path; import sys; Path(sys.argv[1]).unlink()' "$submission_archive"
+else
+  # Manual CI artifacts are useful for contributor inspection only. They are
+  # structurally signed but remain untrusted by Gatekeeper and are never releases.
+  codesign --force --deep --sign - --timestamp=none "$app"
+  codesign --verify --deep --strict --verbose=2 "$app"
+fi
 ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
 (cd "$output" && shasum -a 256 "${archive:t}" > "${archive:t}.sha256")
 
-print -r -- "Unsigned CI package: $archive"
+if [[ -n "${TRAYLET_SIGN_IDENTITY:-}" ]]; then
+  print -r -- "Developer ID signed and notarized CI package: $archive"
+else
+  print -r -- "Ad-hoc signed CI inspection package (not trusted by Gatekeeper): $archive"
+fi
 print -r -- "SHA-256: $archive.sha256"

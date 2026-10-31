@@ -33,9 +33,9 @@ scripts/swift-local.sh test --no-parallel --skip EditingColorWellTests
 python3 -m unittest discover -s Tests/TrayletToolingTests
 ```
 
-首个应用 Beta 版本固定准备为 `0.1.0-beta.1` / build `1`：`VERSION` 与 `BUILD_NUMBER` 是本地打包元数据源。当前首个 Beta 尚未构建或安装。打包和验收状态只更新到[验证记录](docs/development/verification.md)。
+当前修正版 Beta 目标为 `0.1.0-beta.2` / build `2`：`VERSION` 与 `BUILD_NUMBER` 是打包元数据源。Beta 1 因签名封装错误已撤回。公开 Release 必须 Developer ID 签名并完成 Apple 公证；当前凭据未配置前不得创建可下载 Release。打包和验收状态只更新到[验证记录](docs/development/verification.md)。
 
-不能把打包等同放行；安装用 `scripts/deliver-local.sh`，其运行状态未知时会安全暂存且不强退。当前不发布公开 Release。
+不能把打包等同放行；安装用 `scripts/deliver-local.sh`，其运行状态未知时会安全暂存且不强退。未完成签名、公证和验收前不发布公开 Release。
 
 ## 文档
 

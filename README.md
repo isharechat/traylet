@@ -8,7 +8,7 @@
 
 Traylet 使用 Swift、SwiftUI 和 AppKit 构建。首个 MVP 聚焦三类本机任务：截取并标注图片、翻译输入或截图文字、管理用户主动记录的近期剪贴板内容。
 
-> **首个应用 Beta：** `0.1.0-beta.1`（build `1`）。当前版本号已配置，Beta 包尚未构建、安装或发布。
+> **当前修正版目标：** `0.1.0-beta.2`（build `2`）。Beta 1 已因签名封装错误撤回；修正版要求 Developer ID 签名和 Apple 公证通过后才会发布。
 
 ## MVP 功能
 
@@ -37,13 +37,13 @@ scripts/swift-local.sh build
 
 ## Beta 打包
 
-版本元数据位于 `VERSION`（`0.1.0-beta.1`）和 `BUILD_NUMBER`（`1`）。本地签名候选：
+版本元数据位于 `VERSION`（`0.1.0-beta.2`）和 `BUILD_NUMBER`（`2`）。本地签名候选：
 
 ```sh
 scripts/package-local.sh
 ```
 
-本地签名需要已有 `Traylet Local Signing` 身份。GitHub Actions 手动运行时会上传 14 天有效的 ZIP artifact；推送匹配版本 tag 时，先运行测试和打包，再自动创建 GitHub Beta Release 并附上 ZIP 与 SHA-256 校验文件。CI 不签名或安装；当前 Release 包未签名，仅供 Beta 开发检查。
+本地签名需要已有 `Traylet Local Signing` 身份。GitHub Actions 手动运行时会上传 14 天有效的 ZIP artifact；推送匹配版本 tag 时，先运行测试和打包，再自动创建 GitHub Beta Release 并附上 ZIP 与 SHA-256 校验文件。Pull request 和手动构建产物仅供开发检查。公开 Release 必须通过 Developer ID 签名、Apple 公证、签名验证和 Gatekeeper 评估；所需凭据配置前不会发布修正版。
 
 完整流程与边界见[Beta 打包说明](docs/development/packaging.md)。
 

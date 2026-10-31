@@ -1,14 +1,14 @@
 # 验证记录
 
-## 当前首个 Beta 准备状态
+## 当前修正版 Beta 状态
 
-- 目标版本为 `0.1.0-beta.1` / build `1`。
-- 版本元数据已在 `VERSION`、`BUILD_NUMBER`、本地包脚本、CI 包脚本和关于页读取逻辑中配置。
-- `scripts/swift-local.sh build` 退出码为 0，完成时间约 28.5 秒；编译器给出两条 Command Line Tools 搜索路径不存在的 linker warning，但构建成功。
-- `zsh -n` 脚本语法检查、GitHub Actions YAML 解析与 Markdown 链接目标检查通过。
-- 首次 GitHub tag 工作流 `41224389083` 在 macOS 15 / Xcode 16.4 / SDK 15.5 编译阶段失败；日志显示该 SDK 没有源码所用的 macOS 26 玻璃 API，并报告旧 SDK 的 ScreenCaptureKit/AppKit Sendable 注解错误。打包与 Release job 未执行。改用 macOS 26 runner 后，工作流通过标签检查，但 Swift 6.3.3 在 `V2SettingsWorkspaceView.swift` 的 IRGen 阶段因 `SmallVector unable to grow` 崩溃，打包与 Release job 未执行。该错误与 Swift 编译器已记录的问题一致；CI 改为 GitHub 公开预览的 Xcode 27 arm64 runner。Swift 6.4 编译及 Swift 测试通过；补齐 manifest 测试夹具后，Swift 与 Python 工具测试、未签名 ZIP 打包均通过。Release job 首次因未检出代码、GitHub CLI 无仓库上下文而失败；工作流已显式传入仓库名。最终标签 push 工作流 `41225174363` 全部成功（Xcode 27 / Swift 6.4）：Swift 与 Python 工具测试通过，未签名 ZIP 与 SHA-256 作为 `v0.1.0-beta.1` prerelease 资产上传。并行手动重试因 Release 已存在保护而退出，不影响成功的标签工作流。
-- 本轮重整了 MVP 文档，并把 Beta 版本信息接入本地/CI 包元数据、应用关于页与交付输入哈希。GitHub CI 已生成并发布未签名 `0.1.0-beta.1` ZIP；没有生成本地签名包，也没有安装或启动 Release 包。真实系统权限、视觉和运行验收仍未完成。
-- 首个 Beta 的 CI 构建与 GitHub prerelease 已完成；同包系统取证、系统权限、安装和真实运行验收仍为**待验证**。
+- 修正版目标为 `0.1.0-beta.2` / build `2`；对应值已写入 `VERSION` 与 `BUILD_NUMBER`，CI tag 仍须与 `VERSION` 完全相等。
+- 对已发布的 Beta 1 ZIP 做了 SHA-256 检查，结果通过；解包后 `codesign --verify --deep --strict` 报告 `code has no resources but signature indicates they must be present`。原因是组装 `.app` 后没有重新签整个 bundle，macOS 因此提示应用已损坏。
+- Beta 1 Release 已转为草稿并标注不可用，旧下载资产未删除，以保留追溯证据。
+- 已修正 CI 包脚本：完成 Info.plist 和资源组装后签名整个 `.app`，并严格验证资源封印。手动 CI 产物使用 ad-hoc 签名，仅供检查，不受 Gatekeeper 信任。
+- 公开 Beta 2 流程已设为失败关闭：需要 Developer ID Application P12 和 App Store Connect API key；签名后提交 Apple 公证、staple 票据、运行 `codesign` 与 `spctl` 验证，全部成功才创建 Release。
+- 当前开发机 `security find-identity` 找到 0 个有效签名身份，GitHub 仓库没有配置所需签名/公证 secrets。因此 Beta 2 尚未构建或发布；不能承诺可供下载运行。
+- Beta 1 的 CI 编译和 Swift/Python 测试曾通过，但不构成当前 Beta 2 的签名、公证或系统运行验证。真实权限、视觉、安装和应用功能验收仍待完成。
 
 ## 执行命令
 
@@ -29,4 +29,4 @@ scripts/package-local.sh
 
 ## 既有证据
 
-`0.3.10 / build 26` 的体验交付记录属于重整前的历史版本，留在维护者本机档案中，不纳入公开仓库。该记录不能认证 `0.1.0-beta.1`，也不能填入本版本的验收清单。
+`0.3.10 / build 26` 的体验交付记录属于重整前的历史版本，留在维护者本机档案中，不纳入公开仓库。该记录不能认证 Beta 1 或 Beta 2，也不能填入当前版本的验收清单。
