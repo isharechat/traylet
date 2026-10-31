@@ -14,6 +14,18 @@
 - Swift 测试 `scripts/swift-local.sh test --no-parallel --skip EditingColorWellTests`：350 个测试、72 个 suite 全部通过。Python 工具测试 38 个全部通过，其中新增 `test_app_assembly.py` 覆盖资源封印回归。
 - Beta 2 仍未发布为公开 Release：缺少 Developer ID 证书与公证凭据，Gatekeeper 信任未建立。
 
+## Beta 2 下载包实机验证（2026-11-01）
+
+以 CI 检查包 `41227248721` 的产物为对象，走「下载 → 解压 → 双击」路径实机验证：
+
+- 下载 `Traylet-macos-arm64-v0.1.0-beta.2-build2.zip`，SHA-256 校验通过。
+- 解压后 `codesign --verify --deep --strict` 通过，资源封印有效（`Sealed Resources version=2 rules=13 files=8`）。
+- 在 `~/Downloads` 下解包并写入 `com.apple.quarantine` 隔离属性（模拟浏览器下载），`open`（等价于双击）启动成功，进程正常运行，未出现「已损坏」提示，退出码为 0。
+- 直接执行二进制与 `open` 启动两条路径都通过；系统日志中没有对应的 Gatekeeper 拒绝记录。
+- 新增 `scripts/smoke-package.sh`：解包归档、严格验签、核对 `TrayletReleaseVersion` 与 `VERSION` 一致、并以 `--v2-native-evidence` 实际启动打包后的二进制。CI 在上传 artifact 前执行该脚本，避免「签名结构正确但运行失败」的包流入下游。
+
+边界：该包为 ad-hoc 签名，`spctl --assess --type execute` 按预期拒绝（`Invalid argument`）。因此它可以作为源码/结构检查与本机运行的可信来源，但**不能**作为对公众分发、让陌生用户双击安装的正式包。公开分发仍需 Developer ID 签名加 Apple 公证。系统日志未出现拒绝记录不等于 Apple 已接受该包；未做真实第三方机器的干净环境安装验收。
+
 ## 执行命令
 
 ```sh

@@ -32,6 +32,8 @@ scripts/package-local.sh
 
 三个打包入口（`build-from-source.sh`、`package-local.sh`、`package-ci.sh`）都调用 `scripts/assemble-app.sh` 完成组装与签名，避免只签二进制、不签资源而再次产生“已损坏”提示。
 
+`scripts/smoke-package.sh` 对已打包的 ZIP 做运行时冒烟检查：解包、严格验签、核对包内 `TrayletReleaseVersion` 与仓库 `VERSION` 一致，并以 `--v2-native-evidence` 实际启动打包后的二进制。CI 在上传 artifact 前执行它，避免结构正确但运行失败的包流入下载环节。
+
 完整本地交付入口 `scripts/deliver-local.sh` 会先运行本地验证并交给受保护的安装器。运行状态未知时暂存；不会强退应用或修改 TCC/Gatekeeper。修正版 Beta 发布前不调用该安装流程。
 
 ## 公开发行凭据

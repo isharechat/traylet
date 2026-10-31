@@ -33,6 +33,14 @@ class AppAssemblyTests(unittest.TestCase):
         self.assertIn('xcrun stapler staple', script)
         self.assertIn('spctl --assess', script)
 
+    def test_ci_runs_a_runtime_smoke_test_on_the_packaged_app(self):
+        workflow = (ROOT / '.github' / 'workflows' / 'macos-package.yml').read_text()
+        self.assertIn('scripts/smoke-package.sh', workflow)
+        smoke = (ROOT / 'scripts' / 'smoke-package.sh').read_text()
+        # A valid signature alone does not prove the assembled bundle starts.
+        self.assertIn('--v2-native-evidence', smoke)
+        self.assertIn('codesign --verify --deep --strict', smoke)
+
 
 if __name__ == '__main__':
     unittest.main()

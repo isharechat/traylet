@@ -70,6 +70,10 @@ jobs:
         if: github.event_name != 'pull_request'
         run: scripts/package-ci.sh
 
+      - name: Smoke test packaged app
+        if: github.event_name != 'pull_request'
+        run: scripts/smoke-package.sh build/ci-artifacts/Traylet-macos-arm64-*/*.zip
+
       - name: Upload package artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4

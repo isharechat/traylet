@@ -14,7 +14,7 @@
 - 现象：Beta 1 的 GitHub Release 包解压后双击提示“已损坏，无法打开”。
 - 原因：Swift 链接器只对可执行文件做 ad-hoc 签名；打包脚本随后写入 `Info.plist`、图标和资源 bundle，却没有对完整 `.app` 重新签名，资源封印与实际内容不一致。`codesign --verify --deep --strict` 报 `code has no resources but signature indicates they must be present`。
 - 修复：新增 `scripts/assemble-app.sh` 作为唯一组装与签名入口，先写完 `Info.plist` 与资源，再签整个 bundle 并做严格验签；所有打包脚本统一调用它。
-- 验证：本地 `scripts/build-from-source.sh` 产物通过 `codesign --verify --deep --strict`；CI 检查包 `41226136185` 同样通过。回归测试见 `Tests/TrayletToolingTests/test_app_assembly.py`。
+- 验证：本地 `scripts/build-from-source.sh` 产物通过 `codesign --verify --deep --strict`；CI 检查包 `41227248721` 同样通过，并在写入 quarantine 后经 `open` 双击路径实际启动成功。回归测试见 `Tests/TrayletToolingTests/test_app_assembly.py`，CI 另有 `scripts/smoke-package.sh` 在上传产物前实际启动打包后的二进制。
 - 边界：修复后应用不再被判定损坏，但 ad-hoc 签名仍不受系统安全校验信任，公开下载分发仍需 Developer ID 签名与 Apple 公证。
 
 ## 实现防线
