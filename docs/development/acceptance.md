@@ -1,6 +1,6 @@
 # 首个 Beta 验收清单
 
-本清单用于 `0.1.0-beta.2` / build `2`。产品目标见[首个 MVP](../product/mvp.md)；每项需记录环境、命令/动作、结果和证据路径。
+本清单用于 `0.1.0-beta.2` / build `3`。产品目标见[首个 MVP](../product/mvp.md)；每项需记录环境、命令/动作、结果和证据路径。
 
 ## 本地功能回归
 
@@ -26,8 +26,8 @@
 
 ## 包与放行
 
-- [ ] `VERSION` 为 `0.1.0-beta.2`，`BUILD_NUMBER` 为 `2`。
-- [ ] `.app` 的 `CFBundleShortVersionString` 为 `0.1.0`，`CFBundleVersion` 为 `2`，并含 `TrayletReleaseVersion=0.1.0-beta.2`。
+- [ ] `VERSION` 为 `0.1.0-beta.2`，`BUILD_NUMBER` 为 `3`。
+- [ ] `.app` 的 `CFBundleShortVersionString` 为 `0.1.0`，`CFBundleVersion` 为 `3`，并含 `TrayletReleaseVersion=0.1.0-beta.2`。
 - [ ] 包内二进制与同包合成证据一致；校验文件与 ZIP 哈希匹配。
 - [ ] 当前测试结果、未解决问题、签名状态和安装状态分别报告。
 - [ ] 发布前验证 Developer ID 签名、公证票据固定、Gatekeeper 评估和 SHA-256；任一项未通过不得创建公开 Release。

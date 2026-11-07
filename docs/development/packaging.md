@@ -4,13 +4,13 @@
 
 - 产品版本：`0.1.0-beta.2`
 - `VERSION`：`0.1.0-beta.2`
-- `BUILD_NUMBER`：`2`
+- `BUILD_NUMBER`：`3`
 - macOS `CFBundleShortVersionString`：`0.1.0`
-- macOS `CFBundleVersion`：`2`
+- macOS `CFBundleVersion`：`3`
 - 自定义 `TrayletReleaseVersion`：`0.1.0-beta.2`
 - Bundle ID：`local.traylet.app`
 
-版本文本和构建号分别用于预发布标识与 Apple bundle 数值版本。每次新的 Beta 构建递增 build；产品版本变化时同步更新 `VERSION` 和对应 Git tag。关于页显示完整的 `0.1.0-beta.2 (构建 2)`。
+版本文本和构建号分别用于预发布标识与 Apple bundle 数值版本。每次新的 Beta 构建递增 build；产品版本变化时同步更新 `VERSION` 和对应 Git tag。关于页显示完整的 `0.1.0-beta.2 (构建 3)`。
 
 ## 从源码构建（无需证书）
 
