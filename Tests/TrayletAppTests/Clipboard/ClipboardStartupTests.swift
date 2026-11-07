@@ -3,7 +3,7 @@ import Testing
 @testable import TrayletApp
 
 @Suite("Clipboard Startup") @MainActor struct ClipboardStartupTests {
-    @Test func explicitConfirmationLoadsPreferencesAndPollsWithoutOpeningAView() async throws {
+    @Test func startupLoadsPreferencesAndPollsWithoutOpeningAView() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-clipboard-start-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let archive = V2ClipboardArchive(directory: directory)
@@ -13,14 +13,12 @@ import Testing
         let source = MemoryClipboardSource()
         source.value = .init(generation: 4, items: [.text("before launch")], application: "test.app")
         let feature = ClipboardFeature(directory: directory, source: source, writer: MemoryClipboardWriter())
-        feature.requestRecording()
-        await feature.confirmRecording()?.value
+        await feature.start()
         #expect(feature.controller.enabled && feature.controller.settings == settings)
         await feature.controller.refresh()
         #expect(source.reads == 0 && feature.controller.entries.isEmpty)
         source.value = .init(generation: 5, items: [.text("after launch")], application: "test.app")
-        feature.requestRecording()
-        await feature.confirmRecording()?.value // Repeated confirmation must not reset the baseline or create another collector.
+        await feature.start(poll: false) // Repeated start must not reset the baseline or create another collector.
         let deadline = ContinuousClock.now.advanced(by: .seconds(4))
         while feature.controller.entries.isEmpty && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(50))
@@ -31,14 +29,14 @@ import Testing
         #expect(feature.controller.entries.count == 1)
         await feature.shutdownAndWait()
         #expect(!feature.controller.enabled && feature.controller.entries.isEmpty)
-        #expect(try await archive.load().isEmpty)
+        #expect(try await archive.load().map(\.plainText) == ["after launch"])
     }
 
-    @Test func startupRestoresOnlyOptedInHistoryAndPrunesExpiredItems() async throws {
+    @Test func startupRestoresHistoryAndPrunesExpiredItems() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-clipboard-restore-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let archive = V2ClipboardArchive(directory: directory)
-        var settings = ClipboardSettings(); settings.saveLocally = true; settings.retentionDays = 1
+        var settings = ClipboardSettings(); settings.retentionDays = 1
         try await archive.saveSettings(settings)
         let now = Date()
         let entries = [0.0, -172800.0].map { offset in

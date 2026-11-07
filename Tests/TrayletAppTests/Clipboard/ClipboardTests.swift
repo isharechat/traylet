@@ -3,13 +3,13 @@ import Testing
 @testable import TrayletApp
 
 @Suite("Clipboard") @MainActor struct ClipboardTests {
-    @Test(arguments: ["shutdown", "resize", "shrink", "clear", "disableSaving"])
+    @Test(arguments: ["shutdown", "resize", "shrink", "clear"])
     func unloadedSessionDoesNotReplaceSavedBodies(action: String) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-clipboard-reopen-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let source = MemoryClipboardSource()
         let first = ClipboardController(source: source, writer: MemoryClipboardWriter(), archive: V2ClipboardArchive(directory: directory))
-        var settings = ClipboardSettings(); settings.saveLocally = true
+        var settings = ClipboardSettings()
         await first.updateSettings(settings); await first.enable()
         for generation in 1...2 {
             source.value = .init(generation: generation, items: [.text("saved \(generation)")], application: "test.app")
@@ -19,21 +19,40 @@ import Testing
         let secondSource = MemoryClipboardSource()
         let second = ClipboardController(source: secondSource, writer: MemoryClipboardWriter(), archive: V2ClipboardArchive(directory: directory))
         await second.loadPreferences()
-        #expect(second.settings.saveLocally && !second.enabled && second.entries.isEmpty)
+        #expect(!second.enabled && second.entries.isEmpty)
         switch action {
         case "resize": settings.maximumCount = 20; await second.updateSettings(settings)
         case "shrink": settings.maximumCount = 1; await second.updateSettings(settings)
         case "clear": await second.clear()
-        case "disableSaving": settings.saveLocally = false; await second.updateSettings(settings)
         default: break
         }
         await second.shutdown()
         #expect(secondSource.reads == 0)
         let third = ClipboardController(source: MemoryClipboardSource(), writer: MemoryClipboardWriter(), archive: V2ClipboardArchive(directory: directory))
         await third.loadPreferences(); await third.enable()
-        let expected = action == "clear" || action == "disableSaving" ? [] : action == "shrink" ? ["saved 2"] : ["saved 2", "saved 1"]
+        let expected = action == "clear" ? [] : action == "shrink" ? ["saved 2"] : ["saved 2", "saved 1"]
         #expect(third.entries.compactMap(\.plainText) == expected)
         await third.shutdown()
+    }
+    @Test func historyIsPersistedWithoutASettingAndDetailFollowsSelection() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-clipboard-detail-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = MemoryClipboardSource()
+        let feature = ClipboardFeature(directory: directory, source: source, writer: MemoryClipboardWriter())
+        await feature.start(poll: false)
+        #expect(!feature.showsDetail)
+        source.value = .init(generation: 1, items: [.text("persist without a setting")], application: "test.app")
+        await feature.controller.refresh()
+        let id = try #require(feature.controller.entries.first?.id)
+        #expect(!feature.showsDetail)
+        feature.controller.selectedID = id
+        #expect(feature.showsDetail)
+        await feature.shutdownAndWait()
+        #expect(try await V2ClipboardArchive(directory: directory).load().map(\.plainText) == ["persist without a setting"])
+        let reopened = ClipboardController(source: MemoryClipboardSource(), writer: MemoryClipboardWriter(), archive: V2ClipboardArchive(directory: directory))
+        await reopened.enable()
+        #expect(reopened.entries.map(\.plainText) == ["persist without a setting"])
+        await reopened.shutdown()
     }
     @Test(arguments: ["system", "/tmp", "/private/tmp"])
     func freshSystemTemporaryDirectoryHasNoPreferencesError(location: String) async throws {
@@ -69,7 +88,7 @@ import Testing
         let archive = V2ClipboardArchive(directory: directory)
         let source = MemoryClipboardSource()
         let clock = ClipboardTestClock()
-        var settings = ClipboardSettings(); settings.saveLocally = true
+        let settings = ClipboardSettings()
         let controller = ClipboardController(source: source, writer: MemoryClipboardWriter(), archive: archive, settings: settings, clock: { clock.now })
         await controller.enable()
         source.value = V2ClipboardSnapshot(generation: 1, items: [.text("expire me")], application: "test.app")
@@ -85,7 +104,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: directory) }
         let archive = V2ClipboardArchive(directory: directory)
         let source = MemoryClipboardSource(); let writer = MemoryClipboardWriter(); let clock = ClipboardTestClock()
-        var settings = ClipboardSettings(); settings.saveLocally = true
+        let settings = ClipboardSettings()
         let controller = ClipboardController(source: source, writer: writer, archive: archive, settings: settings, clock: { clock.now })
         await controller.enable()
         source.value = .init(generation: 1, items: [.text("expire before copy")], application: "test.app")

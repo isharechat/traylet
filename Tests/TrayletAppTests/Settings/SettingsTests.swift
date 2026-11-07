@@ -167,7 +167,7 @@ import Testing
 }
 
 @Suite("Settings Lifecycle") @MainActor struct SettingsLifecycleTests {
-    @Test func actualHiddenSettingsWindowCloseWithdrawsPendingConsent() async throws {
+    @Test func closingAHiddenSettingsWindowClosesTheRealWindow() async throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-hidden-settings-close-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -180,35 +180,33 @@ import Testing
         controller.present(section: .clipboard)
         let window = try #require(nativeWindow)
         #expect(!window.isVisible && !controller.isOpen && login.changes.isEmpty)
-        clipboard.requestRecording()
         // Keep the host hidden; this exercises the real close/delegate path, not a displayed alert.
-        clipboard.recordingConfirmationBinding.wrappedValue = false
         window.close()
-        #expect(clipboard.confirmRecording(poll: false) == nil)
         #expect(!clipboard.controller.enabled && !window.isVisible)
         await clipboard.shutdownAndWait()
     }
-    @Test func conflictSurvivesSheetFocusAndCloseCancelsRecordingAndPendingPreview() async throws {
+    @Test func conflictSurvivesSheetFocusAndCloseCancelsShortcutAndPendingSettingsAction() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-v2-settings-lifecycle-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let clipboard = ClipboardFeature(directory: directory, source: SettingsTestClipboardSource(), writer: SettingsTestClipboardWriter())
         let store = V2PreferencesStore(); let manager = V2ShortcutManager(preferences: store, driver: SettingsTestShortcutDriver())
-        let translation = TranslationConfiguration()
+        let client = GatedModelListTranslationAI()
+        let translation = TranslationConfiguration(client: client)
         let controller = V2SettingsController(preferences: store, shortcuts: manager, translation: translation, clipboard: clipboard)
         let original = store.value.shortcuts
         manager.begin(.screenCapture)
         manager.record(try #require(original.first { $0.action == .regionCapture }?.chord))
         controller.windowDidResignKey(Notification(name: NSWindow.didResignKeyNotification))
         #expect(manager.conflict != nil)
-        translation.request(.models)
-        #expect(translation.preview != nil)
-        clipboard.requestRecording()
-        clipboard.recordingConfirmationBinding.wrappedValue = false
+        translation.runSettingsAction(.models)
+        await client.waitUntilStarted()
+        #expect(translation.isBusy)
         controller.close()
-        #expect(clipboard.confirmRecording(poll: false) == nil && !clipboard.controller.enabled)
+        #expect(!clipboard.controller.enabled)
         #expect(manager.recordingAction == nil && manager.conflict == nil)
-        #expect(translation.preview == nil && !translation.isBusy)
+        #expect(!translation.isBusy && translation.runningAction == nil && translation.feedback(for: .models) == nil)
         #expect(!controller.isOpen && store.value.shortcuts == original)
+        await client.releaseResponse()
         await clipboard.shutdownAndWait()
     }
 }

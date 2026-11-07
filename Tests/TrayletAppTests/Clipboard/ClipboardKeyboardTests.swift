@@ -23,8 +23,7 @@ import Testing
     @Test func nativeSearchKeysMoveOnlyVisibleResultsAndCloseOnlyAfterSuccessfulCopy() async throws {
         let fixture = ClipboardKeyboardFixture()
         defer { fixture.feature.shutdown(); try? FileManager.default.removeItem(at: fixture.directory) }
-        fixture.feature.requestRecording()
-        await fixture.feature.confirmRecording(poll: false)?.value
+        await fixture.feature.start(poll: false)
         for (index, text) in ["alpha", "beta", "alpine"].enumerated() {
             fixture.source.value = .init(generation: index + 1, items: [.text(text)], application: "test.app")
             await fixture.feature.controller.refresh()
@@ -36,6 +35,8 @@ import Testing
         editor.selectAll(nil)
         editor.insertText("alp", replacementRange: NSRange(location: NSNotFound, length: 0))
         #expect(fixture.feature.controller.query == "alp")
+        try press(125, characters: "\u{f701}", in: panel)
+        #expect(fixture.feature.controller.selectedEntry?.plainText == "alpine")
         try press(125, characters: "\u{f701}", in: panel)
         #expect(fixture.feature.controller.selectedEntry?.plainText == "alpha")
         try press(126, characters: "\u{f700}", in: panel)
@@ -70,7 +71,7 @@ import Testing
     @Test func markedTextKeepsNavigationReturnAndEscapeInTheNativeEditor() async throws {
         let fixture = ClipboardKeyboardFixture()
         defer { fixture.feature.shutdown(); try? FileManager.default.removeItem(at: fixture.directory) }
-        fixture.feature.requestRecording(); await fixture.feature.confirmRecording(poll: false)?.value
+        await fixture.feature.start(poll: false)
         fixture.source.value = .init(generation: 1, items: [.text("中文合成内容")], application: "test.app")
         await fixture.feature.controller.refresh()
         fixture.feature.present()
@@ -87,7 +88,7 @@ import Testing
         #expect(!panel.isVisible)
         await fixture.feature.shutdownAndWait()
     }
-    @Test func removingTheSelectedVisibleFavoriteSelectsTheNextVisibleRow() async throws {
+    @Test func hidingTheSelectedFavoriteClearsSelectionAndRequiresAVisibleRowToCopy() async throws {
         let source = MemoryClipboardSource(), writer = MemoryClipboardWriter()
         let controller = ClipboardController(source: source, writer: writer)
         await controller.enable()
@@ -101,13 +102,13 @@ import Testing
         controller.query = "alp"; controller.favoritesOnly = true
         controller.selectedID = alpine
         await controller.toggleFavorite(alpine)
-        #expect(controller.selectedEntry?.id == alpha)
-        let selected = try #require(controller.selectedEntry)
-        #expect(controller.copy(selected.id))
+        #expect(controller.selectedEntry == nil)
+        controller.selectedID = alpha
+        #expect(controller.copy(alpha))
         #expect(writer.writes.last?.first?.plainText == "alpha")
         await controller.toggleFavorite(alpine)
         await controller.delete(alpha)
-        #expect(controller.selectedEntry?.id == alpine)
+        #expect(controller.selectedEntry == nil)
         await controller.shutdown()
     }
     @Test func visibleResultsRefreshAfterCaptureFavoriteAndDeletion() async throws {
@@ -126,7 +127,7 @@ import Testing
         #expect(controller.filteredEntries.isEmpty && controller.selectedEntry == nil)
         await controller.toggleFavorite(alpha)
         #expect(controller.filteredEntries.map(\.plainText) == ["alpha"])
-        controller.reconcileVisibleSelection()
+        controller.selectedID = alpha
         #expect(controller.selectedEntry?.plainText == "alpha")
         await controller.delete(alpha)
         #expect(controller.filteredEntries.isEmpty && controller.selectedEntry == nil)
@@ -156,7 +157,7 @@ import Testing
         }
         controller.selectedID = controller.entries[1].id
         controller.query = "alp"
-        #expect(controller.selectedEntry?.plainText == "alpine")
+        #expect(controller.selectedEntry == nil)
         controller.query = "no matches"
         #expect(controller.selectedID == nil)
         #expect(controller.selectedEntry == nil)

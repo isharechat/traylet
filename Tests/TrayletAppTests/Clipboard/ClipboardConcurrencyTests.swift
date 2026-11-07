@@ -20,7 +20,7 @@ import Testing
     }
     @Test func changingLimitDuringArchiveLoadStillLoadsUnderCurrentLimit() async {
         let archive = SuspendedClipboardArchive()
-        var settings = ClipboardSettings(); settings.saveLocally = true
+        var settings = ClipboardSettings()
         let store = ClipboardController(source: MemoryClipboardSource(), writer: MemoryClipboardWriter(), archive: archive, settings: settings)
         let enabling = Task { await store.enable() }
         await archive.waitUntilLoading()
@@ -29,21 +29,9 @@ import Testing
         #expect(store.entries.first?.plainText == "stale synthetic saved body")
         #expect(await archive.saved.count == 1)
     }
-    @Test func turningOffLocalSavingDuringLoadDoesNotRestoreDeletedBody() async {
-        let archive = SuspendedClipboardArchive()
-        var settings = ClipboardSettings(); settings.saveLocally = true
-        let store = ClipboardController(source: MemoryClipboardSource(), writer: MemoryClipboardWriter(), archive: archive, settings: settings)
-        let enabling = Task { await store.enable() }
-        await archive.waitUntilLoading()
-        settings.saveLocally = false
-        await store.updateSettings(settings)
-        await archive.releaseLoad(); await enabling.value
-        #expect(store.entries.isEmpty)
-        #expect(await archive.saved.isEmpty)
-    }
     @Test func clearWhileArchiveLoadIsSuspendedCannotReviveOldBody() async {
         let archive = SuspendedClipboardArchive()
-        var settings = ClipboardSettings(); settings.saveLocally = true
+        let settings = ClipboardSettings()
         let store = ClipboardController(source: MemoryClipboardSource(), writer: MemoryClipboardWriter(), archive: archive, settings: settings)
         let enabling = Task { await store.enable() }
         await archive.waitUntilLoading()
@@ -55,7 +43,7 @@ import Testing
     }
     @Test func shutdownDuringLoadDoesNotPublishOrPersistLoadedBody() async {
         let archive = SuspendedClipboardArchive()
-        var settings = ClipboardSettings(); settings.saveLocally = true
+        let settings = ClipboardSettings()
         let store = ClipboardController(source: MemoryClipboardSource(), writer: MemoryClipboardWriter(), archive: archive, settings: settings)
         let enabling = Task { await store.enable() }
         await archive.waitUntilLoading()
@@ -66,7 +54,7 @@ import Testing
     }
     @Test func clearDuringStartupStillCollectsSubsequentCopies() async throws {
         let archive = SuspendedClipboardArchive(); let source = MemoryClipboardSource()
-        var settings = ClipboardSettings(); settings.saveLocally = true
+        let settings = ClipboardSettings()
         let store = ClipboardController(source: source, writer: MemoryClipboardWriter(), archive: archive, settings: settings)
         let startup = Task { await store.enable(poll: true) }
         await archive.waitUntilLoading()
@@ -79,16 +67,6 @@ import Testing
         }
         #expect(store.enabled && store.entries.map(\.plainText) == ["after clear"])
         await store.shutdown()
-    }
-    @Test func memoryShutdownClearsAndDoesNotSaveBodies() async {
-        let archive = SuspendedClipboardArchive(); let source = MemoryClipboardSource()
-        let store = ClipboardController(source: source, writer: MemoryClipboardWriter(), archive: archive)
-        await store.enable()
-        source.value = .init(generation: 1, items: [.text("synthetic memory only")], application: "test.app")
-        await store.refresh(); #expect(store.entries.count == 1)
-        await store.shutdown()
-        #expect(store.entries.isEmpty && !store.enabled)
-        #expect(await archive.saved.isEmpty)
     }
 }
 

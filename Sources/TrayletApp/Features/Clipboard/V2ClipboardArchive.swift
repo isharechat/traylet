@@ -7,7 +7,7 @@ protocol V2ClipboardArchiving: Sendable {
     func clear(revision: UInt64) async throws
     func loadSettings() async throws -> ClipboardSettings?
     func saveSettings(_ settings: ClipboardSettings) async throws
-    /// Favorites live in their own file so they survive even when full-history saving is off.
+    /// Favorites live in their own file so their manual order and protection survive history pruning.
     func loadFavorites() async throws -> [ClipboardEntry]
     func replaceFavorites(_ entries: [ClipboardEntry], revision: UInt64) async throws
     func clearFavorites(revision: UInt64) async throws

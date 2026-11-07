@@ -6,12 +6,14 @@ import TrayletCore
 @MainActor final class TranslationController: NSObject, ObservableObject, NSWindowDelegate {
     let configuration: TranslationConfiguration
     let flow = TranslationFlow()
-    var onOpenSettings: (() -> Void)?
+    var onOpenSettings: ((TranslationLanguagePackPair?) -> Void)?
     var windowTitle: String { V2L("翻译") }
     @Published private(set) var systemWork: TranslationWork?
     @Published private(set) var preparingResources = false
     @Published private(set) var preview: TranslationAIRequest?
     @Published private(set) var notice = ""
+    /// The last selected-text read was blocked because macOS Accessibility trust is missing.
+    @Published private(set) var accessibilityNotice = false
     /// True for the source box, false for the translation box, nil when nothing is being read aloud.
     @Published private(set) var speakingSource: Bool?
     /// The engine the Translate button and the icon row currently use; it starts as the default engine.
@@ -95,10 +97,13 @@ import TrayletCore
             cancel(); flow.markOutputStale()
         }
         selectedEngine = engine
-        if !flow.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, changed || flow.phase != .translating { startSubmission() }
+        // Picking an engine is already an explicit choice; send without another confirmation sheet.
+        if !flow.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, changed || flow.phase != .translating {
+            startSubmission(skipPreview: changed)
+        }
     }
     func present(text: String = "", image: RasterImage? = nil, decoded: CGImage? = nil) {
-        cancel(); notice = ""; selectedEngine = configuration.engine
+        cancel(); notice = ""; accessibilityNotice = false; selectedEngine = configuration.engine
         if image == nil, !text.isEmpty { flow.input = text; flow.clearOutput() }
         if panel == nil {
             let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 600, height: 630), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
@@ -111,6 +116,8 @@ import TrayletCore
         if let panel { presentWindow(panel) }
         if let image { beginImageInput(image, decoded: decoded) }
     }
+    func showAccessibilityNotice() { accessibilityNotice = true }
+    func openAccessibilitySettings() { V2AccessibilitySelectedText.openSettings() }
     @discardableResult func beginImageInput(_ image: RasterImage, decoded: CGImage? = nil) -> Task<Void, Never> {
         cancel(); notice = ""
         let id = flow.beginRecognition()
@@ -178,15 +185,15 @@ import TrayletCore
         retryContext = RetryContext(work: work, configurationRevision: configuration.revision)
         flow.fail(work, message: message)
     }
-    func startSubmission() {
+    func startSubmission(skipPreview: Bool = false) {
         guard flow.phase != .recognizing else { return }
         requestTask?.cancel()
         requestTask = Task { [weak self] in
             guard !Task.isCancelled else { return }
-            await self?.submit()
+            await self?.submit(skipPreview: skipPreview)
         }
     }
-    func submit() async {
+    func submit(skipPreview: Bool = false) async {
         guard !Task.isCancelled, flow.phase != .recognizing else { return }
         if retryContext != nil { retryContext = nil }
         systemWork = nil; preview = nil; preparingResources = false; notice = ""
@@ -196,8 +203,8 @@ import TrayletCore
                 guard let action = work.engine.translateAction else { return }
                 let request = try configuration.makeRequest(action, content: work.text, source: work.source, target: work.target)
                 preview = request
-                // The first send to an engine shows its destination and text; after that the user's engine choice sends directly.
-                if confirmedEngines.contains(work.engine) { await sendConfirmed(request) }
+                // The Translate button confirms the first send to an engine; engine-icon switches send directly.
+                if skipPreview || confirmedEngines.contains(work.engine) { await sendConfirmed(request) }
             } catch {
                 // A local endpoint/model/credential validation error requires configuration changes,
                 // rather than replaying the unchanged request from the error row.
@@ -206,19 +213,27 @@ import TrayletCore
             return
         }
         do {
-            let resource = try await availability.status(text: work.text, source: work.source, target: work.target)
+            let resource = try await availability.status(text: work.text, source: work.resolvedSource ?? "auto", target: work.target)
             guard flow.isCurrent(work), !Task.isCancelled else { return }
             switch resource {
             case .installed: systemWork = work
             case .downloadable: flow.requireResource(work)
             case .unsupported: flow.fail(work, message: "系统暂不支持此语言对；可更换语言或明确选择 AI。")
             }
+        } catch TranslationResourceCheckError.unableToIdentifyLanguage {
+            failSubmission(work, message: "无法识别原文语言，请选择明确的原文语言后重试。")
         } catch { failSubmission(work, message: "无法检查系统语言资源，请稍后重试。") }
     }
     func prepareLanguages() {
         guard let work = flow.active, flow.phase == .resourceRequired else { return }
-        guard work.source != "auto" else { notice = "准备语言资源前，请选择明确的原文语言并重新提交。"; return }
+        guard work.resolvedSource != nil else { notice = "无法识别原文语言，请选择明确的原文语言后重新提交。"; return }
         preparingResources = true; flow.startConfirmed(work); systemWork = work
+    }
+    /// Opens Translation settings, where language packs can be checked and downloaded ahead of time.
+    func openLanguageSettings() {
+        let source = flow.source == "auto" ? flow.detectedLanguage : flow.source
+        let pair = source.map { TranslationLanguagePackPair(source: $0, target: flow.target) }
+        onOpenSettings?(pair)
     }
     func finishSystem(_ work: TranslationWork, text: String) {
         guard flow.isCurrent(work), systemWork == work else { return }

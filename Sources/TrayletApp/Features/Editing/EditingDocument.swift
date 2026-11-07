@@ -18,7 +18,6 @@ struct EditingDocument {
     private(set) var selectedMarkID: UUID?
     private(set) var objectContextRevision: UInt64 = 0
     var selectedMark: EditingMark? { marks.first { $0.id == selectedMarkID } }
-    var selectedNumber: Int? { selectedMark?.number }
     enum ObjectEditKind { case move, style, text }
     struct ObjectEditToken: Equatable { fileprivate let id: UUID; fileprivate let target: UUID; fileprivate let revision: UInt64 }
     private struct ObjectEdit { var token: ObjectEditToken; var original: EditingMark; var kind: ObjectEditKind; var visibleTextLine: CGRect? }
@@ -137,9 +136,6 @@ struct EditingDocument {
         future.removeAll(); renderVersion &+= 1
         if mark.tool == .blur { blurSourceVersion &+= 1 }
         if mark.tool == .number || mark.tool == .arrow || mark.tool == .text { selectMark(mark.id) }
-    }
-    @discardableResult mutating func deleteSelectedNumber() -> Bool {
-        guard selectedMark?.tool == .number else { return false }; return deleteSelectedMark()
     }
     @discardableResult mutating func deleteSelectedMark() -> Bool {
         cancelObjectEdit()

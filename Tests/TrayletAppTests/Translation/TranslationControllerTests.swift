@@ -17,7 +17,7 @@ struct TranslationControllerTests {
         #expect(controller.selectedEngine == .google && controller.flow.output == "你好")
         #expect(!controller.flow.outputIsCurrent, "The old engine's result must be labeled previous before the replacement task runs")
         await controller.submissionTask?.value
-        await controller.sendConfirmed(try #require(controller.preview))
+        #expect(controller.preview == nil, "Switching engines must send without a confirmation sheet")
         if case .failed = controller.flow.phase {} else { Issue.record("The synthetic offline engine should fail") }
         #expect(controller.flow.output == "你好" && !controller.flow.outputIsCurrent)
         controller.cancel()
@@ -34,7 +34,8 @@ struct TranslationControllerTests {
         controller.finishSystem(obsolete, text: "obsolete system response")
         #expect(controller.flow.output.isEmpty && controller.systemWork == nil)
         await controller.submissionTask?.value
-        #expect(controller.preview?.action == .googleTranslate)
+        #expect(controller.preview == nil, "Switching engines must send without a confirmation sheet")
+        #expect(controller.flow.output == "你好。")
         controller.cancel()
     }
 
@@ -78,20 +79,69 @@ struct TranslationControllerTests {
     }
     @Test func resourcesNeedExplicitPreparationAndKnownSource() async throws {
         let controller = TranslationController(writer: TranslationFakeWriter(), availability: TranslationDownloadableResources(), speech: TranslationFakeSpeech())
-        controller.flow.input = "Hello"
+        var settingsOpened = 0
+        var requestedPair: TranslationLanguagePackPair?
+        controller.onOpenSettings = { requestedPair = $0; settingsOpened += 1 }
+        controller.flow.input = "12345"
         await controller.submit()
         #expect(controller.flow.phase == .resourceRequired)
         #expect(controller.systemWork == nil)
+        controller.openLanguageSettings()
+        #expect(settingsOpened == 1)
+        #expect(requestedPair == nil)
         controller.prepareLanguages()
         #expect(controller.systemWork == nil)
         controller.flow.source = "en"
         await controller.submit()
+        controller.openLanguageSettings()
+        #expect(settingsOpened == 2)
+        #expect(requestedPair == TranslationLanguagePackPair(source: "en", target: "zh-Hans"))
         controller.prepareLanguages()
         #expect(controller.systemWork != nil)
         #expect(controller.preparingResources)
         controller.clearOutput()
         #expect(controller.systemWork == nil)
-        #expect(controller.flow.input == "Hello")
+        #expect(controller.flow.input == "12345")
+    }
+    @Test func shortAutoTextResolvesToEnglishBeforeAvailabilityCheck() async {
+        let availability = TranslationRecordingAvailability(result: .success(.installed))
+        let controller = TranslationController(writer: TranslationFakeWriter(), availability: availability, speech: TranslationFakeSpeech())
+        controller.flow.input = "Hello"
+        await controller.submit()
+        #expect(await availability.lastSource == "en")
+        #expect(controller.flow.detectedLanguage == "en")
+        #expect(controller.systemWork != nil)
+    }
+    @Test func unidentifiableAutoTextUsesActionableFailure() async {
+        let availability = TranslationRecordingAvailability(result: .failure(.unableToIdentifyLanguage))
+        let controller = TranslationController(writer: TranslationFakeWriter(), availability: availability, speech: TranslationFakeSpeech())
+        controller.flow.input = "12345"
+        await controller.submit()
+        #expect(await availability.lastSource == "auto")
+        #expect(controller.flow.phase == .failed("无法识别原文语言，请选择明确的原文语言后重试。"))
+    }
+    @Test func presentingSelectedTextPrefillsTheSourceAndClearsPreviousOutput() throws {
+        let controller = TranslationController(writer: TranslationFakeWriter(), availability: TranslationFakeAvailability(), speech: TranslationFakeSpeech(), presentWindow: { _ in })
+        controller.flow.input = "Previous source"
+        let previous = try #require(controller.flow.begin(engine: .system))
+        controller.flow.complete(previous, text: "Previous translation")
+
+        controller.present(text: "Text selected by the mouse")
+
+        #expect(controller.flow.input == "Text selected by the mouse")
+        #expect(controller.flow.output.isEmpty)
+        #expect(controller.flow.phase == .idle)
+    }
+    @Test func accessibilityNoticeStaysUntilTheNextPresentation() {
+        let controller = TranslationController(writer: TranslationFakeWriter(), availability: TranslationFakeAvailability(), speech: TranslationFakeSpeech(), presentWindow: { _ in })
+        controller.showAccessibilityNotice()
+        #expect(controller.accessibilityNotice)
+        controller.present(text: "Text selected by the mouse")
+        #expect(!controller.accessibilityNotice)
+        #expect(controller.flow.input == "Text selected by the mouse")
+        controller.showAccessibilityNotice()
+        controller.present()
+        #expect(!controller.accessibilityNotice)
     }
     @Test func configurationChangeRejectsPreviewBeforeAnyRequest() async throws {
         let client = RecordingTranslationAI()
@@ -139,6 +189,19 @@ struct TranslationFakeAvailability: TranslationResourceChecking {
 
 struct TranslationDownloadableResources: TranslationResourceChecking {
     func status(text: String, source: String, target: String) async throws -> TranslationResourceState { .downloadable }
+}
+private actor TranslationRecordingAvailability: TranslationResourceChecking {
+    private let result: Result<TranslationResourceState, TranslationResourceCheckError>
+    private(set) var lastSource: String?
+
+    init(result: Result<TranslationResourceState, TranslationResourceCheckError>) {
+        self.result = result
+    }
+
+    func status(text: String, source: String, target: String) async throws -> TranslationResourceState {
+        lastSource = source
+        return try result.get()
+    }
 }
 actor TranslationSuspendedAI: TranslationAIClient {
     private var response: CheckedContinuation<TranslationAIResult, Never>?

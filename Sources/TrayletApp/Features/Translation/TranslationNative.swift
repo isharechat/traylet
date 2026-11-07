@@ -8,15 +8,29 @@ import NaturalLanguage
 import TrayletCore
 
 enum TranslationResourceState: Sendable { case installed, downloadable, unsupported }
+enum TranslationResourceCheckError: Error, Equatable, Sendable {
+    case unableToIdentifyLanguage
+}
 protocol TranslationResourceChecking: Sendable {
     func status(text: String, source: String, target: String) async throws -> TranslationResourceState
 }
 struct TranslationSystemResources: TranslationResourceChecking {
     func status(text: String, source: String, target: String) async throws -> TranslationResourceState {
         let availability = LanguageAvailability()
+        let targetLanguage = Locale.Language(identifier: target)
         let state: LanguageAvailability.Status
-        if source == "auto" { state = try await availability.status(for: text, to: Locale.Language(identifier: target)) }
-        else { state = await availability.status(from: Locale.Language(identifier: source), to: Locale.Language(identifier: target)) }
+        if source == "auto" {
+            do {
+                state = try await availability.status(for: text, to: targetLanguage)
+            } catch TranslationError.unableToIdentifyLanguage {
+                guard let resolved = TranslationLanguageDetector.sample(text).flatMap(TranslationLanguageDetector.detectOrInfer) else {
+                    throw TranslationResourceCheckError.unableToIdentifyLanguage
+                }
+                state = await availability.status(from: Locale.Language(identifier: resolved), to: targetLanguage)
+            }
+        } else {
+            state = await availability.status(from: Locale.Language(identifier: source), to: targetLanguage)
+        }
         switch state { case .installed: return .installed; case .supported: return .downloadable; default: return .unsupported }
     }
 }
@@ -181,7 +195,7 @@ struct TranslationSystemTaskHost: View {
     let failed: @MainActor (TranslationWork) -> Void
     var body: some View {
         Color.clear.frame(width: 0, height: 0)
-            .translationTask(.init(source: work.source == "auto" ? nil : Locale.Language(identifier: work.source), target: Locale.Language(identifier: work.target)), action: Self.action(work: work, prepare: prepare, completed: completed, failed: failed))
+            .translationTask(.init(source: work.resolvedSource.map(Locale.Language.init(identifier:)), target: Locale.Language(identifier: work.target)), action: Self.action(work: work, prepare: prepare, completed: completed, failed: failed))
     }
     private nonisolated static func action(work: TranslationWork, prepare: Bool, completed: @escaping @MainActor (TranslationWork, String) -> Void, failed: @escaping @MainActor (TranslationWork) -> Void) -> (TranslationSession) async -> Void {
         { session in

@@ -2,8 +2,8 @@ import SwiftUI
 import TrayletCore
 
 /// Engine marks drawn as one monochrome set so they match the app's glass controls: Google and DeepL use the vector
-/// paths published by the CC0 simple-icons set (24×24 viewBox), system translation uses Apple's SF Symbol, and engines
-/// without an official vector mark keep a neutral SF Symbol. All share one tint, size and optical weight.
+/// paths published by the CC0 simple-icons set (24×24 viewBox) as line art, system translation uses Apple's SF Symbol,
+/// and engines without an official vector mark keep a neutral SF Symbol. All share one tint, stroke and optical weight.
 struct TranslationEngineIcon: View {
     let engine: TranslationEngineChoice
     var size: CGFloat = 16
@@ -13,12 +13,15 @@ struct TranslationEngineIcon: View {
             switch engine {
             case .system: Image(systemName: "apple.logo").font(.system(size: size * 0.92, weight: .medium))
             case .ai: Image(systemName: "sparkles").font(.system(size: size * 0.86, weight: .medium))
-            case .deepl: V2SVGShape(path: V2SVGPaths.deepL).fill(tint).frame(width: size * 0.94, height: size * 0.94)
-            case .google: V2SVGShape(path: V2SVGPaths.google).fill(tint).frame(width: size * 0.9, height: size * 0.9)
+            case .deepl: V2SVGShape(path: V2SVGPaths.deepL).stroke(tint, style: Self.lineStyle(size: size)).frame(width: size * 0.84, height: size * 0.84)
+            case .google: V2SVGShape(path: V2SVGPaths.google).stroke(tint, style: Self.lineStyle(size: size)).frame(width: size * 0.82, height: size * 0.82)
             case .myMemory: Image(systemName: "memorychip").font(.system(size: size * 0.86, weight: .medium))
             }
         }
         .foregroundStyle(tint).frame(width: size, height: size)
+    }
+    private static func lineStyle(size: CGFloat) -> StrokeStyle {
+        StrokeStyle(lineWidth: max(1.15, size * 0.085), lineCap: .round, lineJoin: .round)
     }
 }
 

@@ -4,16 +4,6 @@ import Testing
 
 @Suite("Translation AI transport")
 struct TranslationAITests {
-    @Test func fixedTextDiagnosticHasSmallResponseBudget() async throws {
-        let transport = TranslationStubHTTP(status: 200, body: #"{"choices":[{"message":{"content":"你好。"}}]}"#)
-        let request = TranslationAIRequest(id: UUID(), action: .modelTest, settings: .init(endpoint: "https://example.invalid/v1", model: "chosen", credential: ""), content: "Hello.", source: "en", target: "zh-Hans")
-        _ = try await TranslationOpenAIClient(transport: transport).perform(request)
-        let sent = try #require(await transport.requests.first)
-        let body = try #require(sent.httpBody)
-        let decoded = try JSONSerialization.jsonObject(with: body)
-        let object = try #require(decoded as? [String: Any])
-        #expect(object["max_tokens"] as? Int == 64)
-    }
     @Test func requestContainsOnlyConfirmedTextAndDirection() async throws {
         let transport = TranslationStubHTTP(status: 200, body: #"{"choices":[{"message":{"content":"你好"}}]}"#)
         let request = TranslationAIRequest(id: UUID(), action: .translate, settings: .init(endpoint: "https://example.invalid/v1/", model: "chosen", credential: "unit-secret"), content: "Hello", source: "en", target: "zh-Hans")

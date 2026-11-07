@@ -8,14 +8,12 @@ import ImageIO
     static let expandedWidth: CGFloat = 700
     let controller: ClipboardController
     let imageEditing: ClipboardImageEditing
+    let storageDirectory: URL
     var canEditImage: (() -> Bool)?
     var onEditImage: ((ClipboardPreparedImage) -> Bool)?
     var canRecognizeImage: (() -> Bool)?
     var onRecognizeImage: ((ClipboardPreparedImage) -> Bool)?
     private var imageObservations: Set<AnyCancellable> = []
-    @Published private(set) var detailExpanded = false
-    @Published private(set) var recordingConfirmationPresented = false
-    @Published private(set) var recordingStarting = false
     private let presentWindow: (NSPanel) -> Void
     private let dismissWindow: (NSPanel) -> Void
     private weak var searchField: NSTextField?
@@ -24,75 +22,36 @@ import ImageIO
     private var backing: V2GlassWindowBacking?
     private var dismissal: NSObjectProtocol?
     private var closeObservation: NSObjectProtocol?
-    private var pendingRecordingConsent = false
-    private var recordingTask: Task<Void, Never>?
-    private var recordingRevision: UInt64 = 0
     private let preferences: Task<Void, Never>
     private var shuttingDown = false
+    private var detailLayoutExpanded = false
     init(directory: URL, source: (any ClipboardSource)? = nil, writer: (any ClipboardWriting)? = nil, archive: (any V2ClipboardArchiving)? = nil, clock: @escaping () -> Date = Date.init,
-         imageEditing: ClipboardImageEditing = ClipboardImageEditing(),
+         imageEditing: ClipboardImageEditing = ClipboardImageEditing(), autoStart: Bool = false,
          presentWindow: @escaping (NSPanel) -> Void = { window in window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) },
          dismissWindow: @escaping (NSPanel) -> Void = { $0.orderOut(nil) }) {
         let controller = ClipboardController(source: source ?? V2ClipboardNativeSource(), writer: writer ?? V2ClipboardNativeWriter(), archive: archive ?? V2ClipboardArchive(directory: directory), clock: clock)
         self.controller = controller
         self.imageEditing = imageEditing
+        self.storageDirectory = directory
         self.presentWindow = presentWindow; self.dismissWindow = dismissWindow
         preferences = Task { await controller.loadPreferences() }
         controller.$query.removeDuplicates().dropFirst().sink { [weak imageEditing] _ in imageEditing?.cancel() }.store(in: &imageObservations)
         controller.$favoritesOnly.removeDuplicates().dropFirst().sink { [weak imageEditing] _ in imageEditing?.cancel() }.store(in: &imageObservations)
         controller.$selectedID.removeDuplicates().dropFirst().sink { [weak imageEditing] _ in imageEditing?.cancel() }.store(in: &imageObservations)
+        controller.$selectedID.removeDuplicates().dropFirst().sink { [weak self] _ in
+            MainActor.assumeIsolated { self?.syncDetailLayout(animated: true) }
+        }.store(in: &imageObservations)
         controller.$entries.sink { [weak imageEditing] in imageEditing?.validate(entries: $0) }.store(in: &imageObservations)
+        // The application records for the whole run with no user on/off or pause; it passes autoStart to begin collecting here.
+        if autoStart { Task { await start(poll: true) } }
     }
-    /// Called after explicit user confirmation (or by a synthetic test); application launch never calls this.
+    /// Starts the run's recording. Recording is always on and needs no per-run confirmation; the
+    /// baseline is set after the current content, so nothing already on the clipboard is backfilled.
     func start(poll: Bool = true) async {
         guard !shuttingDown else { return }
         await preferences.value
         guard !shuttingDown, !Task.isCancelled else { return }
         await controller.enable(poll: poll)
-    }
-    func requestRecording() {
-        guard !shuttingDown, !controller.enabled, !recordingStarting else { return }
-        pendingRecordingConsent = true
-        recordingConfirmationPresented = true
-    }
-    /// SwiftUI hides an alert independently of its chosen button action, in either order.
-    /// Hiding presentation alone must neither grant nor withdraw the pending choice.
-    var recordingConfirmationBinding: Binding<Bool> {
-        Binding(get: { self.recordingConfirmationPresented }, set: { visible in
-            if !visible { self.recordingConfirmationPresented = false }
-        })
-    }
-    func cancelRecording() {
-        pendingRecordingConsent = false
-        recordingConfirmationPresented = false
-        // A confirmed start still waiting for preferences must not outlive a closed window.
-        // Once enabled, ordinary navigation never changes the user's active recording choice.
-        if !controller.enabled {
-            recordingRevision &+= 1
-            recordingTask?.cancel(); recordingTask = nil
-            recordingStarting = false
-        }
-    }
-    @discardableResult func confirmRecording(poll: Bool = true) -> Task<Void, Never>? {
-        guard pendingRecordingConsent, !recordingStarting, !shuttingDown else { return nil }
-        pendingRecordingConsent = false
-        recordingConfirmationPresented = false
-        recordingStarting = true
-        recordingRevision &+= 1
-        let revision = recordingRevision
-        // Consume consent synchronously in the button action, before scheduling any work.
-        let task = Task { [weak self] in
-            guard let self else { return }
-            defer {
-                if revision == self.recordingRevision {
-                    self.recordingStarting = false
-                    self.recordingTask = nil
-                }
-            }
-            await self.start(poll: poll)
-        }
-        recordingTask = task
-        return task
     }
     /// Double-click / Return on a row: copy it, and close the window only when the copy really succeeded.
     func copyAndClose(_ id: UUID) {
@@ -102,7 +61,7 @@ import ImageIO
         guard let entry = controller.selectedEntry else { return }
         copyAndClose(entry.id)
     }
-    func dismiss() { cancelRecording(); imageEditing.cancel(); if let panel { dismissWindow(panel) } }
+    func dismiss() { imageEditing.cancel(); if let panel { dismissWindow(panel) } }
     /// Explicit image action, separate from Return/double-click's original-format copy.
     @discardableResult func editImage(_ id: UUID, itemIndex: Int) -> Task<Void, Never>? {
         guard !shuttingDown, !imageEditing.isPreparing,
@@ -150,19 +109,20 @@ import ImageIO
     func present() {
         wantsSearchFocus = true
         if panel == nil {
-            let width = detailExpanded ? Self.expandedWidth : Self.collapsedWidth
+            let expanded = showsDetail
+            let width = expanded ? Self.expandedWidth : Self.collapsedWidth
             let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: 460), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-            window.title = V2L("剪贴板"); window.minSize = Self.minimumSize(expanded: detailExpanded)
+            window.title = V2L("剪贴板"); window.minSize = Self.minimumSize(expanded: expanded)
             window.isReleasedWhenClosed = false
             backing = V2GlassWindowBacking(window: window, content: NSHostingView(rootView: ClipboardFeatureView(feature: self)))
             window.center(); panel = window
+            detailLayoutExpanded = expanded
             dismissal = V2FloatingWindow.hideOnResignKey(window) { [weak self] in self?.dismiss() }
             closeObservation = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.cancelRecording(); self?.imageEditing.cancel() }
+                MainActor.assumeIsolated { self?.imageEditing.cancel() }
             }
         }
         refreshTitle()
-        controller.reconcileVisibleSelection()
         if let panel {
             panel.contentView?.layoutSubtreeIfNeeded()
             presentWindow(panel)
@@ -177,21 +137,26 @@ import ImageIO
         guard wantsSearchFocus, let panel, let searchField, searchField.window === panel else { return }
         if panel.makeFirstResponder(searchField) { wantsSearchFocus = false }
     }
-    /// The detail column opens to the right of the list; the window widens instead of squeezing the list.
-    func setDetailExpanded(_ value: Bool) {
-        guard value != detailExpanded else { return }
-        detailExpanded = value
+    var showsDetail: Bool { controller.selectedEntry != nil }
+    var storagePath: String {
+        storageDirectory.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
+    }
+    /// The detail column follows the selected row; the window widens instead of squeezing the list.
+    private func syncDetailLayout(animated: Bool) {
         guard let panel else { return }
-        panel.minSize = Self.minimumSize(expanded: value)
+        let expanded = showsDetail
+        guard expanded != detailLayoutExpanded else { return }
+        detailLayoutExpanded = expanded
+        panel.minSize = Self.minimumSize(expanded: expanded)
         var frame = panel.frame
-        frame.size.width = max(panel.minSize.width, value ? max(frame.width, Self.expandedWidth) : Self.collapsedWidth)
+        frame.size.width = max(panel.minSize.width, expanded ? max(frame.width, Self.expandedWidth) : Self.collapsedWidth)
         if let visible = (panel.screen ?? NSScreen.main)?.visibleFrame, frame.maxX > visible.maxX { frame.origin.x = max(visible.minX, visible.maxX - frame.width) }
-        panel.setFrame(frame, display: true, animate: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        panel.setFrame(frame, display: true, animate: animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
     }
     private static func minimumSize(expanded: Bool) -> NSSize { NSSize(width: expanded ? 580 : 300, height: 320) }
     func refreshTitle() { panel?.title = V2L("剪贴板") }
-    func shutdown() { shuttingDown = true; cancelRecording(); imageEditing.cancel(); controller.stop(); panel?.close(); Task { await controller.shutdown() } }
-    func shutdownAndWait() async { shuttingDown = true; cancelRecording(); imageEditing.cancel(); panel?.close(); await controller.shutdown() }
+    func shutdown() { shuttingDown = true; imageEditing.cancel(); controller.stop(); panel?.close(); Task { await controller.shutdown() } }
+    func shutdownAndWait() async { shuttingDown = true; imageEditing.cancel(); panel?.close(); await controller.shutdown() }
 }
 
 extension ClipboardKind {
@@ -220,17 +185,11 @@ extension ClipboardKind {
                 }
                 .padding(.horizontal, 12).frame(height: 30)
                 .v2GlassBackground(in: Capsule())
-                Button { feature.setDetailExpanded(!feature.detailExpanded) } label: {
-                    Image(systemName: "sidebar.right").frame(width: 28, height: 28)
-                }.buttonStyle(.borderless)
-                    .help(V2L(feature.detailExpanded ? "折叠详情" : "展开详情"))
-                    .accessibilityLabel(V2L(feature.detailExpanded ? "折叠详情" : "展开详情"))
-                    .accessibilityAddTraits(feature.detailExpanded ? .isSelected : [])
             }.padding(12)
             Divider()
             HStack(spacing: 0) {
-                historyList.frame(minWidth: 260, idealWidth: 340, maxWidth: feature.detailExpanded ? 340 : .infinity)
-                if feature.detailExpanded {
+                historyList.frame(minWidth: 260, idealWidth: 340, maxWidth: feature.showsDetail ? 340 : .infinity)
+                if feature.showsDetail {
                     Divider()
                     preview.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -240,20 +199,17 @@ extension ClipboardKind {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(statusMessage).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     // The storage state is a standing privacy notice, so it keeps its own line and icon.
-                    Label(V2L(controller.settings.saveLocally ? "本机未加密保存" : (controller.hasFavorites ? "收藏已未加密保存在本机" : "仅内存")),
-                          systemImage: controller.settings.saveLocally || controller.hasFavorites ? "lock.open" : "memorychip")
-                        .font(.caption).foregroundStyle(controller.settings.saveLocally || controller.hasFavorites ? Color.orange : Color.secondary)
+                    Label(V2L("本机未加密保存"), systemImage: "lock.open")
+                        .font(.caption).foregroundStyle(Color.orange)
                 }
                 Spacer(minLength: 0)
-                if !controller.enabled { ClipboardRecordingControl(feature: feature) }
                 if controller.ignoringNextCopy {
                     Button { controller.setIgnoringNextCopy(false) } label: { Image(systemName: "eye.slash.fill").frame(width: 28, height: 28) }
                         .buttonStyle(.plain).accessibilityLabel(V2L("取消忽略下一次复制"))
-                        .help(V2L("将跳过下一次检测到的外部变化；不读取正文。自复制不计入，暂停时保留。"))
+                        .help(V2L("将跳过下一次检测到的外部变化；不读取正文。"))
                 }
                 Menu {
                     Toggle(V2L("仅收藏"), isOn: $controller.favoritesOnly)
-                    if controller.enabled { Button(V2L(controller.paused ? "恢复" : "暂停")) { controller.paused ? controller.resume() : controller.pause() } }
                     Toggle(V2L("忽略下一次复制"), isOn: Binding(get: { controller.ignoringNextCopy }, set: controller.setIgnoringNextCopy))
                         .disabled(!controller.enabled)
                     if controller.canRetryFavoritesLoading {
@@ -324,8 +280,6 @@ extension ClipboardKind {
     private var statusMessage: String {
         if let message = imageEditing.message { return V2L(message) }
         if let message = controller.message { return V2L(message) }
-        if !controller.enabled { return V2L("记录已关闭") }
-        if controller.paused { return V2L("已暂停；恢复时不会补录暂停期间内容。") }
         return String(format: V2L("%d / %d 条 · 保留 %d 天"), controller.entries.count, controller.settings.maximumCount, controller.settings.retentionDays)
     }
     @ViewBuilder private var preview: some View {
@@ -364,8 +318,6 @@ extension ClipboardKind {
                     Button(V2L("删除"), role: .destructive) { requestDeletion(entry.id) }
                 }
             }.padding(16)
-        } else {
-            Text(V2L(controller.filteredEntries.isEmpty ? "暂无匹配历史" : "选择一项预览")).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
     private func requestDeletion(_ id: UUID) {
@@ -419,14 +371,10 @@ extension ClipboardKind {
     let feature: ClipboardFeature
     @ObservedObject private var localization = V2Localization.shared
     @ObservedObject private var controller: ClipboardController
-    @State private var confirmPersistence = false
     @State private var exclusions = ""
     init(feature: ClipboardFeature) { self.feature = feature; controller = feature.controller }
     var body: some View {
         Form {
-            Section {
-                LabeledContent(V2L("剪贴板记录")) { ClipboardRecordingControl(feature: feature) }
-            }
             Section {
                 LabeledContent(V2L("最大数量")) {
                     ClipboardLimitField("最大数量", unit: "条", value: setting(\.maximumCount), range: 1...1000)
@@ -447,11 +395,15 @@ extension ClipboardKind {
             }
             .help(V2L("混合复制须全部允许，保留原格式。富文本可含内嵌内容，图片可附带文字。"))
             Section {
-                Toggle(V2L("在本机未加密保存历史"), isOn: Binding(get: { controller.settings.saveLocally }, set: { value in
-                    if value { confirmPersistence = true } else { update { $0.saveLocally = false } }
-                }))
+                Label(V2L("历史始终未加密保存在本机"), systemImage: "externaldrive")
+                LabeledContent(V2L("保存路径")) {
+                    Text(feature.storagePath).font(.caption.monospaced()).textSelection(.enabled)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text(V2L("本机保存"))
             } footer: {
-                Text(V2L("收藏始终保存在本机（未加密）。")).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+                Text(V2L("按设置的数量与期限清理；不提供加密或安全擦除保证。")).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
             }
             Section(V2L("排除应用")) {
                 HStack {
@@ -470,10 +422,6 @@ extension ClipboardKind {
         }
         .formStyle(.grouped)
         .onAppear { exclusions = controller.settings.excludedApplications.sorted().joined(separator: ", ") }
-        .alert(V2L("允许在本机未加密保存？"), isPresented: $confirmPersistence) {
-            Button(V2L("取消"), role: .cancel) {}
-            Button(V2L("允许未加密保存")) { update { $0.saveLocally = true } }
-        } message: { Text(V2L("正文保存在本用户的 Application Support/Traylet/v2/clipboard，运行时按所选期限清理；退出期间不运行，下次启动时清理过期内容。同用户权限的程序、系统备份可能读取；不提供加密或安全擦除保证。")) }
     }
     private func setting(_ key: WritableKeyPath<ClipboardSettings, Int>) -> Binding<Int> {
         Binding(get: { controller.settings[keyPath: key] }, set: { value in update { $0[keyPath: key] = value } })
@@ -486,33 +434,6 @@ extension ClipboardKind {
     }
     private func update(_ change: @escaping (inout ClipboardSettings) -> Void) {
         Task { var value = controller.settings; change(&value); await controller.updateSettings(value) }
-    }
-}
-
-/// A per-run consent action shared by history and Settings; never inferred from storage preferences.
-@MainActor private struct ClipboardRecordingControl: View {
-    @ObservedObject private var feature: ClipboardFeature
-    @ObservedObject private var controller: ClipboardController
-    init(feature: ClipboardFeature) { self.feature = feature; controller = feature.controller }
-    var body: some View {
-        Group {
-            if controller.enabled {
-                Button(V2L(controller.paused ? "恢复记录" : "暂停记录")) {
-                    controller.paused ? controller.resume() : controller.pause()
-                }
-            } else {
-                Button(V2L("开启记录…")) { feature.requestRecording() }.disabled(feature.recordingStarting)
-            }
-        }
-        .alert(V2L("开启剪贴板记录？"), isPresented: feature.recordingConfirmationBinding) {
-            Button(V2L("取消"), role: .cancel) { feature.cancelRecording() }
-            Button(V2L("开启记录")) {
-                feature.confirmRecording()
-            }
-        } message: {
-            Text(V2L("仅本次运行记录之后复制的文本、链接和图片，不补录当前内容，退出后默认关闭。普通历史默认仅内存；如已选择本机保存，将未加密写入 Application Support/Traylet/v2/clipboard，按设置的数量与期限清理。敏感标记和排除应用会跳过，但无法识别所有密码。"))
-        }
-        .onDisappear { feature.cancelRecording() }
     }
 }
 

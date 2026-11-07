@@ -24,7 +24,7 @@ import Testing
         for scheme in [ColorScheme.light, .dark] {
             NSApp.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
             let view = V2SettingsWorkspaceView(preferences: preferences, shortcuts: shortcuts, translation: translation,
-                clipboard: clipboard, navigation: navigation, actions: actions, localization: V2Localization(languageCode: "zh-Hans"))
+                languagePacks: TranslationLanguagePackController(), clipboard: clipboard, navigation: navigation, actions: actions, localization: V2Localization(languageCode: "zh-Hans"))
                 .environment(\.colorScheme, scheme).transaction { $0.disablesAnimations = true }
             let host = NSHostingView(rootView: view)
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 650),

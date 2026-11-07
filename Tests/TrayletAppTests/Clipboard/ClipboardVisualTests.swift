@@ -24,12 +24,12 @@ import Testing
         content.representations["public.png"] = image
         source.value = .init(generation: 2, items: [content], application: "com.example.Canvas")
         await feature.controller.refresh()
-        feature.controller.selectedID = feature.controller.entries.first(where: { $0.imageData != nil })?.id
+        let imageID = feature.controller.entries.first(where: { $0.imageData != nil })?.id
         #expect(feature.controller.entries.count == 2)
         _ = NSApplication.shared
         for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark), ("expanded", ColorScheme.light), ("expanded-dark", ColorScheme.dark), ("empty", ColorScheme.light)] {
-            feature.setDetailExpanded(name.hasPrefix("expanded"))
             if name == "empty" { await feature.controller.deleteAllFavorites(); await feature.controller.clear() }
+            else { feature.controller.selectedID = name.hasPrefix("expanded") ? imageID : nil }
             let host = NSHostingView(rootView: ClipboardFeatureView(feature: feature).environment(\.colorScheme, scheme).frame(width: 740, height: 510).background(Color(nsColor: .windowBackgroundColor)))
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 740, height: 510), styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false

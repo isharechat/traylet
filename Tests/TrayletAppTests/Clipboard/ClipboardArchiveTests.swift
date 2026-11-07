@@ -20,7 +20,7 @@ import Testing
         let rootMode = try FileManager.default.attributesOfItem(atPath: root.path)[.posixPermissions] as? NSNumber
         let fileMode = try FileManager.default.attributesOfItem(atPath: root.appendingPathComponent("archive.json").path)[.posixPermissions] as? NSNumber
         #expect(rootMode?.intValue == 0o700); #expect(fileMode?.intValue == 0o600)
-        var settings = ClipboardSettings(); settings.maximumCount = 1; settings.saveLocally = true
+        var settings = ClipboardSettings(); settings.maximumCount = 1
         try await archive.saveSettings(settings)
         #expect(try await archive.loadSettings() == settings)
         try await archive.clear(revision: 2)

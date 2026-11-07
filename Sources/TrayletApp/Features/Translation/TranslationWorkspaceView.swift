@@ -37,7 +37,7 @@ struct TranslationWorkspaceView: View {
             }.buttonStyle(.plain).keyboardShortcut(.return, modifiers: .command).disabled(unavailable).opacity(unavailable ? 0.4 : 1)
             Spacer(minLength: 4)
             engineIcons
-            Button { controller.onOpenSettings?() } label: {
+            Button { controller.openLanguageSettings() } label: {
                 Image(systemName: "gearshape").font(.system(size: 13, weight: .medium)).frame(width: V2Design.iconButton, height: V2Design.iconButton).contentShape(Circle()).v2GlassBackground(in: Circle())
             }.buttonStyle(.plain).help(V2L("设置")).accessibilityLabel(V2L("设置"))
         }
@@ -50,6 +50,16 @@ struct TranslationWorkspaceView: View {
                 Text(V2L(input ? "原文" : (!flow.output.isEmpty && !flow.outputIsCurrent ? "上次译文（输入或翻译设置已变更）" : "译文"))).font(.caption).foregroundStyle(.secondary)
                 // Screenshot text recognition runs on the source, so its progress is shown here.
                 if input, flow.phase == .recognizing { ProgressView().controlSize(.mini); Text(V2L("正在本机识别截图文字…")).font(.caption).foregroundStyle(.secondary) }
+            }
+            if input, controller.accessibilityNotice {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
+                    Text(V2L("无法读取选中文本：请在系统设置中允许 Traylet 使用辅助功能，然后重新打开 Traylet。")).font(.caption).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    Button(V2L("打开系统设置")) { controller.openAccessibilitySettings() }.controlSize(.small)
+                }
+                .padding(.horizontal, 8).padding(.vertical, 6)
+                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
             }
             if input {
                 TextEditor(text: $flow.input).font(.body).scrollContentBackground(.hidden).focused($inputFocused).accessibilityLabel(V2L("原文输入"))
@@ -129,7 +139,17 @@ struct TranslationWorkspaceView: View {
         case .recognizing: EmptyView()
         case .awaitingConfirmation: Label(V2L("等待确认发送正文。"), systemImage: "checkmark.shield")
         case .translating: HStack { ProgressView().controlSize(.small); Text(V2L(controller.preparingResources ? "正在准备语言资源并翻译…" : "正在翻译…")) }
-        case .resourceRequired: VStack(alignment: .leading) { Label(V2L("系统语言资源尚未安装。"), systemImage: "arrow.down.circle"); Button(V2L("准备语言资源并翻译")) { controller.prepareLanguages() }; Text(V2L("将使用系统批准流程，可能需要下载。自动检测时请先选择原文语言。")).font(.caption) }
+        case .resourceRequired:
+            VStack(alignment: .leading, spacing: 6) {
+                Label(V2L("系统语言资源尚未安装。"), systemImage: "arrow.down.circle")
+                HStack(spacing: 8) {
+                    Button(V2L("前往设置下载语言包")) { controller.openLanguageSettings() }
+                        .controlSize(.small)
+                    Button(V2L("直接准备并翻译")) { controller.prepareLanguages() }
+                        .controlSize(.small)
+                }
+                Text(V2L("建议先在设置中提前下载语言包；下载完成后返回翻译窗口重试。自动检测时请先选择明确的原文语言。")).font(.caption)
+            }
         case .failed(let message):
             VStack(alignment: .leading, spacing: 6) {
                 Label(V2L(message), systemImage: "exclamationmark.triangle").foregroundStyle(.red)
@@ -154,7 +174,7 @@ struct TranslationSendPreview: View {
     let send: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(V2L(request.action != .models && request.action != .connection && request.action != .modelTest ? "确认发送翻译正文" : "确认访问 AI 服务")).font(.headline)
+            Text(V2L(request.action != .models && request.action != .connection ? "确认发送翻译正文" : "确认访问 AI 服务")).font(.headline)
             Text(String(format: V2L("目标：%@"), request.destination)).textSelection(.enabled)
             Text(V2L(request.settings.credential.isEmpty ? "不携带 API Key。" : "将向此目标携带当前内存中的 API Key（隐藏）。")).font(.caption)
             if request.action == .models || request.action == .connection { Text(V2L("GET 请求获取模型列表；不包含原文、截图或剪贴板。")) }

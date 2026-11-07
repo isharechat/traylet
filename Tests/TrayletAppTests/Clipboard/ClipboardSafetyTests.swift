@@ -63,21 +63,6 @@ import Testing
         await store.refresh()
         #expect(store.entries.first?.plainText == "after clock correction")
     }
-    @Test func pauseResumeNeverBackfillsAndShutdownStopsCapture() async {
-        let source = MemoryClipboardSource(); let writer = MemoryClipboardWriter()
-        let store = ClipboardController(source: source, writer: writer)
-        await store.enable()
-        source.value = .init(generation: 1, items: [.text("kept")], application: "test.app")
-        await store.refresh(); store.pause()
-        source.value = .init(generation: 2, items: [.text("paused")], application: "test.app")
-        await store.refresh(); store.resume(); await store.refresh()
-        #expect(store.entries.count == 1)
-        #expect(source.reads == 1)
-        await store.shutdown()
-        #expect(!store.enabled && store.entries.isEmpty)
-        source.value = .init(generation: 3, items: [.text("disabled")], application: "test.app")
-        await store.refresh(); #expect(source.reads == 1)
-    }
     @Test func completeStableDigestSeparatesAttachedRepresentationsAndFarBytes() async {
         let source = MemoryClipboardSource(); let store = ClipboardController(source: source, writer: MemoryClipboardWriter())
         await store.enable()
@@ -173,7 +158,7 @@ import Testing
         source.value = .init(generation: generation, items: [.text(text)], application: "source.app"); await store.refresh()
     }
 
-    @Test func favoriteContentSurvivesRestartWithoutFullHistorySaving() async throws {
+    @Test func favoriteAndHistorySurviveRestart() async throws {
         let root = directory(); defer { try? FileManager.default.removeItem(at: root) }
         let source = MemoryClipboardSource(); let first = controller(root, source: source)
         await first.enable()
@@ -182,11 +167,12 @@ import Testing
         await first.toggleFavorite(first.entries.first { $0.plainText == "keep me" }!.id)
         await first.shutdown()
         #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("favorites.json").path))
+        #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("archive.json").path))
         let mode = try FileManager.default.attributesOfItem(atPath: root.appendingPathComponent("favorites.json").path)[.posixPermissions] as? NSNumber
         #expect(mode?.intValue == 0o600)
         let second = controller(root, source: MemoryClipboardSource())
         await second.enable()
-        #expect(second.entries.map(\.plainText) == ["keep me"], "only the favorite returns; saveLocally is off")
+        #expect(second.entries.map(\.plainText) == ["keep me", "plain history"])
         #expect(second.entries.first?.favorite == true)
     }
 

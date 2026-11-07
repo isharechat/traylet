@@ -20,7 +20,7 @@ import TrayletCore
         var d = EditingDocument(canvas:CGSize(width:300,height:240),fullScreen:true)
         for x in [40,100,160] { d.append(EditingMark(tool:.number,points:[CGPoint(x:x,y:60)])) }
         d.append(EditingMark(tool:.line,points:[.zero,CGPoint(x:20,y:20)]))
-        d.selectNumber(2); let deleted = d.deleteSelectedNumber(); #expect(deleted)
+        d.selectNumber(2); let deleted = d.deleteSelectedMark(); #expect(deleted)
         #expect(d.marks.compactMap(\.number) == [1,3])
         d.undo(); #expect(d.marks.compactMap(\.number) == [1,2,3] && d.marks[1].points == [CGPoint(x:100,y:60)])
         d.redo(); #expect(d.marks.compactMap(\.number) == [1,3])
@@ -28,7 +28,7 @@ import TrayletCore
         #expect(d.marks.compactMap(\.number) == [1,3,4])
         d.undo(); d.append(EditingMark(tool:.number,points:[CGPoint(x:160,y:120)]))
         #expect(d.marks.compactMap(\.number) == [1,3,5] && !d.canRedo)
-        d.selectNumber(99); let missing = d.deleteSelectedNumber(); #expect(!missing)
+        d.selectNumber(99); let missing = d.deleteSelectedMark(); #expect(!missing)
         #expect(d.marks.last?.points == [CGPoint(x:160,y:120)] && d.nextNumber == 6)
         while d.canUndo { d.undo() }
         #expect(d.marks.isEmpty && d.nextNumber == 6)
@@ -55,7 +55,7 @@ import TrayletCore
         }
         func click(_ p:CGPoint) { view.mouseDown(with:mouse(.leftMouseDown,p)); view.mouseUp(with:mouse(.leftMouseUp,p)) }
         click(CGPoint(x:100,y:100)); click(CGPoint(x:200,y:100)); click(CGPoint(x:100,y:100))
-        #expect(s.document.marks.compactMap(\.number) == [1,2] && s.document.selectedNumber == 1)
+        #expect(s.document.marks.compactMap(\.number) == [1,2] && s.document.selectedMark?.number == 1)
         view.keyDown(with:key(51)); #expect(s.document.marks.compactMap(\.number) == [2])
         view.keyDown(with:key(6,"z",.command)); #expect(s.document.marks.compactMap(\.number) == [1,2])
         view.keyDown(with:key(6,"z",[.command,.shift])); #expect(s.document.marks.compactMap(\.number) == [2])
@@ -70,7 +70,7 @@ import TrayletCore
         #expect(s.document.nextNumber == 3)
         click(CGPoint(x:300,y:100)); #expect(s.document.marks.last?.number == 3)
         click(CGPoint(x:200,y:100)); s.tool = .rectangle; view.keyDown(with:key(51))
-        #expect(s.document.marks.compactMap(\.number) == [2,3] && s.document.selectedNumber == nil)
+        #expect(s.document.marks.compactMap(\.number) == [2,3] && s.document.selectedMark?.number == nil)
         s.tool = .number; click(CGPoint(x:200,y:100))
         let fieldEditor = NSTextView(frame:CGRect(x:20,y:200,width:80,height:30))
         view.addSubview(fieldEditor); window.makeFirstResponder(fieldEditor)
@@ -193,7 +193,7 @@ import TrayletCore
         let last = try #require(s.document.marks.last)
         #expect(EditingNumberBadge.bounds(last).width > EditingNumberBadge.bounds(s.document.marks[0]).width)
         let output = try s.composite(); #expect(output.width == 180 && output.height == 140)
-        s.document.selectNumber(1); _ = s.document.deleteSelectedNumber(); s.document.undo()
+        s.document.selectNumber(1); _ = s.document.deleteSelectedMark(); s.document.undo()
         #expect(s.document.marks.first?.number == 1 && s.document.marks.first?.points.first == first)
         #expect(try s.composite() == output && !window.isVisible)
     }

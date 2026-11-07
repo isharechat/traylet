@@ -90,18 +90,16 @@ struct ClipboardDisplay {
 struct ClipboardSettings: Codable, Equatable, Sendable {
     var maximumCount = 100
     var retentionDays = 7
-    var saveLocally = false
     var excludedApplications: Set<String> = []
     var captureText = true
     var captureImages = true
     var capturePolicy: ClipboardCapturePolicy { .init(text: captureText, images: captureImages) }
-    private enum CodingKeys: String, CodingKey { case maximumCount, retentionDays, saveLocally, excludedApplications, captureText, captureImages }
+    private enum CodingKeys: String, CodingKey { case maximumCount, retentionDays, excludedApplications, captureText, captureImages }
     init() {}
     init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         maximumCount = try values.decode(Int.self, forKey: .maximumCount)
         retentionDays = try values.decode(Int.self, forKey: .retentionDays)
-        saveLocally = try values.decode(Bool.self, forKey: .saveLocally)
         excludedApplications = try values.decode(Set<String>.self, forKey: .excludedApplications)
         captureText = try values.decodeIfPresent(Bool.self, forKey: .captureText) ?? true
         captureImages = try values.decodeIfPresent(Bool.self, forKey: .captureImages) ?? true

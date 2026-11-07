@@ -108,9 +108,9 @@ import Testing
         #expect(!controller.ignoringNextCopy && controller.entries.isEmpty && source.reads == 0)
     }
     @Test func existingPreferencesKeepExplicitChoicesAndNewTypesRoundTripWithoutEnablingRecording() async throws {
-        let old = Data(#"{"maximumCount":23,"retentionDays":4,"saveLocally":true,"excludedApplications":["excluded.app"]}"#.utf8)
+        let old = Data(#"{"maximumCount":23,"retentionDays":4,"excludedApplications":["excluded.app"]}"#.utf8)
         var settings = try JSONDecoder().decode(ClipboardSettings.self, from: old)
-        #expect(settings.maximumCount == 23 && settings.retentionDays == 4 && settings.saveLocally)
+        #expect(settings.maximumCount == 23 && settings.retentionDays == 4)
         #expect(settings.excludedApplications == ["excluded.app"] && settings.captureText && settings.captureImages)
         settings.captureText = false; settings.captureImages = false
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-capture-types-" + UUID().uuidString)
@@ -194,21 +194,6 @@ import Testing
         source.value = .init(generation: 12, items: [.text("after external exclusion")], application: "synthetic.app")
         await controller.refresh()
         #expect(source.reads == 2 && controller.entries.first?.plainText == "after external exclusion")
-    }
-    @Test func pauseResumePreservesTheExclusionButStopDoesNot() async {
-        let source = MemoryClipboardSource()
-        let controller = ClipboardController(source: source, writer: MemoryClipboardWriter())
-        controller.setIgnoringNextCopy(true)
-        #expect(!controller.ignoringNextCopy && !controller.enabled && source.reads == 0)
-        await controller.enable(); controller.setIgnoringNextCopy(true); controller.pause()
-        source.value = .init(generation: 1, items: [.text("while paused")], application: "synthetic.app")
-        await controller.refresh(); controller.resume(); await controller.refresh()
-        #expect(controller.ignoringNextCopy && source.reads == 0)
-        source.value = .init(generation: 2, items: [.text("after resume")], application: "synthetic.app")
-        await controller.refresh()
-        #expect(!controller.ignoringNextCopy && controller.entries.isEmpty && source.reads == 0)
-        controller.setIgnoringNextCopy(true); controller.stop()
-        #expect(!controller.ignoringNextCopy && !controller.enabled)
     }
     @Test func cancellingAnArmedIgnoreDoesNotBackfillAnUnobservedCopy() async {
         let source = MemoryClipboardSource()

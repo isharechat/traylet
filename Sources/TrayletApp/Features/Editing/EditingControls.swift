@@ -8,6 +8,7 @@ struct EditingToolbar: View {
     let copy: () -> Void
     let save: () -> Void
     let translate: () -> Void
+    let float: () -> Void
     let drag: (CGSize, Bool) -> Void
     let reset: () -> Void
     let finishText: () -> Bool
@@ -40,6 +41,7 @@ struct EditingToolbar: View {
                         Divider()
                         Button(V2L("撤销")) { undo() }.disabled(!session.document.canUndo)
                         Button(V2L("重做")) { redo() }.disabled(!session.document.canRedo)
+                        Button { float() } label: { Label(V2L("悬浮"), systemImage: "macwindow") }
                         if session.document.canvas.width < 240 { Divider(); viewActions }
                     } label: {
                         if session.document.canvas.width < 240 {
@@ -73,6 +75,9 @@ struct EditingToolbar: View {
                 .help(V2L("适配选区") + " ⌘2 · " + V2L("重置视图") + " ⌘0\n" + V2L("按住空格拖动平移") + "\n" + V2L("缩放相对于原始视图；不改变导出尺寸。"))
                 .accessibilityLabel(V2L("视图缩放"))
                 .accessibilityValue(zoomStatus)
+                }
+                if session.document.canvas.width >= 620 {
+                    EditingIconButton(symbol:"macwindow",label:V2L("悬浮"),help:V2L("悬浮到屏幕最上层 ⌘F"),action:float)
                 }
                 EditingIconButton(symbol:"square.and.arrow.down",label:V2L("保存"),help:V2L("保存 PNG ⌘S"),action:save)
                 EditingIconButton(symbol:"doc.on.doc",label:V2L("复制"),help:V2L("复制截图 ⌘C"),prominent:true,action:copy)
@@ -177,9 +182,6 @@ struct EditingOptions: View {
             if let token = continuousStyleToken { _ = session.updateStyle(next,token:token) }
             else { _ = session.setEffectiveStyle(next,context:context) }
         })
-    }
-    private var fontFormatter: NumberFormatter {
-        let formatter = NumberFormatter(); formatter.minimum = 8; formatter.maximum = 96; formatter.allowsFloats = false; return formatter
     }
 }
 

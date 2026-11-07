@@ -69,6 +69,28 @@ import TrayletCore
         #expect(!controller.isOpen && presentations == 0 && completions == 0 && writer.calls == 0)
     }
 
+    @Test func hiddenCaptureIsReleasedBeforeAnotherCaptureAndCompletesOnce() throws {
+        _ = NSApplication.shared
+        let image = try EditingTests.fixture()
+        var views: [EditingCanvasView] = [], windows: [NSPanel] = []
+        let controller = CaptureEditorController(writer:ImportedImageWriter(),
+            presentPanel:{ panel, view in windows.append(panel); views.append(view as! EditingCanvasView) })
+        var completions = 0; controller.onComplete = { completions += 1 }
+        let frame = CGRect(x:0,y:0,width:800,height:600)
+        controller.present(image:image,screenFrame:frame,initiallyFullScreen:true)
+        #expect(controller.isOpen && views.count == 1 && !windows[0].hidesOnDeactivate)
+
+        // The injected presenter never orders the panel on screen, which reproduces the
+        // stale state left behind when AppKit hides an otherwise unclosed capture panel.
+        controller.discardHiddenSession()
+        #expect(!controller.isOpen && completions == 1)
+
+        controller.present(image:image,screenFrame:frame,initiallyFullScreen:true)
+        #expect(controller.isOpen && views.count == 2 && completions == 1)
+        controller.cancel()
+        #expect(!controller.isOpen && completions == 2)
+    }
+
     @Test func closeEscapeAndCopyCompleteOnceAndRetiredCallbacksCannotCloseReplacement() throws {
         _ = NSApplication.shared
         let image = try EditingTests.fixture(), decoded = try #require(EditingRenderer.decode(image))

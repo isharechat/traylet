@@ -1,7 +1,7 @@
 import Foundation
 import TrayletCore
 
-enum TranslationAIAction: String, Sendable { case models, connection, modelTest, translate, deeplTranslate, googleTranslate, myMemoryTranslate }
+enum TranslationAIAction: String, Sendable { case models, connection, translate, deeplTranslate, googleTranslate, myMemoryTranslate }
 extension TranslationAIAction {
     /// The engine whose settings an action uses; model-list actions belong to the AI engine.
     var engine: TranslationEngineChoice {
@@ -31,7 +31,7 @@ struct TranslationAISettings: Equatable, Sendable {
         }
         guard !credential.contains("\r"), !credential.contains("\n"), credential.utf8.count <= 8192 else { throw TranslationAIFailure.invalidCredential }
         if action == .deeplTranslate, credential.isEmpty { throw TranslationAIFailure.missingCredential }
-        if action == .translate || action == .modelTest {
+        if action == .translate {
             guard !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, model.utf8.count <= 256 else { throw TranslationAIFailure.missingModel }
         }
         parts.path = parts.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -41,7 +41,7 @@ struct TranslationAISettings: Equatable, Sendable {
         case .deeplTranslate: leaf = "v2/translate"
         case .googleTranslate: leaf = "translate_a/single"
         case .myMemoryTranslate: leaf = "get"
-        case .translate, .modelTest: leaf = "chat/completions"
+        case .translate: leaf = "chat/completions"
         }
         parts.path = "/" + (parts.path.isEmpty ? "" : parts.path + "/") + leaf
         guard let url = parts.url else { throw TranslationAIFailure.invalidEndpoint }
@@ -131,12 +131,11 @@ struct TranslationOpenAIClient: TranslationAIClient {
         var request = URLRequest(url: url, timeoutInterval: 30)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if !operation.settings.credential.isEmpty { request.setValue("Bearer " + operation.settings.credential, forHTTPHeaderField: "Authorization") }
-        if operation.action == .translate || operation.action == .modelTest {
+        if operation.action == .translate {
             guard operation.content.utf8.count <= 128 * 1024 else { throw TranslationAIFailure.oversized }
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            var body: [String: Any] = ["model": operation.settings.model, "stream": false, "messages": [["role": "system", "content": operation.instruction], ["role": "user", "content": operation.content]]]
-            if operation.action == .modelTest { body["max_tokens"] = 64 }
+            let body: [String: Any] = ["model": operation.settings.model, "stream": false, "messages": [["role": "system", "content": operation.instruction], ["role": "user", "content": operation.content]]]
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
         }
         let (data, response) = try await transport.send(request)

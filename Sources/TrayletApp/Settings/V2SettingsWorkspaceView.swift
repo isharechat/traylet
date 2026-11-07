@@ -5,6 +5,7 @@ import SwiftUI
     @ObservedObject var preferences: V2PreferencesStore
     @ObservedObject var shortcuts: V2ShortcutManager
     @ObservedObject var translation: TranslationConfiguration
+    let languagePacks: TranslationLanguagePackController
     let clipboard: ClipboardFeature
     @ObservedObject var navigation: V2SettingsNavigation
     @ObservedObject var actions: V2SettingsActions
@@ -63,7 +64,8 @@ import SwiftUI
             }
             Spacer(minLength: 0)
         }.padding(.horizontal, 10).padding(.vertical, 12).frame(maxHeight: .infinity, alignment: .top)
-            .background { if usesGlass { Color(nsColor: .controlBackgroundColor).opacity(0.35) } }
+            // The column stays transparent so both sides draw on the window's own glass (or one solid
+            // plane in solid mode); the Divider is the only seam between them.
     }
     private var detail: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -73,7 +75,7 @@ import SwiftUI
                 switch navigation.current {
                 case .general: general
                 case .shortcuts: shortcutSettings
-                case .translation: TranslationConfigurationView(configuration: translation)
+                case .translation: TranslationConfigurationView(configuration: translation, languagePacks: languagePacks)
                 case .clipboard: ClipboardFeatureSettingsView(feature: clipboard)
                 case .about: about
                 }

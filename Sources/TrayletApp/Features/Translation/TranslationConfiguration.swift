@@ -2,6 +2,11 @@ import Foundation
 import Combine
 import TrayletCore
 
+enum TranslationActionFeedback: Equatable, Sendable {
+    case success
+    case failure(String)
+}
+
 @MainActor final class TranslationConfiguration: ObservableObject {
     /// Engines are configured side by side. The default engine always comes first in the window; the others follow `order`.
     @Published var engine: TranslationEngineChoice = .system {
@@ -42,26 +47,33 @@ import TrayletCore
     /// Default engine first, then the other enabled engines in the saved order.
     var availableEngines: [TranslationEngineChoice] { [engine] + order.filter { $0 != engine && enabled.contains($0) } }
     var visibleEngines: [TranslationEngineChoice] { Array(availableEngines.prefix(maxVisible)) }
-    @Published var deeplKey = "" { didSet { changed() } }
-    @Published var provider: TranslationAIProvider = .compatible { didSet { if provider == .openAI { endpoint = "https://api.openai.com/v1" }; changed() } }
-    @Published var endpoint = "http://127.0.0.1:1234/v1" { didSet { changed() } }
-    @Published var model = "" { didSet { changed(clearModels: false) } }
-    @Published var credential = "" { didSet { changed() } }
+    @Published var deeplKey = "" { didSet { if deeplKey != oldValue { changed() } } }
+    @Published var provider: TranslationAIProvider = .compatible {
+        didSet {
+            guard provider != oldValue else { return }
+            if provider == .openAI { endpoint = "https://api.openai.com/v1" }
+            changed()
+        }
+    }
+    @Published var endpoint = "http://127.0.0.1:1234/v1" { didSet { if endpoint != oldValue { changed() } } }
+    @Published var model = "" { didSet { if model != oldValue { changed(clearModels: false) } } }
+    @Published var credential = "" { didSet { if credential != oldValue { changed() } } }
     @Published private(set) var revision = UUID()
     @Published private(set) var models: [String] = []
-    @Published private(set) var preview: TranslationAIRequest?
     @Published private(set) var isBusy = false
-    @Published private(set) var status = ""
+    @Published private(set) var runningAction: TranslationAIAction?
+    @Published private(set) var actionFeedback: [TranslationAIAction: TranslationActionFeedback] = [:]
     @Published private(set) var storageIssue: String?
     @Published private(set) var storageRecoveryRequested = false
     @Published private(set) var storageRecoveryNotice: String?
     let client: any TranslationAIClient
     private let storageURL: URL?
+    private let credentialStore: (any TranslationCredentialStoring)?
+    private var lastPersistedCredential = ""
+    private var lastPersistedDeeplKey = ""
     private var operationID: UUID?
     private var task: Task<Void, Never>?
     private var loading = true
-    private enum StatusDetails { case models(Int), test(String) }
-    private var statusDetails: StatusDetails?
     private var recoveryBackupPath: String?
     private var lastSaved: Data?
     private struct Saved: Codable {
@@ -70,8 +82,8 @@ import TrayletCore
         var aiEnabled: Bool? = nil; var deeplEnabled: Bool? = nil
         var enabled: [TranslationEngineChoice]? = nil; var order: [TranslationEngineChoice]? = nil; var maxVisible: Int? = nil
     }
-    init(storageURL: URL? = nil, client: any TranslationAIClient = TranslationOpenAIClient()) {
-        self.storageURL = storageURL; self.client = client
+    init(storageURL: URL? = nil, client: any TranslationAIClient = TranslationOpenAIClient(), credentialStore: (any TranslationCredentialStoring)? = nil) {
+        self.storageURL = storageURL; self.client = client; self.credentialStore = credentialStore
         if let storageURL {
             do {
                 if let data = try TranslationConfigurationStore(url: storageURL).read() {
@@ -91,6 +103,13 @@ import TrayletCore
                 }
             } catch { storageIssue = "新版本翻译设置无法读取；当前使用默认值，原文件保留。" }
         }
+        // Secrets are intentionally kept out of the preferences JSON; the Keychain holds them when a store is supplied.
+        if let credentialStore {
+            credential = credentialStore.read(.aiAPIKey) ?? ""
+            deeplKey = credentialStore.read(.deeplAPIKey) ?? ""
+            lastPersistedCredential = credential
+            lastPersistedDeeplKey = deeplKey
+        }
         loading = false
     }
     var settings: TranslationAISettings { .init(endpoint: provider == .openAI ? "https://api.openai.com/v1" : endpoint, model: model, credential: credential) }
@@ -103,13 +122,6 @@ import TrayletCore
         case .system, .ai: settings
         }
     }
-    var localizedStatus: String {
-        switch statusDetails {
-        case .models(let count): String(format: V2L("已获取 %d 个模型；选择模型不代表已验证翻译能力。"), count)
-        case .test(let text): String(format: V2L("固定短文测试结果：\n%@"), text)
-        case nil: V2L(status)
-        }
-    }
     var localizedStorageRecoveryNotice: String? {
         guard let storageRecoveryNotice else { return nil }
         if let recoveryBackupPath { return String(format: V2L("已恢复默认配置，原文件备份：%@"), recoveryBackupPath) }
@@ -118,47 +130,56 @@ import TrayletCore
     func makeRequest(_ action: TranslationAIAction, content: String = "", source: String = "auto", target: String = "zh-Hans") throws -> TranslationAIRequest {
         let used = settings(for: action.engine)
         _ = try used.url(for: action)
-        return .init(id: UUID(), action: action, settings: used, content: action == .modelTest ? "Hello." : content, source: action == .modelTest ? "en" : source, target: action == .modelTest ? "zh-Hans" : target)
+        return .init(id: UUID(), action: action, settings: used, content: content, source: source, target: target)
     }
-    func request(_ action: TranslationAIAction) {
-        cancel(); statusDetails = nil
+    func feedback(for action: TranslationAIAction) -> TranslationActionFeedback? { actionFeedback[action] }
+    func isRunning(_ action: TranslationAIAction) -> Bool { runningAction == action }
+    /// Settings-page actions run directly; they never create a confirmation preview.
+    func runSettingsAction(_ action: TranslationAIAction) {
+        guard action == .models || action == .connection || action == .deeplTranslate else { return }
+        cancel()
+        task = Task { [weak self] in await self?.performSettingsAction(action) }
+    }
+    func performSettingsAction(_ action: TranslationAIAction) async {
+        guard action == .models || action == .connection || action == .deeplTranslate, !isBusy else { return }
+        let request: TranslationAIRequest
         do {
-            // The DeepL test sends one fixed short sentence, never the user's own text.
-            preview = action == .deeplTranslate ? try makeRequest(.deeplTranslate, content: "Hello.", source: "en", target: "zh-Hans") : try makeRequest(action)
-            status = ""
+            request = action == .deeplTranslate
+                ? try makeRequest(.deeplTranslate, content: "Hello.", source: "en", target: "zh-Hans")
+                : try makeRequest(action)
+        } catch {
+            actionFeedback = [action: .failure(TranslationAIFailure.safeMessage(error))]
+            return
         }
-        catch { status = TranslationAIFailure.safeMessage(error) }
+        actionFeedback = [:]
+        runningAction = action
+        operationID = request.id
+        isBusy = true
+        await execute(request)
     }
-    func confirm(_ request: TranslationAIRequest) async {
-        guard preview == request, request.settings == settings(for: request.action.engine) else { return }
-        preview = nil; operationID = request.id; isBusy = true
+    private func execute(_ request: TranslationAIRequest) async {
         do {
             let result = try await client.perform(request)
             guard operationID == request.id, request.settings == settings(for: request.action.engine), !Task.isCancelled else { return }
             switch result {
             case .models(let items):
                 models = items
-                statusDetails = items.isEmpty ? nil : .models(items.count)
-                status = items.isEmpty ? "服务返回空模型列表；可手动填写。" : "已获取 \(items.count) 个模型；选择模型不代表已验证翻译能力。"
-            case .connected: status = "模型列表端点已响应；模型翻译能力尚未验证。"
-            case .text(let text):
-                // Redact before limiting display length so a cut-off echo cannot reveal a key prefix.
-                let secret = request.action == .deeplTranslate ? deeplKey : credential
-                let safeText = secret.isEmpty ? text : text.replacingOccurrences(of: secret, with: "[已隐藏]")
-                statusDetails = .test(String(safeText.prefix(4096)))
-                status = "固定短文测试结果：" + String(safeText.prefix(4096))
+                actionFeedback[.models] = items.isEmpty ? .failure("服务返回空模型列表；可手动填写。") : .success
+            case .connected:
+                actionFeedback[.connection] = .success
+            case .text:
+                actionFeedback[request.action] = .success
             }
         } catch {
             guard operationID == request.id else { return }
-            status = TranslationAIFailure.safeMessage(error)
+            actionFeedback[request.action] = .failure(TranslationAIFailure.safeMessage(error))
         }
-        if operationID == request.id { operationID = nil; isBusy = false }
+        if operationID == request.id { operationID = nil; isBusy = false; runningAction = nil }
     }
-    func startConfirmed(_ request: TranslationAIRequest) {
-        task?.cancel()
-        task = Task { [weak self] in await self?.confirm(request) }
+    func cancel() {
+        task?.cancel(); task = nil; operationID = nil; isBusy = false
+        runningAction = nil; actionFeedback = [:]; storageRecoveryRequested = false
     }
-    func cancel() { task?.cancel(); task = nil; operationID = nil; preview = nil; isBusy = false; storageRecoveryRequested = false }
     func requestStorageRecovery() {
         guard storageURL != nil, storageIssue != nil else { return }
         cancel(); storageRecoveryRequested = true
@@ -170,7 +191,9 @@ import TrayletCore
         loading = true
         credential = ""; deeplKey = ""
         loading = false
-        models = []; status = ""; statusDetails = nil; revision = UUID()
+        credentialStore?.remove(.aiAPIKey); credentialStore?.remove(.deeplAPIKey)
+        lastPersistedCredential = ""; lastPersistedDeeplKey = ""
+        models = []; revision = UUID()
         do {
             let defaults = Saved(version: 2, engine: .system, provider: .compatible, endpoint: "http://127.0.0.1:1234/v1", model: "")
             let backup = try TranslationConfigurationStore(url: storageURL).write(JSONEncoder().encode(defaults), preservingOriginal: true)
@@ -189,7 +212,8 @@ import TrayletCore
     }
     private func changed(clearModels: Bool = true) {
         guard !loading else { return }
-        cancel(); revision = UUID(); status = ""; statusDetails = nil
+        persistCredentials()
+        cancel(); revision = UUID()
         if clearModels { models = [] }
         guard let storageURL, storageIssue == nil else { return }
         // Malformed URLs can contain credentials; never store those as a preference.
@@ -202,5 +226,18 @@ import TrayletCore
             try TranslationConfigurationStore(url: storageURL).write(data)
             lastSaved = data
         } catch { storageIssue = "翻译设置保存失败；当前更改仅保留在内存。" }
+    }
+
+    /// Writes only when a secret actually changed, so typing a key does not hit the Keychain per keystroke.
+    private func persistCredentials() {
+        guard let credentialStore else { return }
+        if credential != lastPersistedCredential {
+            credentialStore.write(credential, for: .aiAPIKey)
+            lastPersistedCredential = credential
+        }
+        if deeplKey != lastPersistedDeeplKey {
+            credentialStore.write(deeplKey, for: .deeplAPIKey)
+            lastPersistedDeeplKey = deeplKey
+        }
     }
 }

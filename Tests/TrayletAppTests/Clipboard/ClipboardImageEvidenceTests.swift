@@ -24,7 +24,6 @@ import Testing
         await feature.controller.refresh()
         let imageID = try #require(feature.controller.entries.first(where: { $0.imageData != nil })?.id)
         feature.controller.selectedID = imageID
-        feature.setDetailExpanded(true)
         for dark in [false, true] {
             V2Localization.shared.languageCode = "zh-Hans"
             try await render(feature, name: "image-actions-\(dark ? "dark" : "light")", width: 700, height: 460, dark: dark)
@@ -32,16 +31,15 @@ import Testing
         V2Localization.shared.languageCode = "en"
         try await render(feature, name: "image-actions-en", width: 580, height: 400, dark: false)
         V2Localization.shared.languageCode = "zh-Hans"
-        feature.setDetailExpanded(false)
         feature.canEditImage = { true }; feature.onEditImage = { _ in false }
         let work = try #require(feature.editImage(imageID, itemIndex: 1))
         await gate.waitUntilPending()
-        try await render(feature, name: "image-preparing-compact", width: 300, height: 320, dark: false)
+        try await render(feature, name: "image-preparing", width: 700, height: 460, dark: false)
         feature.imageEditing.cancel()
         await gate.finish(prepared); await work.value
         feature.canEditImage = { false }
         #expect(feature.editImage(imageID, itemIndex: 1) == nil)
-        try await render(feature, name: "image-busy-compact-dark", width: 300, height: 320, dark: true)
+        try await render(feature, name: "image-busy-dark", width: 700, height: 460, dark: true)
         #expect(!feature.imageEditing.isPreparing)
         await feature.shutdownAndWait()
     }

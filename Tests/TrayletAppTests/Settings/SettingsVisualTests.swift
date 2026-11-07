@@ -19,7 +19,7 @@ import Testing
         for scheme in [ColorScheme.light, .dark] {
             for (sizeName, size) in [("wide", CGSize(width: 780, height: 650)), ("narrow", CGSize(width: 560, height: 420))] {
                 let navigation = V2SettingsNavigation()
-                let view = V2SettingsWorkspaceView(preferences: store, shortcuts: shortcuts, translation: translation, clipboard: clipboard, navigation: navigation, actions: actions, localization: V2Localization(languageCode: "zh-Hans"))
+                let view = V2SettingsWorkspaceView(preferences: store, shortcuts: shortcuts, translation: translation, languagePacks: TranslationLanguagePackController(), clipboard: clipboard, navigation: navigation, actions: actions, localization: V2Localization(languageCode: "zh-Hans"))
                     .environment(\.colorScheme, scheme).transaction { $0.disablesAnimations = true }
                     .frame(width: size.width, height: size.height)
                 let host = NSHostingView(rootView: view.background(Color(nsColor: .windowBackgroundColor)))
@@ -62,7 +62,7 @@ import Testing
             var preferences = store.value; preferences.language = code == "en" ? .english : .system; try store.save(preferences)
             let shortcuts = V2ShortcutManager(preferences: store, driver: SettingsVisualShortcutDriver())
             let navigation = V2SettingsNavigation()
-            let view = V2SettingsWorkspaceView(preferences: store, shortcuts: shortcuts, translation: TranslationConfiguration(), clipboard: clipboard, navigation: navigation, actions: V2SettingsActions(preferences: store, login: SettingsVisualLogin()), localization: localization)
+            let view = V2SettingsWorkspaceView(preferences: store, shortcuts: shortcuts, translation: TranslationConfiguration(), languagePacks: TranslationLanguagePackController(), clipboard: clipboard, navigation: navigation, actions: V2SettingsActions(preferences: store, login: SettingsVisualLogin()), localization: localization)
                 .environment(\.colorScheme, .light).frame(width: 560, height: 420)
             let host = NSHostingView(rootView: view.background(Color(nsColor: .windowBackgroundColor)))
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 420), styleMask: [.borderless], backing: .buffered, defer: false)

@@ -9,6 +9,13 @@ struct TranslationWork: Equatable, Sendable, Identifiable {
     let source: String
     let target: String
     let engine: TranslationEngineChoice
+
+    /// Automatic detection can be ambiguous for short text. Resolve a stable
+    /// source for the system session and availability check before giving up.
+    var resolvedSource: String? {
+        guard source == "auto" else { return source }
+        return TranslationLanguageDetector.sample(text).flatMap(TranslationLanguageDetector.detectOrInfer)
+    }
 }
 
 enum TranslationFlowPhase: Equatable { case idle, recognizing, awaitingConfirmation, translating, resourceRequired, failed(String) }
@@ -45,7 +52,7 @@ enum TranslationFlowPhase: Equatable { case idle, recognizing, awaitingConfirmat
         let sample = source == "auto" ? TranslationLanguageDetector.sample(input) : nil
         guard sample != detectionSample else { return }
         detectionSample = sample
-        let detected = sample.flatMap(TranslationLanguageDetector.detect(sample:))
+        let detected = sample.flatMap(TranslationLanguageDetector.detectOrInfer)
         guard detected != detectedLanguage else { return }
         detectedLanguage = detected
         if let detected, let replacement = TranslationLanguageDetector.target(whenDetected: detected, current: target) { target = replacement }
@@ -107,6 +114,26 @@ enum TranslationLanguageDetector {
         recognizer.processString(sample)
         guard let best = recognizer.languageHypotheses(withMaximum: 1).first, best.value >= 0.5, supported.contains(best.key.rawValue) else { return nil }
         return best.key.rawValue
+    }
+    /// Uses NaturalLanguage first, then a conservative script fallback for
+    /// short strings such as "Hello" where confidence alone is too low.
+    static func detectOrInfer(sample: String) -> String? {
+        detect(sample: sample) ?? inferScript(sample)
+    }
+    private static func inferScript(_ sample: String) -> String? {
+        let scalars = sample.unicodeScalars
+        func contains(_ ranges: ClosedRange<UInt32>...) -> Bool {
+            scalars.contains { scalar in ranges.contains { $0.contains(scalar.value) } }
+        }
+        if contains(0x3040...0x309F, 0x30A0...0x30FF, 0x31F0...0x31FF, 0xFF66...0xFF9D) { return "ja" }
+        if contains(0x1100...0x11FF, 0xAC00...0xD7AF) { return "ko" }
+        if contains(0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF) { return "zh-Hans" }
+        if contains(0x0400...0x04FF) { return "ru" }
+        if contains(0x0600...0x06FF, 0x0750...0x077F) { return "ar" }
+        if contains(0x0900...0x097F) { return "hi" }
+        if contains(0x0E00...0x0E7F) { return "th" }
+        if contains(0x0041...0x005A, 0x0061...0x007A, 0x00C0...0x024F, 0x1E00...0x1EFF) { return "en" }
+        return nil
     }
     static func isChinese(_ code: String) -> Bool { code.hasPrefix("zh") }
     /// The replacement target when the detected language matches it; nil when the target already differs.

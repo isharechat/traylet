@@ -1,3 +1,4 @@
+import AppKit
 import Testing
 @testable import TrayletApp
 
@@ -85,17 +86,41 @@ import Testing
         element.selection = .value("Current synthetic selection")
         #expect(reader.selectedText() == "Current synthetic selection")
     }
+    @Test func parameterizedSelectionFallbackReadsOnlyTheSelectedRange() {
+        let element = FakeSelectedTextFocus()
+        element.role = .value("AXTextArea")
+        element.subrole = .unsupported
+        element.selection = .unsupported
+        element.parameterizedSelection = .value("Range-only selection")
+        let reader = V2AccessibilitySelectedText(focus: { element.snapshot })
+        #expect(reader.selectedText() == "Range-only selection")
+        #expect(element.selectionReads == 1)
+        #expect(element.parameterizedReads == 1)
+    }
+    @Test(arguments: ["plain", "attributed", "unsupportedValue"])
+    func selectionValuesAreReducedToPlainText(_ scenario: String) {
+        let value: Any?
+        let expected: String?
+        switch scenario {
+        case "plain": value = "Plain selection"; expected = "Plain selection"
+        case "attributed": value = NSAttributedString(string: "Attributed selection"); expected = "Attributed selection"
+        default: value = NSNumber(value: 42); expected = nil
+        }
+        #expect(V2AccessibilitySelectedText.text(from: value) == expected)
+    }
 }
 
 @MainActor private final class FakeSelectedTextFocus {
     var role = V2SelectedTextAttributeResult.value("AXTextField")
     var subrole = V2SelectedTextAttributeResult.value("AXUnknown")
     var selection = V2SelectedTextAttributeResult.value("  Synthetic selection \n")
+    var parameterizedSelection: V2SelectedTextAttributeResult?
     var selectionReads = 0
+    var parameterizedReads = 0
     var current = true
     var onRead: ((V2SelectedTextAttribute) -> Void)?
     var snapshot: V2SelectedTextFocus {
-        .init(attribute: { [self] attribute in
+        let readAttribute: @MainActor (V2SelectedTextAttribute) -> V2SelectedTextAttributeResult = { [self] attribute in
             let result: V2SelectedTextAttributeResult
             switch attribute {
             case .role: result = role
@@ -104,6 +129,17 @@ import Testing
             }
             onRead?(attribute)
             return result
-        }, isCurrent: { [self] in current })
+        }
+        let readSelectedText: @MainActor () -> V2SelectedTextAttributeResult = { [self] in
+            if case .value(let text) = readAttribute(.selection), !text.isEmpty { return .value(text) }
+            guard let parameterizedSelection else { return .unsupported }
+            parameterizedReads += 1
+            return parameterizedSelection
+        }
+        return V2SelectedTextFocus(
+            attribute: readAttribute,
+            selectedText: readSelectedText,
+            isCurrent: { [self] in current }
+        )
     }
 }

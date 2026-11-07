@@ -109,16 +109,6 @@ struct TranslationConfigurationTests {
         damaged.model = "replacement"
         #expect(try String(contentsOf: file, encoding: .utf8) == "broken")
     }
-    @Test func onePreviewCanOnlySendOnce() async throws {
-        let client = RecordingTranslationAI()
-        let config = TranslationConfiguration(client: client)
-        config.model = "chosen"
-        config.request(.modelTest)
-        let preview = try #require(config.preview)
-        await config.confirm(preview)
-        await config.confirm(preview)
-        #expect(await client.calls == 1)
-    }
     @Test func invalidEndpointSecretsAreNeverPersisted() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -127,39 +117,126 @@ struct TranslationConfigurationTests {
         config.endpoint = "https://name:secret-password@example.invalid/v1?api_key=secret-query"
         #expect(!FileManager.default.fileExists(atPath: file.path))
     }
-    @Test func diagnosticsNeverExposeCredentialEcho() async throws {
-        let config = TranslationConfiguration(client: CredentialEchoTranslationAI())
-        config.model = "test-model"
-        config.credential = "unit-secret-credential"
-        config.request(.modelTest)
-        await config.confirm(try #require(config.preview))
-        #expect(!config.status.contains("unit-secret-credential"))
-        #expect(config.status.contains("已隐藏"))
-    }
-    @Test func diagnosticTruncationCannotRevealPartOfCredential() async throws {
-        let config = TranslationConfiguration(client: LongCredentialEchoTranslationAI())
-        config.model = "test-model"
-        config.credential = "SYNTHETIC-PRIVATE-KEY"
-        config.request(.modelTest)
-        await config.confirm(try #require(config.preview))
-        #expect(!config.status.contains("SYNTHETIC"))
-        #expect(config.status.contains("已隐藏"))
-    }
-    @Test func previewRequiresFreshExplicitConfirmation() async throws {
-        let client = RecordingTranslationAI()
+    @Test func settingsModelFetchRunsDirectlyAndReportsSuccessOnTheAction() async {
+        let client = ModelListTranslationAI()
         let config = TranslationConfiguration(client: client)
         config.endpoint = "https://example.invalid/v1"
-        config.model = "test-model"
-        config.request(.modelTest)
-        #expect(await client.calls == 0)
-        let preview = try #require(config.preview)
-        #expect(preview.content == "Hello.")
-        #expect(preview.destination == "https://example.invalid/v1/chat/completions")
-        config.endpoint = "https://other.invalid/v1"
-        await config.confirm(preview)
-        #expect(await client.calls == 0)
+        await config.performSettingsAction(.models)
+        #expect(config.models == ["alpha", "beta"])
+        #expect(config.feedback(for: .models) == .success)
+        #expect(config.runningAction == nil && !config.isBusy)
+        #expect(await client.calls == 1)
+    }
+    @Test func settingsConnectionFailureStaysOnTheAction() async {
+        let config = TranslationConfiguration(client: FailingTranslationAI())
+        config.endpoint = "https://example.invalid/v1"
+        await config.performSettingsAction(.connection)
+        #expect(config.feedback(for: .connection) == .failure("服务暂时不可用，请稍后重试。"))
+        #expect(config.runningAction == nil && !config.isBusy)
+    }
+    @Test func settingsDeepLTestRunsDirectly() async {
+        let client = RecordingTranslationAI()
+        let config = TranslationConfiguration(client: client)
+        config.deeplKey = "unit-deepl-key"
+        await config.performSettingsAction(.deeplTranslate)
+        #expect(config.feedback(for: .deeplTranslate) == .success)
+        #expect(await client.calls == 1)
+    }
+    @Test func settingsEmptyModelListReportsFailureOnTheAction() async {
+        let config = TranslationConfiguration(client: EmptyModelListTranslationAI())
+        config.endpoint = "https://example.invalid/v1"
+        await config.performSettingsAction(.models)
+        #expect(config.models.isEmpty)
+        #expect(config.feedback(for: .models) == .failure("服务返回空模型列表；可手动填写。"))
+    }
+    @Test func changingSettingsClearsTransientActionResults() async {
+        let config = TranslationConfiguration(client: ModelListTranslationAI())
+        config.endpoint = "https://example.invalid/v1"
+        await config.performSettingsAction(.models)
+        config.model = "alpha"
+        #expect(config.feedback(for: .models) == nil)
+    }
+    @Test func modelSearchMatchesCaseInsensitivelyAndTrimsTheQuery() {
+        let models = ["gpt-4o", "Llama-3.1", "whisper-large-v3"]
+        #expect(TranslationModelFilter.matching(models, query: "  GPT ") == ["gpt-4o"])
+        #expect(TranslationModelFilter.matching(models, query: "large") == ["whisper-large-v3"])
+        #expect(TranslationModelFilter.matching(models, query: "   ") == models)
+        #expect(TranslationModelFilter.matching(models, query: "missing").isEmpty)
+    }
+    @Test func credentialsPersistAcrossReinitializationWithoutTouchingPreferencesFile() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("translation.json")
+        let store = MemoryCredentialStore()
+        let config = TranslationConfiguration(storageURL: file, client: RecordingTranslationAI(), credentialStore: store)
+        config.credential = "unit-ai-key"
+        config.deeplKey = "unit-deepl-key"
+        #expect(store.values[.aiAPIKey] == "unit-ai-key")
+        #expect(store.values[.deeplAPIKey] == "unit-deepl-key")
+        let reopened = TranslationConfiguration(storageURL: file, client: RecordingTranslationAI(), credentialStore: store)
+        #expect(reopened.credential == "unit-ai-key")
+        #expect(reopened.deeplKey == "unit-deepl-key")
+        let saved = try String(contentsOf: file, encoding: .utf8)
+        #expect(!saved.contains("unit-ai-key") && !saved.contains("unit-deepl-key"))
+    }
+
+    @Test func clearingACredentialRemovesItFromTheStore() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("translation.json")
+        let store = MemoryCredentialStore()
+        store.values[.aiAPIKey] = "old-key"
+        let config = TranslationConfiguration(storageURL: file, client: RecordingTranslationAI(), credentialStore: store)
+        #expect(config.credential == "old-key")
+        config.credential = ""
+        #expect(store.values[.aiAPIKey] == nil)
+    }
+
+    @Test func storageRecoveryClearsStoredCredentials() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("translation.json")
+        try Data("broken".utf8).write(to: file)
+        let store = MemoryCredentialStore()
+        store.values[.aiAPIKey] = "keep-ai"; store.values[.deeplAPIKey] = "keep-deepl"
+        let config = TranslationConfiguration(storageURL: file, client: RecordingTranslationAI(), credentialStore: store)
+        #expect(config.credential == "keep-ai" && config.deeplKey == "keep-deepl")
+        config.requestStorageRecovery(); config.confirmStorageRecovery()
+        #expect(config.credential.isEmpty && config.deeplKey.isEmpty)
+        #expect(store.values.isEmpty)
+    }
+
+    @Test func sameValueFocusWriteBackDoesNotCancelSettingsAction() async throws {
+        let client = GatedModelListTranslationAI()
+        let config = TranslationConfiguration(client: client)
+        config.endpoint = "https://example.invalid/v1"
+        config.runSettingsAction(.models)
+        await client.waitUntilStarted()
+        config.endpoint = config.endpoint
+        config.model = config.model
+        await client.releaseResponse()
+        for _ in 0..<100 {
+            if config.feedback(for: .models) != nil { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(config.feedback(for: .models) == .success)
+        #expect(config.models == ["alpha", "beta"])
+        #expect(!config.isBusy && config.runningAction == nil)
     }
 }
+
+@MainActor final class MemoryCredentialStore: TranslationCredentialStoring {
+    var values: [TranslationCredential: String] = [:]
+    func read(_ account: TranslationCredential) -> String? { values[account] }
+    func write(_ value: String, for account: TranslationCredential) {
+        values[account] = value.isEmpty ? nil : value
+    }
+    func remove(_ account: TranslationCredential) { values[account] = nil }
+}
+
 actor RecordingTranslationAI: TranslationAIClient {
     private(set) var calls = 0
     func perform(_ request: TranslationAIRequest) async throws -> TranslationAIResult {
@@ -168,12 +245,39 @@ actor RecordingTranslationAI: TranslationAIClient {
     }
 }
 
-struct CredentialEchoTranslationAI: TranslationAIClient {
-    func perform(_ request: TranslationAIRequest) async throws -> TranslationAIResult { .text("echo unit-secret-credential") }
+actor ModelListTranslationAI: TranslationAIClient {
+    private(set) var calls = 0
+    func perform(_ request: TranslationAIRequest) async throws -> TranslationAIResult {
+        calls += 1
+        return .models(["alpha", "beta"])
+    }
 }
 
-struct LongCredentialEchoTranslationAI: TranslationAIClient {
+actor GatedModelListTranslationAI: TranslationAIClient {
+    private var called = false
+    private var started: CheckedContinuation<Void, Never>?
+    private var release: CheckedContinuation<Void, Never>?
     func perform(_ request: TranslationAIRequest) async throws -> TranslationAIResult {
-        .text(String(repeating: "x", count: 4080) + "SYNTHETIC-PRIVATE-KEY")
+        called = true
+        started?.resume()
+        started = nil
+        await withCheckedContinuation { release = $0 }
+        return .models(["alpha", "beta"])
     }
+    func waitUntilStarted() async {
+        guard !called else { return }
+        await withCheckedContinuation { started = $0 }
+    }
+    func releaseResponse() {
+        release?.resume()
+        release = nil
+    }
+}
+
+struct EmptyModelListTranslationAI: TranslationAIClient {
+    func perform(_ request: TranslationAIRequest) async throws -> TranslationAIResult { .models([]) }
+}
+
+struct FailingTranslationAI: TranslationAIClient {
+    func perform(_ request: TranslationAIRequest) async throws -> TranslationAIResult { throw TranslationAIFailure.server }
 }

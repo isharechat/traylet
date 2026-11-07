@@ -99,7 +99,7 @@ struct TranslationEnginesTests {
         #expect(reopened.sortableEngines == [.myMemory, .system, .ai, .deepl])
     }
 
-    @Test func choosingAnotherEngineTranslatesExistingTextAndLaterSendsGoOutDirectly() async throws {
+    @Test func choosingAnotherEngineTranslatesExistingTextDirectlyAndLaterSendsDoToo() async throws {
         let client = RecordingTranslationAI()
         let config = TranslationConfiguration(client: client)
         config.setEnabled(.google, true)
@@ -110,14 +110,12 @@ struct TranslationEnginesTests {
         controller.select(.system)
         controller.select(.google)
         await controller.submissionTask?.value
-        let preview = try #require(controller.preview, "The first send to an engine is confirmed")
-        #expect(preview.action == .googleTranslate && controller.flow.phase == .awaitingConfirmation)
-        await controller.sendConfirmed(preview)
+        #expect(controller.preview == nil, "Switching engines must not open a confirmation sheet")
         #expect(controller.flow.output == "你好。")
         controller.flow.input = "Hello again"
         await controller.submit()
-        #expect(controller.preview == nil, "After the first confirmation the engine is used directly")
-        #expect(controller.flow.phase == .idle && controller.flow.output == "你好。" && !controller.flow.outputIsCurrent == false)
+        #expect(controller.preview == nil, "Later sends use the engine directly")
+        #expect(controller.flow.phase == .idle && controller.flow.output == "你好。" && controller.flow.outputIsCurrent)
     }
 }
 
@@ -158,6 +156,13 @@ struct TranslationDetectionTests {
         flow.finishRecognition(id, text: "这是一段从截图中识别出来的中文文字。")
         #expect(flow.detectedLanguage == "zh-Hans" && flow.target == "en" && flow.phase == .idle)
     }
+    @Test func shortLatinTextFallsBackToEnglishAndRetargets() {
+        let flow = TranslationFlow()
+        flow.target = "en"
+        flow.input = "Hello"
+        #expect(flow.detectedLanguage == "en")
+        #expect(flow.target == "zh-Hans")
+    }
 }
 
 @Suite("Translation engine icons") @MainActor
@@ -171,8 +176,12 @@ struct TranslationEngineIconTests {
     }
     @Test(.enabled(if: ProcessInfo.processInfo.environment["TRAYLET_ICON_SNAPSHOT"] != nil))
     func renderIcons() throws {
-        let view = HStack(spacing: 12) { ForEach(TranslationEngineChoice.allCases) { TranslationEngineIcon(engine: $0, size: 48) } }.padding(16).background(Color.white)
-        let host = NSHostingView(rootView: view); host.frame = NSRect(x: 0, y: 0, width: 400, height: 80)
+        let view = VStack(alignment: .leading, spacing: 12) {
+            ForEach([CGFloat(48), 18, 16], id: \.self) { size in
+                HStack(spacing: 12) { ForEach(TranslationEngineChoice.allCases) { TranslationEngineIcon(engine: $0, size: size) } }
+            }
+        }.padding(16).background(Color.white)
+        let host = NSHostingView(rootView: view); host.frame = NSRect(x: 0, y: 0, width: 400, height: 180)
         host.layoutSubtreeIfNeeded()
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds)); host.cacheDisplay(in: host.bounds, to: bitmap)
         try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: ProcessInfo.processInfo.environment["TRAYLET_ICON_SNAPSHOT"]!))

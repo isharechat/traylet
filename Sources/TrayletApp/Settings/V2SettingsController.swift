@@ -5,6 +5,7 @@ import Combine
 @MainActor final class V2SettingsController: NSObject, NSWindowDelegate {
     let navigation = V2SettingsNavigation()
     let actions: V2SettingsActions
+    let languagePacks = TranslationLanguagePackController()
     private let preferences: V2PreferencesStore
     private let shortcuts: V2ShortcutManager
     private let translation: TranslationConfiguration
@@ -38,23 +39,24 @@ import Combine
             }
         }
     }
-    func present(section: V2SettingsSection = .general) {
+    func present(section: V2SettingsSection = .general, languagePackPair: TranslationLanguagePackPair? = nil) {
+        if let languagePackPair { languagePacks.apply(languagePackPair) }
         if window == nil {
             let created = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 650), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
             created.title = windowTitle; created.minSize = NSSize(width: 560, height: 420)
             created.isReleasedWhenClosed = false; created.delegate = self
-            let hosting = NSHostingView(rootView: V2SettingsWorkspaceView(preferences: preferences, shortcuts: shortcuts, translation: translation, clipboard: clipboard, navigation: navigation, actions: actions, localization: localization))
+            let hosting = NSHostingView(rootView: V2SettingsWorkspaceView(preferences: preferences, shortcuts: shortcuts, translation: translation, languagePacks: languagePacks, clipboard: clipboard, navigation: navigation, actions: actions, localization: localization))
             created.appearance = Self.appearance(preferences.value.appearance)
             backing = V2GlassWindowBacking(window: created, content: hosting)
             created.center(); window = created
-            dismissal = V2FloatingWindow.hideOnResignKey(created) { [weak self] in self?.shortcuts.cancel(); self?.translation.cancel(); self?.clipboard.cancelRecording(); self?.window?.orderOut(nil) }
+            dismissal = V2FloatingWindow.hideOnResignKey(created) { [weak self] in self?.shortcuts.cancel(); self?.translation.cancel(); self?.window?.orderOut(nil) }
         }
         actions.refreshLoginStatus()
         navigation.navigate(to: section)
         if let window { presentWindow(window) }
     }
-    func close() { shortcuts.cancel(); translation.cancel(); clipboard.cancelRecording(); window?.close() }
-    func windowWillClose(_ notification: Notification) { shortcuts.cancel(); translation.cancel(); clipboard.cancelRecording() }
+    func close() { shortcuts.cancel(); translation.cancel(); window?.close() }
+    func windowWillClose(_ notification: Notification) { shortcuts.cancel(); translation.cancel() }
     func windowDidResignKey(_ notification: Notification) {
         // A conflict alert may take key focus; preserve its three explicit choices.
         if shortcuts.conflict == nil { shortcuts.cancel() }

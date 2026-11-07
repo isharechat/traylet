@@ -292,6 +292,7 @@ import TrayletCore
         await feature.start(poll: false)
         source.value = .init(generation: 1, items: [.text("original synthetic text"), .init(representations: ["public.png": image.pngData])], application: "synthetic.app")
         await feature.controller.refresh()
+        feature.controller.selectedID = feature.controller.entries.first?.id
     }
     func seedPreviousText() {
         translation.flow.input = "Previous source"

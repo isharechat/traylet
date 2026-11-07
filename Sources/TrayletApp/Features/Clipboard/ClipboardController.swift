@@ -3,7 +3,6 @@ import Combine
 
 @MainActor final class ClipboardController: ObservableObject {
     @Published private(set) var enabled = false
-    @Published private(set) var paused = false
     @Published private(set) var ignoringNextCopy = false
     @Published private(set) var entries: [ClipboardEntry] = [] {
         didSet { visibleEntriesCache = nil; if !displays.isEmpty, entries.count < displays.count { let ids = Set(entries.map(\.id)); displays = displays.filter { ids.contains($0.key) } } }
@@ -60,8 +59,8 @@ import Combine
     }
     var selectedEntry: ClipboardEntry? { filteredEntries.first { $0.id == selectedID } }
     func reconcileVisibleSelection() {
-        let visible = filteredEntries
-        if !visible.contains(where: { $0.id == selectedID }) { selectedID = visible.first?.id }
+        guard let selectedID else { return }
+        if !filteredEntries.contains(where: { $0.id == selectedID }) { self.selectedID = nil }
     }
     func moveVisibleSelection(by offset: Int) {
         let visible = filteredEntries
@@ -72,7 +71,7 @@ import Combine
     }
     func enable(poll: Bool = false) async {
         guard !enabled else { return }
-        enabled = true; paused = false; lifecycle &+= 1; runRevision &+= 1
+        enabled = true; lifecycle &+= 1; runRevision &+= 1
         favoritesLoaded = archive == nil
         canRetryFavoritesLoading = false
         let run = runRevision
@@ -81,11 +80,11 @@ import Combine
         let persistenceToken = persistenceRevision
         let favoritesToken = favoritesRevision
         baseline = source.generation // Start after the current content; never backfill.
-        if settings.saveLocally, let archive {
+        if let archive {
             do {
                 let loaded = try await archive.load()
                 guard enabled, token == lifecycle else { return }
-                if settings.saveLocally, persistenceToken == persistenceRevision {
+                if persistenceToken == persistenceRevision {
                     // Favorite mutations during startup supersede copies in the full-history snapshot.
                     var restored = favoritesToken == favoritesRevision ? loaded : loaded.filter { !$0.favorite }
                     if !pendingFavoriteDigests.isEmpty {
@@ -101,8 +100,9 @@ import Combine
             bodyState = .initialized
         }
         await loadFavorites(token: token)
+        reconcileVisibleSelection()
     }
-    /// Favorites saved earlier return even when full-history saving is off; they are merged by digest, never duplicated.
+    /// Favorites saved earlier return independently of the full history; they are merged by digest, never duplicated.
     private func loadFavorites(token: UInt64) async {
         guard let archive else { return }
         let version = favoritesRevision
@@ -126,6 +126,7 @@ import Combine
             entries = orderedIDs.compactMap { byID[$0] } + favorites.filter { !orderedSet.contains($0.id) }
                 + entries.filter { !$0.favorite }.sorted { $0.capturedAt > $1.capturedAt }
             favoritesLoaded = true; pendingFavoriteDigests.removeAll(); prune()
+            reconcileVisibleSelection()
             if favoritesNeedPersistence { await persistFavorites(); await persist() }
         } catch {
             guard enabled, token == lifecycle, version == favoritesRevision else { return }
@@ -158,8 +159,6 @@ import Combine
             }
         }
     }
-    func pause() { guard enabled else { return }; paused = true; baseline = source.generation }
-    func resume() { guard enabled else { return }; baseline = source.generation; paused = false }
     func setIgnoringNextCopy(_ value: Bool) {
         guard enabled || !value else { return }
         if value || ignoringNextCopy { baseline = source.generation }
@@ -169,7 +168,7 @@ import Combine
         guard enabled else { return }
         prune()
         if pruningNeedsPersistence { await persist() }
-        guard enabled, !paused else { return }
+        guard enabled else { return }
         let generation = source.generation
         guard generation != baseline else { return }
         baseline = generation
@@ -199,22 +198,16 @@ import Combine
     func loadPreferences() async {
         guard let archive else { return }
         do { if let value = try await archive.loadSettings(), !enabled, settingsRevision == 0 { settings = value } }
-        catch { message = "剪贴板偏好无法读取，使用默认设置（仅内存历史）。" }
+        catch { message = "剪贴板偏好无法读取，使用默认设置。" }
     }
     func updateSettings(_ value: ClipboardSettings) async {
-        let previouslySaved = settings.saveLocally
         let previousPolicy = settings.capturePolicy
         settingsRevision &+= 1; let settingsToken = settingsRevision
         settings = value; settings.normalize(); prune()
         if enabled, settings.capturePolicy != previousPolicy { baseline = source.generation }
-        if previouslySaved != settings.saveLocally { persistenceRevision &+= 1 }
         if let archive { do { try await archive.saveSettings(settings) } catch { message = "偏好保存失败。" } }
         guard settingsToken == settingsRevision else { return }
-        if previouslySaved && !settings.saveLocally {
-            bodyState = .initialized // Explicitly discarding the archive leaves this memory session authoritative.
-            await removeArchive()
-        }
-        else { await persist() }
+        await persist()
     }
     static let favoritesLimit = V2ClipboardArchive.favoritesLimit
     var orderedFavoriteIDs: [UUID] { entries.filter(\.favorite).map(\.id) }
@@ -317,10 +310,10 @@ import Combine
         }
         return false
     }
-    func stop() { timer?.cancel(); timer = nil; enabled = false; paused = false; ignoringNextCopy = false; canRetryFavoritesLoading = false; lifecycle &+= 1; runRevision &+= 1 }
+    func stop() { timer?.cancel(); timer = nil; enabled = false; ignoringNextCopy = false; canRetryFavoritesLoading = false; lifecycle &+= 1; runRevision &+= 1 }
     func shutdown() async {
         stop(); let token = lifecycle
-        prune(); if settings.saveLocally { await persist() }
+        prune(); await persist()
         guard token == lifecycle else { return }
         entries = []; selectedID = nil; pendingDeletionID = nil; bodyState = .unloaded
         favoritesLoaded = archive == nil
@@ -340,11 +333,13 @@ import Combine
             kept += 1; size += entry.byteCount
             return kept <= settings.maximumCount && size <= ClipboardPolicy.totalBytes
         }
-        if remaining.count != entries.count { entries = remaining; pruningNeedsPersistence = true }
-        reconcileVisibleSelection()
+        if remaining.count != entries.count {
+            entries = remaining; pruningNeedsPersistence = true
+            reconcileVisibleSelection()
+        }
     }
     private func persist() async {
-        guard bodyState != .unloaded, settings.saveLocally, let archive else { return }
+        guard bodyState != .unloaded, let archive else { return }
         revision &+= 1; let version = revision; let snapshot = entries
         do {
             try await archive.replace(snapshot, revision: version)

@@ -21,8 +21,8 @@ import Testing
         await store.shutdown()
     }
 
-    @Test(arguments: [false, true])
-    func restartRestoresFavoritesFileOrderInsteadOfCaptureDate(savingHistory: Bool) async throws {
+    @Test
+    func restartRestoresFavoritesFileOrderInsteadOfCaptureDate() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-favorite-order-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let now = Date(timeIntervalSince1970: 1_000_000)
@@ -31,13 +31,12 @@ import Testing
         let ordinary = entry("ordinary", date: now, favorite: false)
         let seed = V2ClipboardArchive(directory: directory)
         try await seed.replaceFavorites([first, second], revision: 1)
-        if savingHistory { try await seed.replace([ordinary, second, first], revision: 1) }
-        var settings = ClipboardSettings(); settings.saveLocally = savingHistory
+        try await seed.replace([ordinary, second, first], revision: 1)
         let source = MemoryClipboardSource()
-        let store = ClipboardController(source: source, writer: MemoryClipboardWriter(), archive: V2ClipboardArchive(directory: directory), settings: settings, clock: { now })
+        let store = ClipboardController(source: source, writer: MemoryClipboardWriter(), archive: V2ClipboardArchive(directory: directory), clock: { now })
         #expect(!store.enabled && store.entries.isEmpty && source.reads == 0)
         await store.enable()
-        #expect(store.filteredEntries == (savingHistory ? [first, second, ordinary] : [first, second]))
+        #expect(store.filteredEntries == [first, second, ordinary])
         #expect(source.reads == 0)
         await store.shutdown()
     }
@@ -209,7 +208,7 @@ import Testing
         let favorite = entry("alpha", date: now)
         let ordinary = entry("ordinary", date: now, favorite: false)
         let archive = FavoriteOrderingArchive([favorite], history: [ordinary, favorite])
-        var settings = ClipboardSettings(); settings.saveLocally = true
+        let settings = ClipboardSettings()
         let store = ClipboardController(source: MemoryClipboardSource(), writer: MemoryClipboardWriter(), archive: archive, settings: settings, clock: { now })
         await archive.suspendBodyLoad()
         let startup = Task { await store.enable() }
@@ -229,7 +228,7 @@ import Testing
         let ordinary = entry("ordinary", date: now, favorite: false)
         let archive = FavoriteOrderingArchive([], history: [ordinary, newerPin, olderPin])
         await archive.failFavoritesLoad()
-        var settings = ClipboardSettings(); settings.saveLocally = true
+        let settings = ClipboardSettings()
         let store = ClipboardController(source: MemoryClipboardSource(), writer: MemoryClipboardWriter(), archive: archive, settings: settings, clock: { now })
         await store.enable()
         #expect(store.entries == [newerPin, olderPin, ordinary])
@@ -247,7 +246,7 @@ import Testing
         var charlie = entry("charlie", date: now.addingTimeInterval(-1), favorite: false)
         let unknown = entry("only in favorites file", date: now.addingTimeInterval(-4))
         let archive = FavoriteOrderingArchive([beta, alpha, unknown], history: [charlie, alpha, beta])
-        var settings = ClipboardSettings(); settings.saveLocally = true
+        let settings = ClipboardSettings()
         let store = ClipboardController(source: MemoryClipboardSource(), writer: MemoryClipboardWriter(), archive: archive, settings: settings, clock: { now })
         await archive.suspendLoad()
         let startup = Task { await store.enable() }
@@ -274,7 +273,7 @@ import Testing
         let beta = entry("beta", date: now)
         let unknown = entry("only in favorites file", date: now)
         let archive = FavoriteOrderingArchive([alpha, beta, unknown], history: [alpha, beta])
-        var settings = ClipboardSettings(); settings.saveLocally = true
+        let settings = ClipboardSettings()
         let store = ClipboardController(source: MemoryClipboardSource(), writer: MemoryClipboardWriter(), archive: archive, settings: settings, clock: { now })
         await archive.suspendLoad(); await archive.failWrites()
         let startup = Task { await store.enable() }
@@ -297,7 +296,7 @@ import Testing
         let alpha = entry("alpha", date: now)
         let unknown = entry("only in favorites file", date: now)
         let archive = FavoriteOrderingArchive([alpha, unknown], history: [alpha])
-        var settings = ClipboardSettings(); settings.saveLocally = true
+        let settings = ClipboardSettings()
         let store = ClipboardController(source: MemoryClipboardSource(), writer: MemoryClipboardWriter(), archive: archive, settings: settings, clock: { now })
         await archive.suspendLoad()
         let startup = Task { await store.enable() }
@@ -320,7 +319,7 @@ import Testing
         let beta = entry("beta", date: now)
         let unknown = entry("only in favorites file", date: now)
         let archive = FavoriteOrderingArchive([alpha, beta, unknown], history: [alpha, beta])
-        var settings = ClipboardSettings(); settings.saveLocally = true
+        let settings = ClipboardSettings()
         let store = ClipboardController(source: MemoryClipboardSource(), writer: MemoryClipboardWriter(), archive: archive, settings: settings, clock: { now })
         await archive.suspendLoad()
         let startup = Task { await store.enable() }
@@ -356,7 +355,7 @@ import Testing
         let unknown = entry("only in favorites file", date: now)
         let ordinary = entry("ordinary", date: now, favorite: false)
         let archive = FavoriteOrderingArchive([beta, unknown, alpha], history: [ordinary, alpha, beta])
-        var settings = ClipboardSettings(); settings.saveLocally = true
+        let settings = ClipboardSettings()
         let store = ClipboardController(source: MemoryClipboardSource(), writer: MemoryClipboardWriter(), archive: archive, settings: settings, clock: { now })
         if blockedLoad == "history" { await archive.suspendBodyLoad() }
         else { await archive.suspendLoad() }
@@ -378,14 +377,14 @@ import Testing
         let unknown = entry("only in favorites file", date: now)
         let source = FavoriteRetryClipboardSource(), writer = MemoryClipboardWriter()
         let archive = FavoriteOrderingArchive([alpha, beta, unknown], history: [alpha, beta])
-        var settings = ClipboardSettings(); settings.saveLocally = true
+        let settings = ClipboardSettings()
         let store = ClipboardController(source: source, writer: writer, archive: archive, settings: settings, clock: { now })
         #expect(!store.canRetryFavoritesLoading)
         await store.retryFavoritesLoading()
         #expect(await archive.favoritesLoadCount == 0)
         await archive.failFavoritesLoad(); await store.enable()
         #expect(store.canRetryFavoritesLoading)
-        await store.delete(alpha.id); store.pause()
+        await store.delete(alpha.id)
         let generationReads = source.generationReads
         await archive.recoverFavoritesLoad(); await archive.suspendLoad()
         let retry = Task { await store.retryFavoritesLoading() }
@@ -393,7 +392,7 @@ import Testing
         #expect(!store.canRetryFavoritesLoading)
         await store.retryFavoritesLoading()
         #expect(await archive.favoritesLoadCount == 2)
-        #expect(store.enabled && store.paused)
+        #expect(store.enabled)
         if copyWhileLoading { #expect(store.copy(beta.id)) }
         await archive.releaseLoad(); await retry.value
         #expect(!store.canRetryFavoritesLoading)
@@ -402,7 +401,7 @@ import Testing
         #expect(await archive.favorites == [beta, unknown])
         #expect(source.generationReads == generationReads && source.bodyReads == 0)
         #expect(writer.writes.count == (copyWhileLoading ? 1 : 0))
-        #expect(store.enabled && store.paused)
+        #expect(store.enabled)
         await store.retryFavoritesLoading()
         #expect(await archive.favoritesLoadCount == 2)
         #expect(await store.reorderFavorites([unknown.id, beta.id]))
@@ -414,7 +413,7 @@ import Testing
         let alpha = entry("alpha", date: now), beta = entry("beta", date: now)
         let unknown = entry("only in favorites file", date: now)
         let archive = FavoriteOrderingArchive([alpha, beta, unknown], history: [alpha, beta])
-        var settings = ClipboardSettings(); settings.saveLocally = true
+        let settings = ClipboardSettings()
         let source = FavoriteRetryClipboardSource()
         let store = ClipboardController(source: source, writer: MemoryClipboardWriter(), archive: archive, settings: settings, clock: { now })
         await archive.failFavoritesLoad(); await store.enable()
@@ -440,7 +439,7 @@ import Testing
         let alpha = entry("alpha", date: now), unknown = entry("only in favorites file", date: now)
         let ordinary = entry("ordinary", date: now, favorite: false)
         let archive = FavoriteOrderingArchive([alpha, unknown], history: [ordinary, alpha])
-        var settings = ClipboardSettings(); settings.saveLocally = true
+        let settings = ClipboardSettings()
         let store = ClipboardController(source: MemoryClipboardSource(), writer: MemoryClipboardWriter(), archive: archive, settings: settings, clock: { now })
         await archive.failFavoritesLoad(); await store.enable()
         await archive.recoverFavoritesLoad(); await archive.suspendLoad()

@@ -21,6 +21,7 @@ import TrayletCore
     private weak var previousWindow: NSWindow?
     private var terminating = false
     private var authorizationTimer: Timer?
+    private var requestedAccessibility = false
     var selectedText: any V2SelectedTextReading = V2AccessibilitySelectedText()
     private var accessibilityGranted = false
     private var welcomeBacking: V2GlassWindowBacking?
@@ -32,20 +33,26 @@ import TrayletCore
     }
     init(directory: URL = V2AppCoordinator.dataRoot) {
         let preferences = V2PreferencesStore(file: directory.appendingPathComponent("preferences.json"))
-        let configuration = TranslationConfiguration(storageURL: directory.appendingPathComponent("translation.json"))
+        let configuration = TranslationConfiguration(storageURL: directory.appendingPathComponent("translation.json"),
+                                                     credentialStore: KeychainTranslationCredentialStore())
         let shortcuts = V2ShortcutManager(preferences: preferences, driver: V2TransactionalShortcutDriver(), unavailable: V2KeyChord.unavailableReason)
-        let clipboard = ClipboardFeature(directory: directory.appendingPathComponent("clipboard", isDirectory: true))
+        // Recording is always on for the whole run; there is no user on/off or pause. It stops only on quit.
+        let clipboard = ClipboardFeature(directory: directory.appendingPathComponent("clipboard", isDirectory: true), autoStart: true)
         self.preferences = preferences; self.shortcuts = shortcuts; self.clipboard = clipboard
         let translation = TranslationController(configuration: configuration)
         self.translation = translation
         let editor = CaptureEditorController(), capture = V2CaptureSession()
         self.editor = editor; self.capture = capture
-        clipboardEditing = ClipboardEditorBridge(clipboard: clipboard, editor: editor, canPresent: { !capture.isBusy })
-        clipboardTranslation = ClipboardTranslationBridge(clipboard: clipboard, translation: translation, canPresent: { !capture.isBusy && !editor.isOpen })
+        clipboardEditing = ClipboardEditorBridge(clipboard: clipboard, editor: editor, canPresent: {
+            editor.discardHiddenSession(); return !capture.isBusy
+        })
+        clipboardTranslation = ClipboardTranslationBridge(clipboard: clipboard, translation: translation, canPresent: {
+            editor.discardHiddenSession(); return !capture.isBusy && !editor.isOpen
+        })
         settings = V2SettingsController(preferences: preferences, shortcuts: shortcuts, translation: configuration, clipboard: clipboard)
         super.init()
         shortcuts.onInvoke = { [weak self] in self?.invoke($0) }
-        translation.onOpenSettings = { [weak self] in self?.settings.present(section: .translation) }
+        translation.onOpenSettings = { [weak self] pair in self?.settings.present(section: .translation, languagePackPair: pair) }
         editor.onComplete = { [weak self] in
             guard let self, !self.terminating else { return }
             if !self.clipboardEditing.complete() { self.restoreFocus() }
@@ -71,7 +78,6 @@ import TrayletCore
     }
 
     func launch() {
-        // Recording is off each run. Only the clipboard's explicit confirmation may start it.
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         NSApp.applicationIconImage = V2Brand.icon
         item.button?.image = V2Brand.mark()
@@ -116,13 +122,20 @@ import TrayletCore
     func invoke(_ action: V2Action) {
         guard !terminating, shortcuts.recordingAction == nil, shortcuts.conflict == nil else { return }
         guard V2AuthorizationGate.allowsFeatures(welcomeCompleted: preferences.value.hasCompletedWelcome) else { showWelcome(); return }
+        editor.discardHiddenSession()
         guard !editor.isOpen, !capture.isBusy else { NSSound.beep(); return }
         switch action {
         case .inputTranslation:
             // Read the selection before Traylet takes focus; a found selection replaces the source text and translates.
             let selection = selectedText.selectedText()
+            let needsAccessibility = selection == nil && !selectedText.isAuthorized
+            if needsAccessibility, !requestedAccessibility {
+                requestedAccessibility = true
+                V2AccessibilitySelectedText.requestTrust()
+            }
             translation.present(text: selection ?? "")
             if selection != nil { translation.startSubmission() }
+            else if needsAccessibility { translation.showAccessibilityNotice() }
         case .clipboard: clipboard.present()
         case .regionCapture, .screenCapture, .captureTranslation: startCapture(action)
         }
@@ -228,6 +241,7 @@ import TrayletCore
     }
     func requestTermination() -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
+        editor.discardHiddenSession()
         if editor.isOpen {
             let alert = NSAlert(); alert.messageText = V2L("放弃当前截图并退出？")
             alert.informativeText = V2L("未保存的编辑会丢失。")

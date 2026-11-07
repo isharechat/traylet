@@ -139,6 +139,7 @@ import TrayletCore
         await feature.start(poll: false)
         source.value = .init(generation: 1, items: [.text("synthetic original"), .init(representations: ["public.png": data as Data])], application: "synthetic.app")
         await feature.controller.refresh()
+        feature.controller.selectedID = feature.controller.entries.first?.id
         preparedPixels = prepared.pixels
     }
 }

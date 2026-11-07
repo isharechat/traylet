@@ -1,19 +1,26 @@
+import AppKit
 import SwiftUI
 import TrayletCore
 
 struct TranslationConfigurationView: View {
     @ObservedObject var configuration: TranslationConfiguration
     @ObservedObject private var localization = V2Localization.shared
-    @State private var modelSearch = ""
+    @StateObject private var languagePacks: TranslationLanguagePackController
     @State private var showsStorageRecovery = false
+    @State private var showsModelPicker = false
     @State private var expanded: Set<TranslationEngineChoice>
     @State private var dragging: TranslationEngineChoice?
-    init(configuration: TranslationConfiguration, expanded: Set<TranslationEngineChoice> = []) {
+    @State private var accessibilityGranted = V2AccessibilitySelectedText.isTrusted
+    @FocusState private var modelFieldFocused: Bool
+    init(configuration: TranslationConfiguration, expanded: Set<TranslationEngineChoice> = [],
+         languagePacks: TranslationLanguagePackController = TranslationLanguagePackController()) {
         self.configuration = configuration
         _expanded = State(initialValue: expanded)
+        _languagePacks = StateObject(wrappedValue: languagePacks)
     }
     var body: some View {
         Form {
+            TranslationLanguagePackSettings(controller: languagePacks)
             Section {
                 Picker(V2L("默认翻译引擎"), selection: $configuration.engine) {
                     ForEach(TranslationEngineChoice.allCases) { Text(V2L(TranslationWorkspaceView.engineTitle($0))).tag($0) }
@@ -25,6 +32,23 @@ struct TranslationConfigurationView: View {
                     }
                 }
             }
+            Section {
+                LabeledContent(V2L("读取选中文本")) {
+                    HStack(spacing: 8) {
+                        Text(V2L(accessibilityGranted ? "已授权" : "未授权"))
+                            .foregroundStyle(accessibilityGranted ? Color.secondary : Color.orange)
+                        Button(V2L(accessibilityGranted ? "系统设置" : "请求权限")) {
+                            if accessibilityGranted { V2AccessibilitySelectedText.openSettings() }
+                            else { V2AccessibilitySelectedText.requestTrust() }
+                        }
+                        .controlSize(.small)
+                    }
+                }
+            } header: {
+                Text(V2L("辅助功能"))
+            } footer: {
+                Text(V2L("允许 Traylet 在按下输入翻译快捷键时读取其他应用的选中文本；修改授权后回到本页会自动刷新状态，如仍无法读取请重新打开 Traylet。"))
+            }
             Section(V2L("翻译引擎")) {
                 engineRow(configuration.engine)
                 configurationRows(configuration.engine)
@@ -34,10 +58,8 @@ struct TranslationConfigurationView: View {
                     configurationRows(engine)
                 }
             }
-            if configuration.isBusy || !configuration.status.isEmpty || configuration.storageIssue != nil || configuration.storageRecoveryNotice != nil {
+            if configuration.storageIssue != nil || configuration.storageRecoveryNotice != nil {
                 Section {
-                    if configuration.isBusy { HStack { ProgressView().controlSize(.small); Text(V2L("正在访问已确认的服务…")); Spacer(); Button(V2L("取消")) { configuration.cancel() } } }
-                    if !configuration.status.isEmpty { Label(configuration.localizedStatus, systemImage: "info.circle").textSelection(.enabled) }
                     if let issue = configuration.storageIssue {
                         Label(V2L(issue), systemImage: "exclamationmark.triangle").foregroundStyle(.red)
                         Button(V2L("备份并恢复默认配置")) { configuration.requestStorageRecovery(); showsStorageRecovery = configuration.storageRecoveryRequested }
@@ -47,15 +69,15 @@ struct TranslationConfigurationView: View {
             }
         }
         .formStyle(.grouped)
-        .sheet(item: Binding(get: { configuration.preview }, set: { if $0 == nil && configuration.preview != nil { configuration.cancel() } })) { request in
-            TranslationSendPreview(request: request, cancel: configuration.cancel) { configuration.startConfirmed(request) }
-        }
         .onDisappear { configuration.cancel() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            accessibilityGranted = V2AccessibilitySelectedText.isTrusted
+        }
         .alert(V2L("备份并恢复默认配置？"), isPresented: $showsStorageRecovery) {
             Button(V2L("取消"), role: .cancel) { configuration.cancelStorageRecovery() }
             Button(V2L("备份并恢复")) { configuration.confirmStorageRecovery() }
         } message: {
-            Text(V2L("将保留当前 v2 配置文件的独立备份，恢复系统翻译默认值，并清除本次内存中的 API Key。不会读取或修改旧版本配置、钥匙串或其他数据。"))
+            Text(V2L("将保留当前 v2 配置文件的独立备份，恢复系统翻译默认值，并清除钥匙串中的 API Key。不会读取或修改旧版本配置或其他数据。"))
         }
     }
     /// Checkbox, icon and name, then the configure pill and a drag handle; the pinned default shows a badge instead of the handle.
@@ -127,31 +149,86 @@ struct TranslationConfigurationView: View {
         Picker(V2L("提供商"), selection: $configuration.provider) { ForEach(TranslationAIProvider.allCases) { Text(V2L($0.title)).tag($0) } }
         TextField(V2L("服务地址"), text: $configuration.endpoint, prompt: Text(verbatim: "https://example.com/v1")).disabled(configuration.provider == .openAI)
             .help(V2L("本机 HTTP 仅支持 localhost、127.0.0.1 或 ::1"))
-        TextField(V2L("模型"), text: $configuration.model)
-        SecureField(V2L("API Key"), text: $configuration.credential, prompt: Text(V2L("仅保存在内存，退出后清除")))
-        HStack {
-            Spacer()
-            Button(V2L("获取模型")) { configuration.request(.models) }
-            Button(V2L("测试连接")) { configuration.request(.connection) }
-            Button(V2L("固定短文测试")) { configuration.request(.modelTest) }
-        }.disabled(configuration.isBusy)
-        if !configuration.models.isEmpty {
-            let matches = configuration.models.filter { modelSearch.isEmpty || $0.localizedCaseInsensitiveContains(modelSearch) }
-            TextField(V2L("搜索模型"), text: $modelSearch, prompt: Text(V2L("搜索模型"))).labelsHidden().textFieldStyle(.roundedBorder)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(matches, id: \.self) { model in
-                        Button { configuration.model = model } label: { HStack { Text(model).lineLimit(2); Spacer(); if configuration.model == model { Image(systemName: "checkmark") } } }.buttonStyle(.borderless).padding(4)
-                    }
+        LabeledContent(V2L("模型")) {
+            HStack(spacing: 0) {
+                TextField(V2L("模型"), text: $configuration.model)
+                    .labelsHidden().textFieldStyle(.plain).focused($modelFieldFocused)
+                    .multilineTextAlignment(.leading)
+                    .padding(.horizontal, 8).frame(maxWidth: .infinity)
+                Divider().frame(height: 16)
+                Button { showsModelPicker.toggle() } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .rotationEffect(.degrees(showsModelPicker ? 180 : 0))
+                        .foregroundStyle(showsModelPicker ? Color.accentColor : Color.secondary)
+                        .frame(width: 28, height: 24).contentShape(Rectangle())
                 }
-            }.frame(height: min(CGFloat(matches.count) * 30, 150))
+                .buttonStyle(.plain)
+                .help(V2L("从已获取的模型中选择"))
+                .accessibilityLabel(V2L("选择模型"))
+                .accessibilityValue(V2L(showsModelPicker ? "已展开" : "已收起"))
+                .accessibilityIdentifier("translation.model-list")
+            }
+            .frame(height: 24)
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 5))
+            .overlay {
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(modelFieldFocused || showsModelPicker ? Color.accentColor.opacity(0.8) : Color(nsColor: .separatorColor), lineWidth: 1)
+            }
+            .popover(isPresented: $showsModelPicker, arrowEdge: .bottom) {
+                TranslationModelPicker(models: configuration.models, selection: $configuration.model, isPresented: $showsModelPicker)
+            }
+            .onChange(of: configuration.models) { _, models in
+                showsModelPicker = !models.isEmpty
+            }
+            .onChange(of: configuration.feedback(for: .models)) { _, feedback in
+                if case .success? = feedback, !configuration.models.isEmpty { showsModelPicker = true }
+            }
+            .onDisappear { showsModelPicker = false }
+        }
+        SecureField(V2L("API Key"), text: $configuration.credential, prompt: Text(V2L("保存在 macOS 钥匙串")))
+        HStack(spacing: 8) {
+            Spacer()
+            settingsActionButton(.models, idle: "获取模型", running: "获取中…", success: "获取成功", failure: "获取失败",
+                                 help: "向当前服务地址请求模型列表，不发送原文、截图或剪贴板。", identifier: "translation.fetch-models")
+            settingsActionButton(.connection, idle: "测试连接", running: "测试中…", success: "连接成功", failure: "连接失败",
+                                 help: "请求当前服务的模型列表，不发送原文、截图或剪贴板。", identifier: "translation.test-connection")
         }
     }
+    @ViewBuilder private func settingsActionButton(_ action: TranslationAIAction, idle: String, running: String, success: String, failure: String, help: String, identifier: String) -> some View {
+        let feedback = configuration.feedback(for: action)
+        let failureMessage: String? = if case .failure(let message)? = feedback { message } else { nil }
+        Button {
+            if action == .models { modelFieldFocused = true }
+            configuration.runSettingsAction(action)
+        } label: {
+            HStack(spacing: 5) {
+                if configuration.isRunning(action) {
+                    ProgressView().controlSize(.small)
+                    Text(V2L(running))
+                } else if case .success? = feedback {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Text(V2L(success))
+                } else if failureMessage != nil {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+                    Text(V2L(failure))
+                } else {
+                    Text(V2L(idle))
+                }
+            }.frame(minWidth: 82)
+        }
+        .disabled(configuration.isBusy)
+        .help(V2L(failureMessage ?? help))
+        .accessibilityIdentifier(identifier)
+        .accessibilityValue(V2L(failureMessage ?? (feedback == .success ? success : configuration.isRunning(action) ? running : idle)))
+    }
     @ViewBuilder private var deeplConfiguration: some View {
-        SecureField(V2L("API Key"), text: $configuration.deeplKey, prompt: Text(V2L("仅保存在内存，退出后清除")))
+        SecureField(V2L("API Key"), text: $configuration.deeplKey, prompt: Text(V2L("保存在 macOS 钥匙串")))
         HStack {
             Spacer()
-            Button(V2L("测试连接")) { configuration.request(.deeplTranslate) }.disabled(configuration.isBusy || configuration.deeplKey.isEmpty)
+            settingsActionButton(.deeplTranslate, idle: "测试连接", running: "测试中…", success: "连接成功", failure: "连接失败",
+                                 help: "发送固定短句 Hello. 测试连接，不发送原文、截图或剪贴板。", identifier: "translation.test-deepl")
+                .disabled(configuration.isBusy || configuration.deeplKey.isEmpty)
         }
     }
     private static func note(_ engine: TranslationEngineChoice) -> String {
@@ -160,6 +237,111 @@ struct TranslationConfigurationView: View {
         case .ai, .deepl: "需 API Key"
         case .google, .myMemory: "免费，无需密钥"
         }
+    }
+}
+
+enum TranslationModelFilter {
+    static func matching(_ models: [String], query: String) -> [String] {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return models }
+        return models.filter { $0.localizedCaseInsensitiveContains(term) }
+    }
+}
+
+struct TranslationModelPicker: View {
+    let models: [String]
+    @Binding var selection: String
+    @Binding var isPresented: Bool
+    @State private var query = ""
+    @FocusState private var searchFocused: Bool
+    private var matches: [String] { TranslationModelFilter.matching(models, query: query) }
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(V2L("选择模型")).font(.headline)
+                Spacer()
+                if !models.isEmpty {
+                    Text("\(matches.count)/\(models.count)")
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 8)
+            if models.isEmpty {
+                VStack(spacing: 6) {
+                    Image(systemName: "tray").font(.system(size: 18)).foregroundStyle(.tertiary)
+                    Text(V2L("尚未获取模型")).font(.callout).foregroundStyle(.secondary)
+                    Text(V2L("先点击“获取模型”获取可用模型列表。")).font(.caption).foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 88)
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField(V2L("搜索模型"), text: $query, prompt: Text(V2L("输入模型名称筛选")))
+                        .labelsHidden().textFieldStyle(.plain).focused($searchFocused)
+                    if !query.isEmpty {
+                        Button { query = ""; searchFocused = true } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain).help(V2L("清除搜索")).accessibilityLabel(V2L("清除搜索"))
+                    }
+                }
+                .padding(.horizontal, 8).frame(height: 28)
+                .background(Color(nsColor: .quaternarySystemFill), in: RoundedRectangle(cornerRadius: 6))
+                .padding(.horizontal, 10).padding(.bottom, 8)
+                Divider()
+                if matches.isEmpty {
+                    VStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass").font(.system(size: 18)).foregroundStyle(.tertiary)
+                        Text(V2L("没有匹配的模型")).font(.callout).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 88)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(matches, id: \.self) { model in
+                                TranslationModelRow(model: model, selected: selection == model) {
+                                    selection = model
+                                    isPresented = false
+                                }
+                            }
+                        }.padding(.vertical, 4)
+                    }
+                    .frame(height: min(CGFloat(matches.count) * 32 + 8, 240))
+                }
+            }
+        }
+        .frame(width: 360)
+        .task {
+            await Task.yield()
+            if !models.isEmpty { searchFocused = true }
+        }
+        .onExitCommand { isPresented = false }
+    }
+}
+
+private struct TranslationModelRow: View {
+    let model: String
+    let selected: Bool
+    let choose: () -> Void
+    @State private var hovering = false
+    var body: some View {
+        Button(action: choose) {
+            HStack(spacing: 8) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                    .frame(width: 14)
+                Text(model).lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10).frame(height: 32)
+            .background(selected ? Color.accentColor.opacity(0.12) : hovering ? Color.primary.opacity(0.06) : Color.clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel(model)
+        .accessibilityValue(V2L(selected ? "已选择" : "未选择"))
     }
 }
 

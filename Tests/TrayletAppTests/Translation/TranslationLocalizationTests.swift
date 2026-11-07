@@ -6,13 +6,11 @@ import Testing
 
 @Suite("Translation English presentation", .serialized) @MainActor
 struct TranslationLocalizationTests {
-    @Test func englishTitleActionsAndDiagnosticKeepUserTextUntouched() async throws {
+    @Test func englishTitleAndActionsKeepUserTextUntouched() async throws {
         let configuration = TranslationConfiguration(client: LocalizationLiteralAI())
         let controller = TranslationController(configuration: configuration, writer: TranslationFakeWriter(), availability: TranslationFakeAvailability(), speech: TranslationFakeSpeech())
         controller.flow.input = "发送"
         configuration.model = "模型-发送"
-        configuration.request(.modelTest)
-        await configuration.confirm(try #require(configuration.preview))
         // No suspension while shared UI language is changed, so other MainActor tests cannot interleave.
         let previous = V2Localization.shared.languageCode
         defer { V2Localization.shared.languageCode = previous }
@@ -23,14 +21,20 @@ struct TranslationLocalizationTests {
         #expect(V2L("清空译文") == "Clear Translation")
         #expect(V2L("备份并恢复默认配置") == "Back Up and Restore Defaults")
         #expect(V2L("发送") == "Send")
-        #expect(configuration.localizedStatus == "Sample Text Test Result:\n发送")
+        #expect(V2L("获取成功") == "Models Fetched")
+        #expect(V2L("连接失败") == "Connection Failed")
+        #expect(V2L("从已获取的模型中选择") == "Choose from fetched models")
+        #expect(V2L("尚未获取模型") == "No Models Fetched")
+        #expect(V2L("先点击“获取模型”获取可用模型列表。") == "Choose “Fetch Models” to load the available model list.")
+        #expect(V2L("搜索模型") == "Search Models")
+        #expect(V2L("输入模型名称筛选") == "Filter by model name")
+        #expect(V2L("没有匹配的模型") == "No Matching Models")
         #expect(controller.flow.input == "发送")
         #expect(configuration.model == "模型-发送")
         let preview = try configuration.makeRequest(.translate, content: controller.flow.input)
         #expect(preview.content == "发送")
         V2Localization.shared.languageCode = "zh-Hans"
         #expect(controller.windowTitle == "翻译")
-        #expect(configuration.localizedStatus == "固定短文测试结果：\n发送")
     }
 
     @Test(.enabled("Native hidden-window AX probe is opt-in; an empty accessibility tree is an unavailable environment, not passing button coverage.", {

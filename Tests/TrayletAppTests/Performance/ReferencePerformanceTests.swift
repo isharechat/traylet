@@ -183,12 +183,10 @@ import TrayletCore
     }
     private func clipboardFixture(_ entries: [ClipboardEntry]) async -> ClipboardFixture {
         let source = ReferenceClipboardSource(), writer = ReferenceClipboardWriter()
-        var settings = ClipboardSettings(); settings.maximumCount = 1000; settings.saveLocally = true
+        var settings = ClipboardSettings(); settings.maximumCount = 1000
         let controller = ClipboardController(source: source, writer: writer, archive: ReferenceMemoryArchive(entries: entries), settings: settings, clock: { Self.now })
         await controller.enable(poll: false)
-        settings.saveLocally = false
-        await controller.updateSettings(settings)
-        #expect(controller.entries.count == entries.count && !controller.settings.saveLocally)
+        #expect(controller.entries.count == entries.count)
         return ClipboardFixture(source: source, writer: writer, controller: controller)
     }
     private static let now = Date(timeIntervalSince1970: 1_800_000_000)

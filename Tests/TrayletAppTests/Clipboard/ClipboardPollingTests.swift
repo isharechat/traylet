@@ -32,6 +32,19 @@ import Testing
         await controller.refresh()
         #expect(controller.entries.isEmpty)
     }
+
+    @Test func expiredSelectedEntryClearsSelectionOnPoll() async {
+        var now = Date()
+        let source = PollingSource()
+        let controller = ClipboardController(source: source, writer: PollingWriter(), clock: { now })
+        await controller.enable()
+        source.generation = 1; source.next = V2ClipboardSnapshot(generation: 1, items: [.text("selected")], application: "com.example")
+        await controller.refresh()
+        controller.selectedID = controller.entries.first?.id
+        now = now.addingTimeInterval(8 * 86400)
+        await controller.refresh()
+        #expect(controller.entries.isEmpty && controller.selectedID == nil)
+    }
 }
 
 @MainActor private final class PollingSource: ClipboardSource {

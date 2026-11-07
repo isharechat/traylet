@@ -6,11 +6,20 @@ import UniformTypeIdentifiers
     private var panel: EditingPanel?
     private var canvas: EditingCanvasView?
     private let writer: any ImageOutputWriting
+    private let floating: FloatingImageController
     private let presentPanel: (NSPanel, NSView) -> Void
     private let chooseSaveDestination: (NSPanel, @escaping (URL?) -> Void) -> Void
     var onTranslate: ((RasterImage) -> Void)?
     var onComplete: (() -> Void)?
     var isOpen: Bool { panel != nil }
+
+    /// AppKit can order a panel out without closing it, for example when the app is hidden
+    /// or deactivated. The retained canvas is no longer interactive, so release it before
+    /// rejecting another capture or asking whether an edit should be discarded on quit.
+    func discardHiddenSession() {
+        guard let panel, !panel.isVisible else { return }
+        cancel()
+    }
 
     /// Opens an already normalized history image without replacing an active edit.
     func presentImported(image:RasterImage,decoded:CGImage,availableFrame:CGRect) -> Bool {
@@ -31,6 +40,7 @@ import UniformTypeIdentifiers
     }
 
     init(writer: any ImageOutputWriting = V2SystemClipboardWriter(),
+         floating: FloatingImageController = FloatingImageController(),
          chooseSaveDestination: @escaping (NSPanel, @escaping (URL?) -> Void) -> Void = { panel, completion in
         let picker = NSSavePanel()
         picker.allowedContentTypes = [.png]
@@ -40,7 +50,8 @@ import UniformTypeIdentifiers
         window.makeKeyAndOrderFront(nil); window.makeFirstResponder(view)
         NSApp.activate(ignoringOtherApps:true)
     }) {
-        self.writer = writer; self.presentPanel = presentPanel; self.chooseSaveDestination = chooseSaveDestination
+        self.writer = writer; self.floating = floating
+        self.presentPanel = presentPanel; self.chooseSaveDestination = chooseSaveDestination
         super.init()
     }
 
@@ -57,6 +68,7 @@ import UniformTypeIdentifiers
         window.isReleasedWhenClosed = false
         window.level = .screenSaver
         window.collectionBehavior = [.canJoinAllSpaces,.fullScreenAuxiliary]
+        window.hidesOnDeactivate = false
         window.backgroundColor = .windowBackgroundColor
         window.isOpaque = true; window.hasShadow = false
         window.acceptsMouseMovedEvents = true
@@ -76,6 +88,10 @@ import UniformTypeIdentifiers
             // Translation takes focus itself; restoring the previous app here would steal it back and hide the new window.
             do { let result = try view.session.composite(); self.cancel(restoreFocus:false); self.onTranslate?(result) }
             catch { view.session.message = "无法合成截图；请重新框选。" }
+        }
+        view.onFloat = { [weak self,weak view] in
+            guard let self, let view, self.canvas === view else { return }
+            self.float()
         }
         panel = window; canvas = view
         presentPanel(window,view)
@@ -105,6 +121,26 @@ import UniformTypeIdentifiers
             guard let self,let canvas,self.canvas === canvas, let url else { return }
             if canvas.session.save(to:url) { self.cancel() }
         }
+    }
+
+    private func float() {
+        guard let canvas, let panel else { return }
+        guard canvas.finishText(), canvas.session.prepareOutput() else { return }
+        guard let selection = canvas.session.document.selection, let cgImage = canvas.session.compositeImage() else {
+            canvas.session.message = "无法合成截图；请重新框选。"
+            return
+        }
+        floating.present(cgImage: cgImage, initialFrame: floatRect(selection: selection, window: panel))
+        cancel()
+    }
+
+    /// Maps the canvas selection back onto the screen so the floating window lands exactly where
+    /// the capture region was, at its on-screen size.
+    private func floatRect(selection: CGRect, window: NSWindow) -> CGRect {
+        let content = window.contentRect(forFrameRect: window.frame)
+        let originX = window.frame.minX + content.minX + selection.minX
+        let originY = window.frame.minY + content.minY + content.height - selection.maxY
+        return CGRect(x: originX, y: originY, width: selection.width, height: selection.height)
     }
 }
 

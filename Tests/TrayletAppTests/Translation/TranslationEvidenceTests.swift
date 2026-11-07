@@ -23,11 +23,23 @@ struct TranslationEvidenceTests {
         controller.failSystem(try #require(controller.systemWork))
         #expect(controller.canRetrySubmission)
         try render(TranslationWorkspaceView(controller: controller, flow: controller.flow, configuration: config), size: NSSize(width: 440, height: 480), to: directory.appendingPathComponent("translation-window-narrow-error.png"))
+        let missingPackController = TranslationController(configuration: TranslationConfiguration(client: TranslationEvidenceAI()), writer: TranslationFakeWriter(), availability: TranslationDownloadableResources(), speech: TranslationFakeSpeech())
+        missingPackController.flow.source = "en"; missingPackController.flow.target = "zh-Hans"
+        missingPackController.flow.input = "Synthetic source for the missing language pack state."
+        await missingPackController.submit()
+        #expect(missingPackController.flow.phase == .resourceRequired)
+        try render(TranslationWorkspaceView(controller: missingPackController, flow: missingPackController.flow, configuration: missingPackController.configuration), size: NSSize(width: 520, height: 500), to: directory.appendingPathComponent("translation-window-language-pack-missing.png"))
         config.engine = .ai; config.endpoint = "https://example.invalid/v1"; config.model = "synthetic-translate-small"; config.credential = "synthetic-preview-key"
-        config.request(.models)
-        await config.confirm(try #require(config.preview))
-        try render(VStack(alignment: .leading, spacing: 16) { Text("翻译设置 · 合成演示").font(.title2); TranslationConfigurationView(configuration: config); Spacer(minLength: 0) }.padding(24).background(Color(nsColor: .windowBackgroundColor)), size: NSSize(width: 660, height: 610), to: directory.appendingPathComponent("translation-ai-settings-light.png"))
-        try render(VStack(alignment: .leading, spacing: 16) { Text("翻译设置 · 合成演示").font(.title2); TranslationConfigurationView(configuration: config); Spacer(minLength: 0) }.padding(24).background(Color(nsColor: .windowBackgroundColor)), size: NSSize(width: 660, height: 610), to: directory.appendingPathComponent("translation-ai-settings-dark.png"), scheme: .dark)
+        await config.performSettingsAction(.models)
+        try render(VStack(alignment: .leading, spacing: 16) { Text("翻译设置 · 合成演示").font(.title2); TranslationConfigurationView(configuration: config, expanded: [.ai]); Spacer(minLength: 0) }.padding(24).background(Color(nsColor: .windowBackgroundColor)), size: NSSize(width: 660, height: 1000), to: directory.appendingPathComponent("translation-ai-settings-light.png"))
+        try render(VStack(alignment: .leading, spacing: 16) { Text("翻译设置 · 合成演示").font(.title2); TranslationConfigurationView(configuration: config, expanded: [.ai]); Spacer(minLength: 0) }.padding(24).background(Color(nsColor: .windowBackgroundColor)), size: NSSize(width: 660, height: 1000), to: directory.appendingPathComponent("translation-ai-settings-dark.png"), scheme: .dark)
+        let picker = TranslationModelPicker(models: config.models, selection: .constant(config.model), isPresented: .constant(true))
+            .padding(12).background(Color(nsColor: .windowBackgroundColor))
+        try render(picker, size: NSSize(width: 384, height: 230), to: directory.appendingPathComponent("translation-model-picker-light.png"))
+        try render(picker, size: NSSize(width: 384, height: 230), to: directory.appendingPathComponent("translation-model-picker-dark.png"), scheme: .dark)
+        let emptyPicker = TranslationModelPicker(models: [], selection: .constant(""), isPresented: .constant(true))
+            .padding(12).background(Color(nsColor: .windowBackgroundColor))
+        try render(emptyPicker, size: NSSize(width: 384, height: 230), to: directory.appendingPathComponent("translation-model-picker-empty.png"))
         let preview = try config.makeRequest(.translate, content: "Synthetic text approved only inside a fake test.", source: "en", target: "zh-Hans")
         try render(TranslationSendPreview(request: preview, cancel: {}, send: {}), size: NSSize(width: 540, height: 420), to: directory.appendingPathComponent("translation-send-preview.png"))
     }

@@ -98,23 +98,19 @@ import TrayletCore
             }
             configuration.engine = .ai; configuration.endpoint = "https://example.invalid/v1"
             configuration.model = "synthetic-translate-small"; configuration.credential = "synthetic-memory-only"
-            configuration.request(.models)
-            guard let modelRequest = configuration.preview else { throw EvidenceFailure.fixtureState }
-            await configuration.confirm(modelRequest) // In-process fake; no URLSession exists in this dependency.
+            await configuration.performSettingsAction(.models) // In-process fake; no URLSession exists in this dependency.
             guard configuration.models.count == 3 else { throw EvidenceFailure.fixtureState }
             for scheme in [ColorScheme.light, .dark] {
                 records.append(try await render(NSHostingView(rootView: TranslationConfigurationView(configuration: configuration, expanded: [.ai]).padding(24).background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, scheme)), size: CGSize(width: 660, height: 1000), name: "ai-configuration-models-\(label(scheme))", in: directory, scheme: scheme))
+                records.append(try await render(TranslationModelPicker(models: configuration.models, selection: .constant(configuration.model), isPresented: .constant(true)).padding(12).background(Color(nsColor: .windowBackgroundColor)), size: CGSize(width: 384, height: 230), name: "translation-model-picker-\(label(scheme))", in: directory, scheme: scheme))
             }
             let request = try configuration.makeRequest(.translate, content: "Synthetic text preview. 此正文不会发出。", source: "en", target: "zh-Hans")
             records.append(try await render(TranslationSendPreview(request: request, cancel: {}, send: {}), size: CGSize(width: 540, height: 420), name: "translation-ai-send-preview", in: directory))
             controller.cancel()
 
-            for scheme in [ColorScheme.light, .dark] {
-                records.append(try await render(ClipboardFeatureView(feature: clipboard), size: CGSize(width: 360, height: 460), name: "clipboard-disabled-\(label(scheme))", in: directory, scheme: scheme))
-            }
-            guard !clipboard.controller.enabled, source.reads == 0 else { throw EvidenceFailure.fixtureState }
+            // Recording is on by default; the collector starts (baseline after current content) but has captured nothing yet.
             await clipboard.start(poll: false)
-            guard clipboard.controller.enabled, clipboard.controller.entries.isEmpty else { throw EvidenceFailure.fixtureState }
+            guard clipboard.controller.enabled, clipboard.controller.entries.isEmpty, source.reads == 0 else { throw EvidenceFailure.fixtureState }
             records.append(try await render(ClipboardFeatureView(feature: clipboard), size: CGSize(width: 740, height: 510), name: "clipboard-empty", in: directory))
             source.value = .init(generation: 1, items: [.text("合成文字 · 项目备忘\n周五前校对快捷键与翻译设置。全部内容由验收生成。")], application: "com.example.SyntheticNotes")
             await clipboard.controller.refresh()
@@ -141,7 +137,7 @@ import TrayletCore
             for scheme in [ColorScheme.light, .dark] {
                 for (widthName, size) in [("wide", CGSize(width: 780, height: 650)), ("narrow", CGSize(width: 560, height: 420))] {
                     let navigation = V2SettingsNavigation()
-                    let view = V2SettingsWorkspaceView(preferences: preferences, shortcuts: shortcuts, translation: settingsTranslation, clipboard: settingsClipboard, navigation: navigation, actions: actions)
+                    let view = V2SettingsWorkspaceView(preferences: preferences, shortcuts: shortcuts, translation: settingsTranslation, languagePacks: TranslationLanguagePackController(), clipboard: settingsClipboard, navigation: navigation, actions: actions)
                         .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, scheme).transaction { $0.disablesAnimations = true }.frame(width: size.width, height: size.height)
                     let host = NSHostingView(rootView: view)
                     let window = makeWindow(host, size: size, scheme: scheme)
