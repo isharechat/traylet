@@ -8,7 +8,7 @@
 
 Traylet 使用 Swift、SwiftUI 和 AppKit 构建。首个 MVP 聚焦三类本机任务：截取并标注图片、翻译输入或截图文字、管理用户主动记录的近期剪贴板内容。
 
-> **当前修正版目标：** `0.1.0-beta.2`（build `3`）。Beta 1 的安装包因签名封装错误被系统判定为损坏，已撤回，该问题已修复并通过实际下载、双击启动验证。正式 GitHub Release 需 Developer ID 签名和 Apple 公证通过后才会发布；在此之前提供未签名的预览包供开发者试用。
+> **当前修正版目标：** `0.1.0-beta.3`（build `3`）。Beta 1 的安装包因签名封装错误被系统判定为损坏，已撤回，该问题已修复并通过实际下载、双击启动验证。正式 GitHub Release 需 Developer ID 签名和 Apple 公证通过后才会发布；在此之前提供未签名的预览包供开发者试用。
 
 ## MVP 功能
 
@@ -43,7 +43,7 @@ scripts/build-from-source.sh
 
 ## 下载安装
 
-从 [Releases](https://github.com/isharechat/traylet/releases) 下载 `Traylet-macos-arm64-v0.1.0-beta.2-preview.zip`，解压得到 `Traylet.app`，拖入「应用程序」文件夹。
+从 [Releases](https://github.com/isharechat/traylet/releases) 下载 `Traylet-macos-arm64-v0.1.0-beta.3-build3.zip`，解压得到 `Traylet.app`，拖入「应用程序」文件夹。
 
 用 `shasum -a 256 -c Traylet-macos-arm64-*.zip.sha256` 校验下载完整性。
 
@@ -51,7 +51,7 @@ scripts/build-from-source.sh
 
 ## Beta 打包
 
-版本元数据位于 `VERSION`（`0.1.0-beta.2`）和 `BUILD_NUMBER`（`3`）。本地签名候选：
+版本元数据位于 `VERSION`（`0.1.0-beta.3`）和 `BUILD_NUMBER`（`3`）。本地签名候选：
 
 ```sh
 scripts/package-local.sh

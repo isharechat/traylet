@@ -10,7 +10,7 @@
 | [数据与隐私](development/privacy.md) | 剪贴板同意、数据保存、外部发送和权限 |
 | [设计约束](development/design.md) | 原生视觉与交互约束 |
 | [开发与验证](development/verification.md) | 本地构建、测试命令、证据分级和当前验证状态 |
-| [Beta 打包](development/packaging.md) | `0.1.0-beta.2` / build `3`、本地签名与 GitHub Actions |
+| [Beta 打包](development/packaging.md) | `0.1.0-beta.3` / build `3`、本地签名与 GitHub Actions |
 | [验收清单](development/acceptance.md) | Beta 前必须检查的行为与系统集成 |
 | [已知限制](development/known-errors.md) | 当前已知限制与明确未验收项 |
 | [词汇表](development/glossary.md) | 产品领域的统一用词 |
