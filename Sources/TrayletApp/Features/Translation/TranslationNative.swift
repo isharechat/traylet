@@ -5,11 +5,42 @@ import Vision
 import ImageIO
 import AVFoundation
 import NaturalLanguage
+import OSLog
 import TrayletCore
+
+private let systemTaskLogger = Logger(subsystem: "local.traylet.app", category: "TranslationSystemTask")
 
 enum TranslationResourceState: Sendable { case installed, downloadable, unsupported }
 enum TranslationResourceCheckError: Error, Equatable, Sendable {
     case unableToIdentifyLanguage
+}
+enum TranslationSystemSessionFailure: Equatable, Sendable {
+    case notInstalled
+    case unsupportedPairing
+    case unableToIdentifyLanguage
+    case unavailable
+
+    static func classify(_ error: Error) -> TranslationSystemSessionFailure {
+        switch error {
+        case TranslationError.unsupportedLanguagePairing,
+             TranslationError.unsupportedSourceLanguage,
+             TranslationError.unsupportedTargetLanguage:
+            return .unsupportedPairing
+        case TranslationError.unableToIdentifyLanguage:
+            return .unableToIdentifyLanguage
+        default:
+            break
+        }
+        if #available(macOS 26.0, *) {
+            switch error {
+            case TranslationError.notInstalled:
+                return .notInstalled
+            default:
+                break
+            }
+        }
+        return .unavailable
+    }
 }
 protocol TranslationResourceChecking: Sendable {
     func status(text: String, source: String, target: String) async throws -> TranslationResourceState
@@ -192,22 +223,29 @@ struct TranslationSystemTaskHost: View {
     let work: TranslationWork
     let prepare: Bool
     let completed: @MainActor (TranslationWork, String) -> Void
-    let failed: @MainActor (TranslationWork) -> Void
+    let failed: @MainActor (TranslationWork, TranslationSystemSessionFailure) -> Void
     var body: some View {
         Color.clear.frame(width: 0, height: 0)
             .translationTask(.init(source: work.resolvedSource.map(Locale.Language.init(identifier:)), target: Locale.Language(identifier: work.target)), action: Self.action(work: work, prepare: prepare, completed: completed, failed: failed))
     }
-    private nonisolated static func action(work: TranslationWork, prepare: Bool, completed: @escaping @MainActor (TranslationWork, String) -> Void, failed: @escaping @MainActor (TranslationWork) -> Void) -> (TranslationSession) async -> Void {
+    private nonisolated static func action(work: TranslationWork, prepare: Bool, completed: @escaping @MainActor (TranslationWork, String) -> Void, failed: @escaping @MainActor (TranslationWork, TranslationSystemSessionFailure) -> Void) -> (TranslationSession) async -> Void {
         { session in
             do {
                 try Task.checkCancellation()
+                if #available(macOS 26.0, *), prepare, !session.canRequestDownloads {
+                    systemTaskLogger.error("系统不允许请求语言下载 (canRequestDownloads=false), source=\(session.sourceLanguage?.maximalIdentifier ?? "nil", privacy: .public), target=\(session.targetLanguage?.maximalIdentifier ?? "nil", privacy: .public)")
+                    await failed(work, .notInstalled)
+                    return
+                }
                 if prepare { try await session.prepareTranslation() }
                 try Task.checkCancellation()
                 let response = try await session.translate(work.text)
                 try Task.checkCancellation()
                 await completed(work, response.targetText)
             } catch {
-                if !Task.isCancelled { await failed(work) }
+                guard !Task.isCancelled else { return }
+                systemTaskLogger.error("系统翻译失败: \(String(describing: error), privacy: .public)")
+                await failed(work, .classify(error))
             }
         }
     }

@@ -14,7 +14,7 @@ struct TranslationLanguagePackTests {
         controller.download()
         let request = try #require(controller.request)
         #expect(controller.state == .preparing && !controller.canDownload)
-        let confirmation = try #require(controller.completeDownload(request.id, success: true))
+        let confirmation = try #require(controller.completeDownload(request.id, outcome: .success))
         await confirmation.value
 
         #expect(controller.request == nil)
@@ -51,14 +51,26 @@ struct TranslationLanguagePackTests {
         let old = try #require(controller.request)
         controller.target = "ja"
         #expect(controller.request == nil && controller.state == .unknown)
-        #expect(controller.completeDownload(old.id, success: true) == nil)
+        #expect(controller.completeDownload(old.id, outcome: .success) == nil)
 
         await controller.check().value
         controller.download()
         let current = try #require(controller.request)
-        #expect(controller.completeDownload(current.id, success: false) == nil)
+        #expect(controller.completeDownload(current.id, outcome: .failure(.unavailable)) == nil)
         #expect(controller.request == nil)
         #expect(controller.state == .failed("语言包下载未完成。请检查网络或系统设置后重试。"))
+    }
+
+    @Test func downloadFailuresSurfaceSpecificGuidance() async throws {
+        let availability = TranslationPackAvailability([.success(.downloadable)])
+        let controller = TranslationLanguagePackController(availability: availability)
+        await controller.check().value
+        controller.download()
+        let request = try #require(controller.request)
+
+        #expect(controller.completeDownload(request.id, outcome: .failure(.notInstalled)) == nil)
+        #expect(controller.request == nil)
+        #expect(controller.state == .failed("系统未允许下载语言模型。请在“系统设置 → 通用 → 语言与地区”中下载所需语言后重试。"))
     }
 
     @Test func sameSourceAndTargetNeverStartsADownload() async {

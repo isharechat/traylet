@@ -1,6 +1,9 @@
 import Foundation
+import OSLog
 import SwiftUI
 import Translation
+
+private let languagePackLogger = Logger(subsystem: "local.traylet.app", category: "TranslationLanguagePacks")
 
 enum TranslationLanguagePackState: Equatable {
     case unknown
@@ -10,6 +13,11 @@ enum TranslationLanguagePackState: Equatable {
     case unsupported
     case preparing
     case failed(String)
+}
+
+enum TranslationLanguagePackDownloadOutcome: Equatable, Sendable {
+    case success
+    case failure(TranslationSystemSessionFailure)
 }
 
 struct TranslationLanguagePackRequest: Equatable, Identifiable, Sendable {
@@ -88,14 +96,29 @@ struct TranslationLanguagePackPair: Equatable, Sendable {
     }
 
     @discardableResult
-    func completeDownload(_ id: UUID, success: Bool) -> Task<Void, Never>? {
+    func completeDownload(_ id: UUID, outcome: TranslationLanguagePackDownloadOutcome) -> Task<Void, Never>? {
         guard request?.id == id else { return nil }
         request = nil
-        guard success else {
-            state = .failed("语言包下载未完成。请检查网络或系统设置后重试。")
+        switch outcome {
+        case .success:
+            return check()
+        case .failure(let reason):
+            state = .failed(Self.failureMessage(reason))
             return nil
         }
-        return check()
+    }
+
+    private static func failureMessage(_ reason: TranslationSystemSessionFailure) -> String {
+        switch reason {
+        case .notInstalled:
+            return "系统未允许下载语言模型。请在“系统设置 → 通用 → 语言与地区”中下载所需语言后重试。"
+        case .unsupportedPairing:
+            return "系统不支持当前语言对，请更换原文或译文语言。"
+        case .unableToIdentifyLanguage:
+            return "无法识别原文语言，请选择明确的原文语言后重试。"
+        case .unavailable:
+            return "语言包下载未完成。请检查网络或系统设置后重试。"
+        }
     }
 
     func cancel() {
@@ -145,8 +168,8 @@ struct TranslationLanguagePackSettings: View {
         }
         .background {
             if let request = controller.request {
-                TranslationLanguagePackHost(request: request) { success in
-                    _ = controller.completeDownload(request.id, success: success)
+                TranslationLanguagePackHost(request: request) { outcome in
+                    _ = controller.completeDownload(request.id, outcome: outcome)
                 }
                 .id(request.id)
             }
@@ -184,7 +207,7 @@ struct TranslationLanguagePackSettings: View {
 /// The hidden host exists only while a request is active, so no session is retained.
 struct TranslationLanguagePackHost: View {
     let request: TranslationLanguagePackRequest
-    let finished: @MainActor (Bool) -> Void
+    let finished: @MainActor (TranslationLanguagePackDownloadOutcome) -> Void
 
     var body: some View {
         Color.clear.frame(width: 0, height: 0)
@@ -193,15 +216,22 @@ struct TranslationLanguagePackHost: View {
                              action: Self.action(finished: finished))
     }
 
-    private nonisolated static func action(finished: @escaping @MainActor (Bool) -> Void) -> (TranslationSession) async -> Void {
+    private nonisolated static func action(finished: @escaping @MainActor (TranslationLanguagePackDownloadOutcome) -> Void) -> (TranslationSession) async -> Void {
         { session in
             do {
                 try Task.checkCancellation()
+                if #available(macOS 26.0, *), !session.canRequestDownloads {
+                    languagePackLogger.error("系统不允许请求语言下载 (canRequestDownloads=false), source=\(session.sourceLanguage?.maximalIdentifier ?? "nil", privacy: .public), target=\(session.targetLanguage?.maximalIdentifier ?? "nil", privacy: .public)")
+                    await finished(.failure(.notInstalled))
+                    return
+                }
                 try await session.prepareTranslation()
                 try Task.checkCancellation()
-                await finished(true)
+                await finished(.success)
             } catch {
-                if !Task.isCancelled { await finished(false) }
+                guard !Task.isCancelled else { return }
+                languagePackLogger.error("语言包下载失败: \(String(describing: error), privacy: .public)")
+                await finished(.failure(.classify(error)))
             }
         }
     }

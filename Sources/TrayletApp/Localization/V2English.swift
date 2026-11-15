@@ -363,6 +363,8 @@ enum V2English {
         "下载语言包": "Download Language Pack",
         "语言包由 macOS 按系统批准流程下载并安装到本机；不会上传原文、截图或剪贴板。": "Language packs are downloaded through the system-approved macOS process and installed on this Mac. Source text, screenshots, and clipboard content are not uploaded.",
         "语言包下载未完成。请检查网络或系统设置后重试。": "The language pack download did not finish. Check the network or System Settings and try again.",
+        "系统未允许下载语言模型。请在“系统设置 → 通用 → 语言与地区”中下载所需语言后重试。": "The system did not allow downloading language models. Download the required languages in System Settings > General > Language & Region, then try again.",
+        "系统不支持当前语言对，请更换原文或译文语言。": "The system does not support this language pair. Choose a different source or target language.",
         "请选择不同的原文和目标语言。": "Choose different source and target languages.",
         "前往设置下载语言包": "Open Settings to Download Language Packs",
         "直接准备并翻译": "Prepare Here and Translate",

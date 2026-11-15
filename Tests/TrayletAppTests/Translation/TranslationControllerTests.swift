@@ -5,7 +5,7 @@ import TrayletCore
 
 @Suite("Translation controller") @MainActor
 struct TranslationControllerTests {
-    @Test func engineIconImmediatelyMarksPreviousOutputStaleAndKeepsItOnFailure() async throws {
+    @Test func engineIconClearsPreviousOutputAndKeepsTheBoxEmptyOnFailure() async throws {
         let config = TranslationConfiguration(client: EngineSwitchOfflineAI())
         config.setEnabled(.google, true)
         let controller = TranslationController(configuration: config, writer: TranslationFakeWriter(), availability: TranslationFakeAvailability(), speech: TranslationFakeSpeech())
@@ -14,12 +14,12 @@ struct TranslationControllerTests {
         controller.finishSystem(try #require(controller.systemWork), text: "你好")
         #expect(controller.flow.outputIsCurrent)
         controller.select(.google)
-        #expect(controller.selectedEngine == .google && controller.flow.output == "你好")
-        #expect(!controller.flow.outputIsCurrent, "The old engine's result must be labeled previous before the replacement task runs")
+        #expect(controller.selectedEngine == .google && controller.flow.output.isEmpty)
+        #expect(!controller.flow.outputIsCurrent, "The old engine's result must be cleared before the replacement task runs")
         await controller.submissionTask?.value
         #expect(controller.preview == nil, "Switching engines must send without a confirmation sheet")
         if case .failed = controller.flow.phase {} else { Issue.record("The synthetic offline engine should fail") }
-        #expect(controller.flow.output == "你好" && !controller.flow.outputIsCurrent)
+        #expect(controller.flow.output.isEmpty && !controller.flow.outputIsCurrent)
         controller.cancel()
     }
 
@@ -36,6 +36,16 @@ struct TranslationControllerTests {
         await controller.submissionTask?.value
         #expect(controller.preview == nil, "Switching engines must send without a confirmation sheet")
         #expect(controller.flow.output == "你好。")
+        controller.cancel()
+    }
+
+    @Test func systemTranslationFailureSurfacesTheDownloadAuthorizationReason() async throws {
+        let controller = TranslationController(configuration: TranslationConfiguration(client: RecordingTranslationAI()), writer: TranslationFakeWriter(), availability: TranslationFakeAvailability(), speech: TranslationFakeSpeech())
+        controller.flow.input = "Hello"; controller.flow.source = "en"
+        await controller.submit()
+        let work = try #require(controller.systemWork)
+        controller.failSystem(work, reason: .notInstalled)
+        #expect(controller.flow.phase == .failed("系统未允许下载语言模型。请在“系统设置 → 通用 → 语言与地区”中下载所需语言后重试。"))
         controller.cancel()
     }
 

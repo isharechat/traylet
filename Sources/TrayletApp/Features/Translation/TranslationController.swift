@@ -93,8 +93,9 @@ import TrayletCore
         guard flow.phase != .recognizing, configuration.availableEngines.contains(engine) else { return }
         let changed = selectedEngine != engine
         if changed {
-            // Invalidate the old host and output before scheduling the replacement task.
-            cancel(); flow.markOutputStale()
+            // Invalidate the old host and clear the previous engine's translation
+            // before scheduling the replacement task, so the output box starts empty.
+            cancel(); flow.clearOutput()
         }
         selectedEngine = engine
         // Picking an engine is already an explicit choice; send without another confirmation sheet.
@@ -202,9 +203,12 @@ import TrayletCore
             do {
                 guard let action = work.engine.translateAction else { return }
                 let request = try configuration.makeRequest(action, content: work.text, source: work.source, target: work.target)
-                preview = request
                 // The Translate button confirms the first send to an engine; engine-icon switches send directly.
-                if skipPreview || confirmedEngines.contains(work.engine) { await sendConfirmed(request) }
+                if skipPreview || confirmedEngines.contains(work.engine) {
+                    await performConfirmedSend(request, work: work)
+                } else {
+                    preview = request
+                }
             } catch {
                 // A local endpoint/model/credential validation error requires configuration changes,
                 // rather than replaying the unchanged request from the error row.
@@ -239,14 +243,32 @@ import TrayletCore
         guard flow.isCurrent(work), systemWork == work else { return }
         systemWork = nil; preparingResources = false; flow.complete(work, text: text)
     }
-    func failSystem(_ work: TranslationWork) {
+    func failSystem(_ work: TranslationWork, reason: TranslationSystemSessionFailure = .unavailable) {
         guard flow.isCurrent(work), systemWork == work else { return }
-        systemWork = nil; preparingResources = false; failSubmission(work, message: "系统翻译未完成。请检查语言资源后重试，或更换语言。")
+        systemWork = nil; preparingResources = false
+        failSubmission(work, message: Self.systemFailureMessage(reason))
+    }
+    private static func systemFailureMessage(_ reason: TranslationSystemSessionFailure) -> String {
+        switch reason {
+        case .notInstalled:
+            return "系统未允许下载语言模型。请在“系统设置 → 通用 → 语言与地区”中下载所需语言后重试。"
+        case .unsupportedPairing:
+            return "系统不支持当前语言对，请更换原文或译文语言。"
+        case .unableToIdentifyLanguage:
+            return "无法识别原文语言，请选择明确的原文语言后重试。"
+        case .unavailable:
+            return "系统翻译未完成。请检查语言资源后重试，或更换语言。"
+        }
     }
     func sendConfirmed(_ request: TranslationAIRequest) async {
-        guard !Task.isCancelled, preview == request, let work = flow.active, work.engine != .system,
+        guard preview == request, let work = flow.active else { return }
+        preview = nil
+        await performConfirmedSend(request, work: work)
+    }
+    private func performConfirmedSend(_ request: TranslationAIRequest, work: TranslationWork) async {
+        guard !Task.isCancelled, work.engine != .system,
               request.settings == configuration.settings(for: work.engine), work.text == request.content else { return }
-        preview = nil; confirmedEngines.insert(work.engine); flow.startConfirmed(work)
+        confirmedEngines.insert(work.engine); flow.startConfirmed(work)
         do {
             let result = try await configuration.client.perform(request)
             guard !Task.isCancelled, request.settings == configuration.settings(for: work.engine), flow.isCurrent(work) else { return }

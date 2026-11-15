@@ -87,19 +87,19 @@ enum TranslationActionFeedback: Equatable, Sendable {
         if let storageURL {
             do {
                 if let data = try TranslationConfigurationStore(url: storageURL).read() {
-                let saved = try JSONDecoder().decode(Saved.self, from: data)
-                guard saved.version == 2 else { throw TranslationAIFailure.malformed }
-                provider = saved.provider; endpoint = saved.endpoint; model = saved.model
-                // Older files only had the AI and DeepL switches; the selected engine always stays enabled.
-                var on: Set<TranslationEngineChoice> = Set(saved.enabled ?? []).union([.system])
-                if saved.enabled == nil {
-                    if saved.aiEnabled ?? (saved.engine == .ai) { on.insert(.ai) }
-                    if saved.deeplEnabled ?? (saved.engine == .deepl) { on.insert(.deepl) }
-                }
-                enabled = on
-                engine = saved.engine
-                if let saved = saved.order { order = saved + Self.defaultOrder.filter { !saved.contains($0) } }
-                maxVisible = saved.maxVisible ?? maxVisible
+                    let saved = try JSONDecoder().decode(Saved.self, from: data)
+                    guard saved.version == 2 else { throw TranslationAIFailure.malformed }
+                    provider = saved.provider; endpoint = saved.endpoint; model = saved.model
+                    // Older files only had the AI and DeepL switches; the selected engine always stays enabled.
+                    var on: Set<TranslationEngineChoice> = Set(saved.enabled ?? []).union([.system])
+                    if saved.enabled == nil {
+                        if saved.aiEnabled ?? (saved.engine == .ai) { on.insert(.ai) }
+                        if saved.deeplEnabled ?? (saved.engine == .deepl) { on.insert(.deepl) }
+                    }
+                    enabled = on
+                    engine = saved.engine
+                    if let saved = saved.order { order = saved + Self.defaultOrder.filter { !saved.contains($0) } }
+                    maxVisible = saved.maxVisible ?? maxVisible
                 }
             } catch { storageIssue = "新版本翻译设置无法读取；当前使用默认值，原文件保留。" }
         }
