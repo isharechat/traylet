@@ -13,8 +13,11 @@ import TrayletCore
     let settings: V2SettingsController
     let clipboardEditing: ClipboardEditorBridge
     let clipboardTranslation: ClipboardTranslationBridge
+    let permissionStatus: V2PermissionStatus
+    private var permissionRecovery: V2PermissionRecovery!
     private var statusItem: NSStatusItem?
     private var welcome: NSWindow?
+    private var recoveryWindow: NSWindow?
     private var progress: NSPanel?
     private var observations: Set<AnyCancellable> = []
     private var previousApp: NSRunningApplication?
@@ -50,7 +53,13 @@ import TrayletCore
             editor.discardHiddenSession(); return !capture.isBusy && !editor.isOpen
         })
         settings = V2SettingsController(preferences: preferences, shortcuts: shortcuts, translation: configuration, clipboard: clipboard)
+        let permissionStatus = V2PermissionStatus()
+        self.permissionStatus = permissionStatus
         super.init()
+        permissionRecovery = V2PermissionRecovery(
+            snapshotStore: V2PermissionSnapshotStore(file: directory.appendingPathComponent("permissions.json")),
+            status: permissionStatus,
+            present: { [weak self] losses in self?.presentPermissionRecovery(losses: losses) })
         shortcuts.onInvoke = { [weak self] in self?.invoke($0) }
         translation.onOpenSettings = { [weak self] pair in self?.settings.present(section: .translation, languagePackPair: pair) }
         editor.onComplete = { [weak self] in
@@ -86,6 +95,7 @@ import TrayletCore
         do { try shortcuts.start() }
         catch { showProblem((error as? FeatureIssue)?.localizedDescription ?? "全局快捷键未就绪，请从菜单栏打开设置。") }
         if !preferences.value.hasCompletedWelcome { showWelcome() }
+        _ = permissionRecovery.runStartupCheck(hasCompletedWelcome: preferences.value.hasCompletedWelcome)
     }
     private var english: Bool { V2Localization.shared.english }
     private func refreshMenu(value: V2UserPreferences? = nil) {
@@ -186,8 +196,24 @@ import TrayletCore
         previousApp = nil; previousWindow = nil
     }
     func openPermissions() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") else { return }
-        NSWorkspace.shared.open(url)
+        V2PermissionStatus.openScreenRecordingSettings()
+    }
+    private func presentPermissionRecovery(losses: V2PermissionLoss) {
+        if recoveryWindow == nil {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 300), styleMask: [.titled], backing: .buffered, defer: false)
+            window.title = english ? "Permissions" : "权限"
+            window.isReleasedWhenClosed = false
+            window.center()
+            recoveryWindow = window
+        }
+        let hosting = NSHostingView(rootView: V2PermissionRecoveryView(
+            status: permissionStatus,
+            losses: losses,
+            english: english,
+            onLater: { [weak self] in self?.recoveryWindow?.close() }))
+        recoveryWindow?.contentView = hosting
+        recoveryWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
     private func requestScreenRecording() {
         if !CGPreflightScreenCaptureAccess(), !CGRequestScreenCaptureAccess() { openPermissions() }
