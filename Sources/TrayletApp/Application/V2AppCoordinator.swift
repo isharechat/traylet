@@ -271,15 +271,9 @@ struct V2WelcomeView: View {
         VStack(alignment: .leading, spacing: V2Design.Space.l) {
             HStack(spacing: V2Design.Space.s) { V2BrandIcon(size: 48); Text("Traylet").font(.largeTitle.weight(.semibold)) }
             V2SettingsGroup(footer: screenRecordingGranted ? nil : (english ? "If the status does not update, reopen Traylet." : "若状态未更新，请重新打开 Traylet。")) {
-                permissionRow(granted: screenRecordingGranted, symbol: "record.circle",
-                              title: english ? "Screen Recording" : "屏幕录制",
-                              detail: english ? "Required for captures" : "截图功能需要",
-                              prominent: true, action: requestScreenRecording)
+                permissionRow(.screenRecording, granted: screenRecordingGranted, prominent: true, action: requestScreenRecording)
                 Divider()
-                permissionRow(granted: accessibilityGranted, symbol: "accessibility",
-                              title: english ? "Accessibility (optional)" : "辅助功能（可选）",
-                              detail: english ? "Brings selected text into Input Translation" : "输入翻译时带入选中文字",
-                              prominent: false, action: requestAccessibility)
+                permissionRow(.accessibility, granted: accessibilityGranted, prominent: false, action: requestAccessibility)
             }
             Spacer(minLength: 0)
             HStack {
@@ -290,18 +284,15 @@ struct V2WelcomeView: View {
             }
         }.padding(V2Design.Space.xl + 4).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
-    private func permissionRow(granted: Bool, symbol: String, title: String, detail: String, prominent: Bool, action: @escaping () -> Void) -> some View {
-        HStack(spacing: V2Design.Space.m) {
-            Image(systemName: granted ? "checkmark.circle.fill" : symbol).font(.system(size: 20)).foregroundStyle(granted ? Color.green : Color.secondary)
-                .frame(width: 28, height: 28).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.body.weight(.medium))
-                Text(detail).font(.caption).foregroundStyle(.secondary)
+    private func permissionRow(_ kind: V2PermissionKind, granted: Bool, prominent: Bool, action: @escaping () -> Void) -> some View {
+        V2PermissionRow(symbol: kind.symbol, title: kind.title(english: english), detail: kind.shortDetail(english: english), granted: granted) {
+            if !granted {
+                if prominent {
+                    Button(english ? "Allow…" : "允许…", action: action).buttonStyle(.borderedProminent)
+                } else {
+                    Button(english ? "Allow…" : "允许…", action: action)
+                }
             }
-            Spacer(minLength: V2Design.Space.s)
-            if granted { Text(english ? "Allowed" : "已允许").foregroundStyle(.secondary) }
-            else if prominent { Button(english ? "Allow…" : "允许…", action: action).buttonStyle(.borderedProminent) }
-            else { Button(english ? "Allow…" : "允许…", action: action) }
-        }.padding(.vertical, V2Design.Space.m)
+        }
     }
 }
