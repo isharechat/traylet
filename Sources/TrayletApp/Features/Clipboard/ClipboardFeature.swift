@@ -35,8 +35,10 @@ import ImageIO
     private var mainMoveObservation: NSObjectProtocol?
     private var mainResizeObservation: NSObjectProtocol?
     private var detailPanel: NSPanel?
+    private var detailHosting: NSHostingView<AnyView>?
     private var detailDismissal: NSObjectProtocol?
     private var detailResignObservation: NSObjectProtocol?
+    private(set) var renderedDetailID: UUID?
     private let preferences: Task<Void, Never>
     private var shuttingDown = false
     init(directory: URL, source: (any ClipboardSource)? = nil, writer: (any ClipboardWriting)? = nil, archive: (any V2ClipboardArchiving)? = nil, clock: @escaping () -> Date = Date.init,
@@ -53,7 +55,8 @@ import ImageIO
         controller.$favoritesOnly.removeDuplicates().dropFirst().sink { [weak imageEditing] _ in imageEditing?.cancel() }.store(in: &imageObservations)
         controller.$selectedID.removeDuplicates().dropFirst().sink { [weak imageEditing] _ in imageEditing?.cancel() }.store(in: &imageObservations)
         controller.$selectedID.removeDuplicates().dropFirst().sink { [weak self] _ in
-            MainActor.assumeIsolated { self?.syncDetailPanel() }
+            // `@Published` fires during `willSet`, before `selectedID` is stored, so read the new selection on the next actor turn.
+            Task { @MainActor [weak self] in self?.syncDetailPanel() }
         }.store(in: &imageObservations)
         controller.$entries.sink { [weak imageEditing] in imageEditing?.validate(entries: $0) }.store(in: &imageObservations)
         // The application records for the whole run with no user on/off or pause; it passes autoStart to begin collecting here.
@@ -144,6 +147,7 @@ import ImageIO
             }
         }
         refreshTitle()
+        ensureDetailPanel()
         if let panel {
             panel.contentView?.layoutSubtreeIfNeeded()
             presentWindow(panel)
@@ -159,40 +163,53 @@ import ImageIO
         guard wantsSearchFocus, let panel, let searchField, searchField.window === panel else { return }
         if panel.makeFirstResponder(searchField) { wantsSearchFocus = false }
     }
-    /// The full content lives in a companion popup instead of the list window.
-    private func syncDetailPanel() {
-        guard !shuttingDown, let panel, controller.selectedEntry != nil else {
-            hideDetailPanel()
-            return
-        }
-        if detailPanel == nil {
-            let window = ClipboardDetailPanel(contentRect: NSRect(x: 0, y: 0, width: Self.detailWidth, height: Self.detailHeight), styleMask: [.borderless], backing: .buffered, defer: false)
-            window.isOpaque = true
-            window.backgroundColor = .windowBackgroundColor
-            window.hasShadow = true
-            window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: ClipboardDetailView(feature: self))
-            detailPanel = window
-            panel.addChildWindow(window, ordered: .above)
-            detailDismissal = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self, !self.shuttingDown else { return }
-                    self.controller.selectedID = nil
-                }
+    /// Builds the companion popup once, before any selection, so the first click never pays window or hosting-view construction.
+    private func ensureDetailPanel() {
+        guard detailPanel == nil, let panel else { return }
+        let window = ClipboardDetailPanel(contentRect: NSRect(x: 0, y: 0, width: Self.detailWidth, height: Self.detailHeight), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isOpaque = true
+        window.backgroundColor = .windowBackgroundColor
+        window.hasShadow = true
+        window.isReleasedWhenClosed = false
+        let hosting = NSHostingView(rootView: AnyView(ClipboardDetailView(feature: self)))
+        hosting.frame = NSRect(x: 0, y: 0, width: Self.detailWidth, height: Self.detailHeight)
+        hosting.autoresizingMask = [.width, .height]
+        window.contentView = hosting
+        hosting.layoutSubtreeIfNeeded()
+        detailHosting = hosting
+        detailPanel = window
+        panel.addChildWindow(window, ordered: .above)
+        detailDismissal = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.shuttingDown else { return }
+                self.controller.selectedID = nil
             }
-            detailResignObservation = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated {
-                        guard let self, let detailPanel = self.detailPanel, let mainPanel = self.panel,
-                              detailPanel.isVisible, !self.shuttingDown else { return }
-                        let keepOpen = NSApp.keyWindow === mainPanel || V2FloatingWindow.ownsKeyPopup(of: mainPanel)
-                        if !keepOpen, mainPanel.isVisible, detailPanel.attachedSheet == nil, NSApp.modalWindow == nil {
-                            self.dismiss()
-                        }
+        }
+        detailResignObservation = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, let detailPanel = self.detailPanel, let mainPanel = self.panel,
+                          detailPanel.isVisible, !self.shuttingDown else { return }
+                    let keepOpen = NSApp.keyWindow === mainPanel || V2FloatingWindow.ownsKeyPopup(of: mainPanel)
+                    if !keepOpen, mainPanel.isVisible, detailPanel.attachedSheet == nil, NSApp.modalWindow == nil {
+                        self.dismiss()
                     }
                 }
             }
         }
+    }
+    /// The full content lives in a companion popup instead of the list window.
+    private func syncDetailPanel() {
+        guard !shuttingDown, let entry = controller.selectedEntry else {
+            renderedDetailID = nil
+            hideDetailPanel()
+            return
+        }
+        ensureDetailPanel()
+        // Re-render synchronously for the current selection before the popup appears, so it can never show an empty or stale frame.
+        detailHosting?.rootView = AnyView(ClipboardDetailView(feature: self).id(entry.id))
+        renderedDetailID = entry.id
+        detailPanel?.contentView?.layoutSubtreeIfNeeded()
         positionDetailPanel()
         detailPanel?.orderFront(nil)
     }
@@ -217,6 +234,7 @@ import ImageIO
         detailPanel.setFrameOrigin(origin)
     }
     var showsDetail: Bool { controller.selectedEntry != nil }
+    var isDetailPanelBuilt: Bool { detailPanel != nil }
     var storagePath: String {
         storageDirectory.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
     }

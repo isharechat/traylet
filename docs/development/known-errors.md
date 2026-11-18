@@ -49,6 +49,14 @@
 - 验证：`SelectedTextSafetyTests`、`SelectedTextStrategyTests`、`TranslationControllerTests`、`ShortcutDriverTests`、`AuthorizationGateTests` 定向测试通过；真实 Chrome 前台选区仍需在授权后的实机上确认。
 - 边界：该回退依赖应用在焦点窗口子树内暴露 `AXFocused` 或 `AXSelectedTextMarkerRange`；AppleScript 首次使用会触发 macOS「自动化」权限弹窗；⌘C 兜底会短暂改写并恢复系统剪贴板。
 
+### 剪贴板详情悬浮窗首次点击不展示且内容错位
+
+- 现象：历史剪贴板选中第一条详情时悬浮窗不展示或展示慢，选中第二条时展示第一条内容，第三次点击才正常。
+- 原因：两个问题叠加。其一，`ClipboardFeature` 用 Combine 订阅 `controller.$selectedID` 同步调用 `syncDetailPanel`，而 `@Published` 在 `willSet` 阶段发布新值——回调执行时 `selectedEntry` 仍是旧值，导致“差一拍”；首次选择读到 `nil` 被当成无选择，直接隐藏悬浮窗。其二，详情 `NSPanel` + `NSHostingView` 在首次选择时才惰性创建，且从未在 `orderFront` 前布局，首次渲染为空/慢。
+- 修复：详情面板在 `present()` 时提前构建并完成一次布局；选择变化的回调改为下一 actor turn 再同步，读到已写入的 `selectedEntry`；每次同步前用 `.id(entry.id)` 强制重建详情根视图并在 `orderFront` 前 `layoutSubtreeIfNeeded()`。
+- 验证：新增 `detailPopupIsPrebuiltAndReRendersForEachSelection` 覆盖面板预构建与选择切换不残留旧内容；`ClipboardTests`、`ClipboardKeyboardTests` 通过。
+- 边界：合成测试验证状态与时序，不证明真实鼠标点击下的窗口合成与首帧延迟，仍需系统验收。
+
 ## 实现防线
 
 - `TranslationSession` 只在当前 SwiftUI `translationTask` 宿主生命周期使用；宿主关闭或配置变化后新建工作，不缓存旧 session。
