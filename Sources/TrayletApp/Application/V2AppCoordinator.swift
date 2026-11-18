@@ -144,24 +144,19 @@ import TrayletCore
         guard !editor.isOpen, !capture.isBusy else { NSSound.beep(); return }
         switch action {
         case .inputTranslation:
-            // Open the window immediately, then resolve the selection asynchronously so the
-            // AppleScript / clipboard fallbacks never delay the window appearance.
-            translation.present(text: "")
             let needsAccessibility = !selectedText.isAuthorized
             if needsAccessibility, !requestedAccessibility {
                 requestedAccessibility = true
                 V2AccessibilitySelectedText.requestTrust()
             }
-            if needsAccessibility { translation.showAccessibilityNotice() }
-            let reader = selectedText
-            Task { @MainActor in
-                guard !self.terminating,
-                      self.translation.flow.input.isEmpty,
-                      self.translation.isPresented,
-                      let selection = reader.selectedText(), !selection.isEmpty else { return }
-                self.translation.present(text: selection)
-                self.translation.startSubmission()
-            }
+            // Resolve before presenting: presenting activates Traylet, and every strategy rejects
+            // reading the selection from Traylet itself.
+            V2InputTranslationResolver.resolve(
+                reader: selectedText,
+                translation: translation,
+                needsAccessibility: needsAccessibility,
+                isTerminated: { [weak self] in self?.terminating ?? true }
+            )
         case .clipboard: clipboard.present()
         case .regionCapture, .screenCapture, .captureTranslation: startCapture(action)
         }
