@@ -72,9 +72,9 @@ import Testing
             readScreenRecording: { screen },
             readAccessibility: { accessibility },
             requestScreenRecordingAction: { false },
-            requestAccessibilityAction: {},
-            openScreenRecordingAction: {},
-            openAccessibilityAction: {})
+            requestAccessibilityAction: { /* Not exercised in this test. */ },
+            openScreenRecordingAction: { /* Not exercised in this test. */ },
+            openAccessibilityAction: { /* Not exercised in this test. */ })
     }
 
     @Test func freshUserWithNoSnapshotNeverPromptsButRecordsABaseline() throws {
@@ -156,11 +156,11 @@ import Testing
             readScreenRecording: { screen.value },
             readAccessibility: { false },
             requestScreenRecordingAction: { false },
-            requestAccessibilityAction: {},
-            openScreenRecordingAction: {},
-            openAccessibilityAction: {})
+            requestAccessibilityAction: { /* Not exercised in this test. */ },
+            openScreenRecordingAction: { /* Not exercised in this test. */ },
+            openAccessibilityAction: { /* Not exercised in this test. */ })
         let store = V2PermissionSnapshotStore(file: file)
-        let recovery = V2PermissionRecovery(snapshotStore: store, status: status) { _ in }
+        let recovery = V2PermissionRecovery(snapshotStore: store, status: status) { _ in /* Presenter is unused here; only the snapshot side effect is asserted. */ }
         #expect(recovery.runStartupCheck(hasCompletedWelcome: true))
         #expect(store.load()?.lastScreenRecordingGranted == false)
         // Simulate the user granting the permission; the snapshot must advance to granted.

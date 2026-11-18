@@ -15,9 +15,9 @@ import Testing
             readScreenRecording: { screen.value },
             readAccessibility: { accessible.value },
             requestScreenRecordingAction: { false },
-            requestAccessibilityAction: {},
-            openScreenRecordingAction: {},
-            openAccessibilityAction: {})
+            requestAccessibilityAction: { /* Not exercised in this test. */ },
+            openScreenRecordingAction: { /* Not exercised in this test. */ },
+            openAccessibilityAction: { /* Not exercised in this test. */ })
         #expect(!status.screenRecordingGranted)
         #expect(!status.accessibilityGranted)
         screen.value = true; accessible.value = true
@@ -34,9 +34,9 @@ import Testing
             readScreenRecording: { screen.value },
             readAccessibility: { false },
             requestScreenRecordingAction: { requested.value = true; return screen.value },
-            requestAccessibilityAction: {},
+            requestAccessibilityAction: { /* Not exercised in this test. */ },
             openScreenRecordingAction: { opened.value = true },
-            openAccessibilityAction: {})
+            openAccessibilityAction: { /* Not exercised in this test. */ })
         status.requestScreenRecording()
         #expect(requested.value && opened.value && !status.screenRecordingGranted)
         requested.value = false; opened.value = false; screen.value = true
@@ -52,8 +52,8 @@ import Testing
             readAccessibility: { accessible.value },
             requestScreenRecordingAction: { false },
             requestAccessibilityAction: { prompted.value = true },
-            openScreenRecordingAction: {},
-            openAccessibilityAction: {})
+            openScreenRecordingAction: { /* Not exercised in this test. */ },
+            openAccessibilityAction: { /* Not exercised in this test. */ })
         status.requestAccessibility()
         #expect(prompted.value)
         accessible.value = true
