@@ -62,6 +62,27 @@ struct ClipboardEntry: Identifiable, Codable, Equatable, Sendable {
 }
 private extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
 
+private extension Character {
+    /// Scripts that conventionally break between glyphs (Han, kana, Hangul and CJK punctuation)
+    /// can wrap even without whitespace, so a long Chinese/Japanese/Korean run is not mistaken
+    /// for a single unbreakable token.
+    var breaksLikeCJK: Bool {
+        unicodeScalars.contains { scalar in
+            switch scalar.value {
+            case 0x1100...0x11FF,   // Hangul Jamo
+                 0x2E80...0x9FFF,   // CJK radicals, symbols, kana, Hangul compatibility, ideographs
+                 0xAC00...0xD7AF,   // Hangul syllables
+                 0xF900...0xFAFF,   // CJK compatibility ideographs
+                 0xFE30...0xFE4F,   // CJK compatibility forms
+                 0x20000...0x2FA1F: // CJK extensions B–F and compatibility supplement
+                return true
+            default:
+                return scalar.properties.isIdeographic
+            }
+        }
+    }
+}
+
 enum ClipboardKind {
     case text, link, image
     var symbol: String { switch self { case .text: "text.alignleft"; case .link: "link"; case .image: "photo" } }
@@ -74,16 +95,26 @@ struct ClipboardDisplay {
     let text: String
     /// One line of at most 200 characters for the row.
     let line: String?
+    /// True when the preview renders this as one scrollable line (a URL or an unbreakable ASCII
+    /// token) instead of wrapping by column width. Cached here so the view never rescans the body.
+    let singleLine: Bool
     init(_ entry: ClipboardEntry) {
         let text = entry.plainText ?? ""
         self.text = text
         line = text.isEmpty ? nil : String(text.prefix(200)).replacingOccurrences(of: "\n", with: " ")
-        if entry.imageData != nil { kind = .image; return }
+        if entry.imageData != nil { kind = .image; singleLine = false; return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // Normal text usually has a space near the start. Reject it before walking every grapheme
         // just to measure a long body that cannot be a standalone URL.
-        if !trimmed.isEmpty, !trimmed.contains(where: \.isWhitespace), trimmed.count < 2048, let url = URL(string: trimmed),
-           ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil { kind = .link } else { kind = .text }
+        var looksLikeLink = false
+        if !trimmed.isEmpty, !trimmed.contains(where: \.isWhitespace), trimmed.count < 2048,
+           let url = URL(string: trimmed), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil {
+            looksLikeLink = true
+        }
+        kind = looksLikeLink ? .link : .text
+        let hasWhitespace = text.contains(where: \.isWhitespace)
+        let hasCJKBreak = text.contains(where: \.breaksLikeCJK)
+        singleLine = looksLikeLink || (!hasWhitespace && !hasCJKBreak && text.count > 80)
     }
 }
 

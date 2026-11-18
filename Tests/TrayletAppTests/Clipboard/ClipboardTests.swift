@@ -117,6 +117,23 @@ import Testing
         #expect(try await archive.load().isEmpty)
     }
 
+    @Test func displaySingleLineTreatsCJKAsWrappableAndURLsAndBlobsAsSingleLine() {
+        func display(_ text: String) -> ClipboardDisplay {
+            ClipboardDisplay(ClipboardEntry(id: UUID(), digest: "display-" + text, items: [.text(text)], capturedAt: Date(), favorite: false, application: "test.app"))
+        }
+        // Chinese text has no spaces but must wrap by column width, not become one scrollable line.
+        let cjk = String(repeating: "这是一个较长的中文段落用于验证换行判定。", count: 6)
+        #expect(!display(cjk).singleLine)
+        // A standalone URL stays one scrollable line even when short.
+        #expect(display("https://example.com/" + String(repeating: "a", count: 120)).singleLine)
+        #expect(display("https://example.com/path").kind == .link)
+        // A long ASCII blob with no break points is one scrollable line.
+        #expect(display(String(repeating: "abc123", count: 40)).singleLine)
+        // Ordinary prose with spaces wraps normally.
+        let prose = Array(repeating: "the quick brown fox", count: 20).joined(separator: " ")
+        #expect(!display(prose).singleLine)
+    }
+
 }
 
 @MainActor final class MemoryClipboardSource: ClipboardSource {

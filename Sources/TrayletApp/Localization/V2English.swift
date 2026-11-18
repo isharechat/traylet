@@ -142,6 +142,8 @@ enum V2English {
         "删除这条剪贴板历史？": "Delete this clipboard item?",
         "同时删除本机保存的这一项（含收藏），不修改当前系统剪贴板。": "The locally saved copy of this item, including a favorite, will also be deleted. The current system clipboard will not be changed.",
         "暂无匹配历史": "No Matching History",
+        "选择一条历史记录": "Select a History Item",
+        "在此查看内容、复制、收藏或删除。": "View, copy, favorite, or delete the selected item here.",
         "本机保存": "Local Storage",
         "历史始终未加密保存在本机": "History is always saved locally without encryption",
         "保存路径": "Storage Path",
