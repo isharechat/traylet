@@ -1,6 +1,24 @@
 import AppKit
 import ApplicationServices
 
+/// Pasteboard surface used by the clipboard fallbacks, kept behind a protocol so tests can simulate
+/// an interleaving write between `clearContents` and `writeObjects`.
+@MainActor protocol V2PasteboardBacking: AnyObject {
+    var backingChangeCount: Int { get }
+    var backingPasteboardItems: [NSPasteboardItem]? { get }
+    func backingString(forType: NSPasteboard.PasteboardType) -> String?
+    @discardableResult func backingClearContents() -> Int
+    @discardableResult func backingWriteObjects(_ objects: [NSPasteboardItem]) -> Bool
+}
+
+extension NSPasteboard: V2PasteboardBacking {
+    var backingChangeCount: Int { changeCount }
+    var backingPasteboardItems: [NSPasteboardItem]? { pasteboardItems }
+    func backingString(forType type: NSPasteboard.PasteboardType) -> String? { string(forType: type) }
+    @discardableResult func backingClearContents() -> Int { clearContents() }
+    @discardableResult func backingWriteObjects(_ objects: [NSPasteboardItem]) -> Bool { writeObjects(objects) }
+}
+
 /// Tries each reader in order and returns the first non-empty, normalized selection.
 @MainActor final class V2SelectedTextStrategyChain: V2SelectedTextReading {
     private let strategies: [any V2SelectedTextReading]
@@ -61,55 +79,67 @@ import ApplicationServices
         }
     }
 
+    /// Runs the AppleScript on a background queue so the blocking `NSAppleScript` call never
+    /// executes on the main actor.
     static func runScript(_ source: String) -> String? {
-        var error: NSDictionary?
-        guard let script = NSAppleScript(source: source) else { return nil }
-        let result = script.executeAndReturnError(&error)
-        guard error == nil else { return nil }
-        return result.stringValue?.nilIfEmpty
+        var output: String?
+        DispatchQueue.global(qos: .userInitiated).sync {
+            var error: NSDictionary?
+            guard let script = NSAppleScript(source: source) else { return }
+            let result = script.executeAndReturnError(&error)
+            guard error == nil else { return }
+            output = result.stringValue?.nilIfEmpty
+        }
+        return output
     }
 }
 
 /// Reusable clipboard copy capture with pasteboard backup and a change-count-guarded restore.
 @MainActor final class V2ClipboardCopyCapture {
-    private let pasteboard: () -> NSPasteboard
-    private let markIgnoreNextCopy: () -> Void
+    private let pasteboard: () -> any V2PasteboardBacking
+    private let setIgnoringNextCopy: (Bool) -> Void
     private let pollInterval: TimeInterval
     private let timeout: TimeInterval
 
-    init(pasteboard: @escaping () -> NSPasteboard = { .general },
-         markIgnoreNextCopy: @escaping () -> Void = {},
+    init(pasteboard: @escaping () -> any V2PasteboardBacking = { NSPasteboard.general },
+         setIgnoringNextCopy: @escaping (Bool) -> Void = { _ in },
          pollInterval: TimeInterval = 0.02,
          timeout: TimeInterval = 0.4) {
         self.pasteboard = pasteboard
-        self.markIgnoreNextCopy = markIgnoreNextCopy
+        self.setIgnoringNextCopy = setIgnoringNextCopy
         self.pollInterval = pollInterval
         self.timeout = timeout
     }
 
     /// Runs `postCopy`, waits for the board to change, reads a non-empty string, and restores the
     /// previous items only if the board has not changed again since the copy was observed.
-    func capture(postCopy: () -> Void) -> String? {
+    ///
+    /// The ignore marker is armed only after a real copy is observed, so empty selections and
+    /// failed copy presses never leak it into the user's next real copy.
+    func capture(postCopy: () -> Bool, postReadCheck: @escaping () -> Bool = { true }) -> String? {
         let board = pasteboard()
-        let backup = V2ClipboardCopySupport.snapshotItems(board.pasteboardItems)
-        let before = board.changeCount
-        markIgnoreNextCopy()
-        postCopy()
+        let backup = V2ClipboardCopySupport.snapshotItems(board.backingPasteboardItems)
+        let before = board.backingChangeCount
+        guard postCopy() else { return nil }
 
         let deadline = Date().addingTimeInterval(timeout)
-        while board.changeCount == before, Date() < deadline {
+        while board.backingChangeCount == before, Date() < deadline {
             RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
         }
 
-        let observed = board.changeCount
-        guard observed != before,
-              let text = board.string(forType: .string),
+        let observed = board.backingChangeCount
+        guard observed != before else { return nil }
+        guard let text = board.backingString(forType: .string),
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        guard postReadCheck() else { return nil }
 
-        if board.changeCount == observed {
-            // Re-arm the ignore marker so a restore that lands in a later poll is not recorded.
-            markIgnoreNextCopy()
-            _ = V2ClipboardCopySupport.restore(backup, on: board, observedGeneration: observed)
+        // The next board change is our restore, not a user copy, so arm the marker now. The paths
+        // above return before this point and therefore leave any pre-existing marker untouched.
+        setIgnoringNextCopy(true)
+        let restored = V2ClipboardCopySupport.restore(backup, on: board, observedGeneration: observed)
+        if !restored {
+            // A concurrent write won; keep that content and keep it in history.
+            setIgnoringNextCopy(false)
         }
         return text
     }
@@ -135,18 +165,26 @@ import ApplicationServices
         return !(value.contains("file") || value.contains("concealed") || value.contains("transient")
             || value.contains("autogenerated") || value.contains("password"))
     }
+
     /// Restores the backup only when the board is still at the generation that produced the copy.
-    /// Returns false (and leaves the board untouched) when a concurrent write changed it first.
-    @discardableResult static func restore(_ backup: [NSPasteboardItem]?, on board: NSPasteboard, observedGeneration: Int) -> Bool {
-        guard board.changeCount == observedGeneration else { return false }
-        board.clearContents()
-        if let backup, !backup.isEmpty { _ = board.writeObjects(backup) }
+    /// This is a best-effort guard, not an atomic guarantee: another process can still write between
+    /// these checks. A nil/empty backup (file/secret-only content) skips restore rather than clearing.
+    @discardableResult static func restore(_ backup: [NSPasteboardItem]?, on board: any V2PasteboardBacking, observedGeneration: Int) -> Bool {
+        guard board.backingChangeCount == observedGeneration else { return false }
+        guard let backup, !backup.isEmpty else { return false }
+        let clearedGeneration = board.backingClearContents()
+        guard board.backingChangeCount == clearedGeneration else { return false }
+        let wrote = board.backingWriteObjects(backup)
+        guard wrote, board.backingChangeCount == clearedGeneration else { return false }
         return true
     }
 }
 
 /// Simulates ⌘C and reads the resulting pasteboard string. Accessibility trust is required to post
 /// keyboard events, so it is the last-resort strategy for applications that expose nothing else.
+///
+/// Secure text fields are not explicitly rejected here; the system refuses to copy their content,
+/// so a password field yields no non-empty pasteboard string.
 @MainActor final class V2SimulatedCopySelectedText: V2SelectedTextReading {
     var isAuthorized: Bool { V2AccessibilitySelectedText.isTrusted }
     private let capture: V2ClipboardCopyCapture
@@ -163,8 +201,12 @@ import ApplicationServices
 
     func selectedText() -> String? {
         guard let pid = frontmostProcessIdentifier(), pid != ProcessInfo.processInfo.processIdentifier else { return nil }
-        _ = pid
-        return capture.capture(postCopy: postCopy)
+        return capture.capture(postCopy: {
+            self.postCopy()
+            return true
+        }, postReadCheck: {
+            self.frontmostProcessIdentifier() == pid
+        })
     }
 
     static func postCommandC() {
@@ -180,25 +222,34 @@ import ApplicationServices
 
 /// AX menu-bar Copy with an enabled pre-check so a disabled Copy (no selection) never touches the
 /// pasteboard. When enabled, the menu item is pressed and the copy capture reads and restores.
+///
+/// Secure text fields are not explicitly rejected here; macOS disables Copy for them, so the
+/// enabled pre-check short-circuits before the pasteboard is touched.
 @MainActor final class V2MenuActionSelectedText: V2SelectedTextReading {
     struct CopyAction {
         let enabled: Bool
-        let press: () -> Void
+        let press: () -> Bool
     }
 
     var isAuthorized: Bool { V2AccessibilitySelectedText.isTrusted }
     private let resolveCopy: () -> CopyAction?
     private let capture: V2ClipboardCopyCapture
+    private let frontmostProcessIdentifier: () -> pid_t?
 
     init(resolveCopy: @escaping () -> CopyAction? = { V2MenuActionSelectedText.frontmostCopyAction() },
-         capture: V2ClipboardCopyCapture) {
+         capture: V2ClipboardCopyCapture,
+         frontmostProcessIdentifier: @escaping () -> pid_t? = { NSWorkspace.shared.frontmostApplication?.processIdentifier }) {
         self.resolveCopy = resolveCopy
         self.capture = capture
+        self.frontmostProcessIdentifier = frontmostProcessIdentifier
     }
 
     func selectedText() -> String? {
         guard let action = resolveCopy(), action.enabled else { return nil }
-        return capture.capture(postCopy: action.press)
+        let pid = frontmostProcessIdentifier()
+        return capture.capture(postCopy: action.press, postReadCheck: {
+            self.frontmostProcessIdentifier() == pid
+        })
     }
 
     static func frontmostCopyAction() -> CopyAction? {
@@ -213,7 +264,7 @@ import ApplicationServices
         let menuBar = value as! AXUIElement
         guard let item = findCopyItem(in: menuBar) else { return nil }
         return CopyAction(enabled: isEnabled(item), press: {
-            _ = AXUIElementPerformAction(item, kAXPressAction as CFString)
+            AXUIElementPerformAction(item, kAXPressAction as CFString) == .success
         })
     }
 
@@ -223,6 +274,9 @@ import ApplicationServices
         return (value as? NSNumber)?.boolValue == true
     }
 
+    /// Locates Copy by its command equivalent (C, no extra modifiers). This is an inherent
+    /// limitation of reading menus via AX: apps with localized/custom Copy shortcuts may not match,
+    /// in which case the chain falls through to the simulated ⌘C shortcut.
     private static func findCopyItem(in element: AXUIElement) -> AXUIElement? {
         var visited = 0
         func children(of element: AXUIElement) -> [AXUIElement] {

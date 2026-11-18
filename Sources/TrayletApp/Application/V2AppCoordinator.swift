@@ -42,8 +42,8 @@ import TrayletCore
         // Recording is always on for the whole run; there is no user on/off or pause. It stops only on quit.
         let clipboard = ClipboardFeature(directory: directory.appendingPathComponent("clipboard", isDirectory: true), autoStart: true)
         self.preferences = preferences; self.shortcuts = shortcuts; self.clipboard = clipboard
-        let markIgnoreNextCopy = { clipboard.controller.setIgnoringNextCopy(true) }
-        let copyCapture = V2ClipboardCopyCapture(markIgnoreNextCopy: markIgnoreNextCopy)
+        let setIgnoringNextCopy: (Bool) -> Void = { clipboard.controller.setIgnoringNextCopy($0) }
+        let copyCapture = V2ClipboardCopyCapture(setIgnoringNextCopy: setIgnoringNextCopy)
         self.selectedText = V2SelectedTextStrategyChain(strategies: [
             V2AccessibilitySelectedText(),
             V2AppleScriptSelectedText(),
@@ -144,16 +144,21 @@ import TrayletCore
         guard !editor.isOpen, !capture.isBusy else { NSSound.beep(); return }
         switch action {
         case .inputTranslation:
-            // Read the selection before Traylet takes focus; a found selection replaces the source text and translates.
-            let selection = selectedText.selectedText()
-            let needsAccessibility = selection == nil && !selectedText.isAuthorized
+            // Open the window immediately, then resolve the selection asynchronously so the
+            // AppleScript / clipboard fallbacks never delay the window appearance.
+            translation.present(text: "")
+            let needsAccessibility = !selectedText.isAuthorized
             if needsAccessibility, !requestedAccessibility {
                 requestedAccessibility = true
                 V2AccessibilitySelectedText.requestTrust()
             }
-            translation.present(text: selection ?? "")
-            if selection != nil { translation.startSubmission() }
-            else if needsAccessibility { translation.showAccessibilityNotice() }
+            if needsAccessibility { translation.showAccessibilityNotice() }
+            let reader = selectedText
+            Task { @MainActor in
+                guard !self.terminating, let selection = reader.selectedText(), !selection.isEmpty else { return }
+                self.translation.present(text: selection)
+                self.translation.startSubmission()
+            }
         case .clipboard: clipboard.present()
         case .regionCapture, .screenCapture, .captureTranslation: startCapture(action)
         }

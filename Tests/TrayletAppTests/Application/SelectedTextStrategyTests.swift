@@ -97,15 +97,17 @@ import Testing
 
     @Test func clipboardCaptureReadsCopyAndRestoresOriginal() throws {
         let board = try makeBoard("original")
-        var ignoreMarks = 0
-        let capture = V2ClipboardCopyCapture(pasteboard: { board }, markIgnoreNextCopy: { ignoreMarks += 1 },
-                                             pollInterval: 0.01, timeout: 0.2)
+        var setTrue = 0, setFalse = 0
+        let capture = V2ClipboardCopyCapture(pasteboard: { board }, setIgnoringNextCopy: { value in
+            if value { setTrue += 1 } else { setFalse += 1 }
+        }, pollInterval: 0.01, timeout: 0.2)
         let result = capture.capture {
             write("copied selection", to: board)
+            return true
         }
         #expect(result == "copied selection")
         #expect(board.string(forType: .string) == "original")
-        #expect(ignoreMarks == 2)
+        #expect(setTrue == 1 && setFalse == 0)
     }
 
     @Test func clipboardRestoreSkipsWhenGenerationChanged() throws {
@@ -127,6 +129,17 @@ import Testing
         #expect(board.string(forType: .string) == "original")
     }
 
+    @Test func clipboardRestoreSkipsInterleavedWriteBetweenClearAndWrite() throws {
+        let board = InterleavingPasteboard()
+        board.seed("original")
+        let backup = try #require(V2ClipboardCopySupport.snapshotItems(board.backingPasteboardItems))
+        board.seed("copied")
+        let observed = board.backingChangeCount
+        board.interleaveOnClear = true
+        #expect(!V2ClipboardCopySupport.restore(backup, on: board, observedGeneration: observed))
+        #expect(board.backingString(forType: .string) == "concurrent")
+    }
+
     @Test func simulatedCopyReaderUsesInjectedCopyAndRestores() throws {
         let board = try makeBoard("original")
         let capture = V2ClipboardCopyCapture(pasteboard: { board }, pollInterval: 0.01, timeout: 0.2)
@@ -140,9 +153,9 @@ import Testing
     @Test func disabledMenuCopyDoesNotTouchClipboard() throws {
         let board = try makeBoard("original")
         var pressed = false
-        let action = V2MenuActionSelectedText.CopyAction(enabled: false, press: { pressed = true })
+        let action = V2MenuActionSelectedText.CopyAction(enabled: false, press: { pressed = true; return true })
         let capture = V2ClipboardCopyCapture(pasteboard: { board }, pollInterval: 0.01, timeout: 0.2)
-        let reader = V2MenuActionSelectedText(resolveCopy: { action }, capture: capture)
+        let reader = V2MenuActionSelectedText(resolveCopy: { action }, capture: capture, frontmostProcessIdentifier: { 12345 })
         #expect(reader.selectedText() == nil)
         #expect(!pressed)
         #expect(board.string(forType: .string) == "original")
@@ -154,9 +167,10 @@ import Testing
         let action = V2MenuActionSelectedText.CopyAction(enabled: true, press: {
             pressed = true
             write("menu copy", to: board)
+            return true
         })
         let capture = V2ClipboardCopyCapture(pasteboard: { board }, pollInterval: 0.01, timeout: 0.2)
-        let reader = V2MenuActionSelectedText(resolveCopy: { action }, capture: capture)
+        let reader = V2MenuActionSelectedText(resolveCopy: { action }, capture: capture, frontmostProcessIdentifier: { 12345 })
         #expect(reader.selectedText() == "menu copy")
         #expect(pressed)
         #expect(board.string(forType: .string) == "original")
@@ -176,6 +190,34 @@ import Testing
         let item = NSPasteboardItem()
         item.setString(text, forType: .string)
         _ = board.writeObjects([item])
+    }
+}
+
+@MainActor private final class InterleavingPasteboard: V2PasteboardBacking {
+    private let board = NSPasteboard(name: .init("local.traylet.interleave.\(UUID().uuidString)"))
+    var interleaveOnClear = false
+
+    var backingChangeCount: Int { board.changeCount }
+    var backingPasteboardItems: [NSPasteboardItem]? { board.pasteboardItems }
+    func backingString(forType type: NSPasteboard.PasteboardType) -> String? { board.string(forType: type) }
+
+    @discardableResult func backingClearContents() -> Int {
+        let generation = board.clearContents()
+        if interleaveOnClear {
+            // Simulate another process copying between our clear and our write.
+            let item = NSPasteboardItem(); item.setString("concurrent", forType: .string)
+            _ = board.clearContents()
+            _ = board.writeObjects([item])
+        }
+        return generation
+    }
+
+    @discardableResult func backingWriteObjects(_ objects: [NSPasteboardItem]) -> Bool { board.writeObjects(objects) }
+
+    func seed(_ text: String) {
+        _ = backingClearContents()
+        let item = NSPasteboardItem(); item.setString(text, forType: .string)
+        _ = backingWriteObjects([item])
     }
 }
 
