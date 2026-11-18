@@ -138,7 +138,8 @@ extension NSPasteboard: V2PasteboardBacking {
         setIgnoringNextCopy(true)
         let restored = V2ClipboardCopySupport.restore(backup, on: board, observedGeneration: observed)
         if !restored {
-            // A concurrent write won; keep that content and keep it in history.
+            // A concurrent write won; keep that content on the pasteboard and reset the marker so
+            // the next user copy is not ignored.
             setIgnoringNextCopy(false)
         }
         return text

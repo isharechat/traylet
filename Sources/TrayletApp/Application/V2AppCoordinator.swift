@@ -155,7 +155,10 @@ import TrayletCore
             if needsAccessibility { translation.showAccessibilityNotice() }
             let reader = selectedText
             Task { @MainActor in
-                guard !self.terminating, let selection = reader.selectedText(), !selection.isEmpty else { return }
+                guard !self.terminating,
+                      self.translation.flow.input.isEmpty,
+                      self.translation.isPresented,
+                      let selection = reader.selectedText(), !selection.isEmpty else { return }
                 self.translation.present(text: selection)
                 self.translation.startSubmission()
             }
