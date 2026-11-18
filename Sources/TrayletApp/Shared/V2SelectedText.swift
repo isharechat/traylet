@@ -92,13 +92,55 @@ enum V2SelectedTextAttributeResult {
                   let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
             return (value as! AXUIElement)
         }
+        func focusedElement(in window: AXUIElement) -> AXUIElement? {
+            // Chrome and a few other applications answer none of the focused-element queries,
+            // but still mark the focused element with AXFocused inside the focused window.
+            // Walk only that window's subtree (bounded) and keep the deepest focused element.
+            let maximumElements = 512
+            let maximumDepth = 24
+            var visited = 0
+            var deepest: AXUIElement?
+            var deepestDepth = -1
+            func attribute(_ element: AXUIElement, _ name: CFString) -> CFTypeRef? {
+                var value: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(element, name, &value) == .success else { return nil }
+                return value
+            }
+            func isFocused(_ element: AXUIElement) -> Bool {
+                AXUIElementSetMessagingTimeout(element, 0.5)
+                guard let value = attribute(element, kAXFocusedAttribute as CFString) else { return false }
+                return (value as? NSNumber)?.boolValue == true
+            }
+            func children(of element: AXUIElement) -> [AXUIElement] {
+                AXUIElementSetMessagingTimeout(element, 0.5)
+                guard let value = attribute(element, kAXChildrenAttribute as CFString),
+                      CFGetTypeID(value) == CFArrayGetTypeID() else { return [] }
+                return (value as? [AXUIElement]) ?? []
+            }
+            func search(_ element: AXUIElement, depth: Int) {
+                guard visited < maximumElements, depth <= maximumDepth else { return }
+                visited += 1
+                if isFocused(element), depth > deepestDepth {
+                    deepest = element
+                    deepestDepth = depth
+                }
+                for child in children(of: element) { search(child, depth: depth + 1) }
+            }
+            for child in children(of: window) { search(child, depth: 1) }
+            return deepest
+        }
         func focusedElement() -> AXUIElement? {
             // Some system/application combinations do not resolve the system-wide focused-element
             // query. Ask the frontmost application itself first, then keep system-wide as a fallback.
             if let element = element(appElement, kAXFocusedUIElementAttribute as CFString) { return element }
-            if let window = element(appElement, kAXFocusedWindowAttribute as CFString),
-               let element = element(window, kAXFocusedUIElementAttribute as CFString) { return element }
-            return element(system, kAXFocusedUIElementAttribute as CFString)
+            let window = element(appElement, kAXFocusedWindowAttribute as CFString)
+            if let window, let element = element(window, kAXFocusedUIElementAttribute as CFString) { return element }
+            if let element = element(system, kAXFocusedUIElementAttribute as CFString) { return element }
+            if let window {
+                AXUIElementSetMessagingTimeout(window, 0.5)
+                return focusedElement(in: window)
+            }
+            return nil
         }
         guard let element = focusedElement() else { return nil }
         var owner: pid_t = 0
