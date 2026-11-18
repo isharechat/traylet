@@ -143,6 +143,7 @@ import TrayletCore
         return task
     }
     func close() { cancel(); confirmedEngines = []; panel?.orderOut(nil) }
+    var isPresented: Bool { panel?.isVisible == true }
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow, window === panel else { return }
         close()

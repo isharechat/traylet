@@ -25,7 +25,7 @@ import TrayletCore
     private var terminating = false
     private var authorizationTimer: Timer?
     private var requestedAccessibility = false
-    var selectedText: any V2SelectedTextReading = V2AccessibilitySelectedText()
+    let selectedText: any V2SelectedTextReading
     private var accessibilityGranted = false
     private var welcomeBacking: V2GlassWindowBacking?
     private var screenRecordingGranted = false
@@ -42,6 +42,14 @@ import TrayletCore
         // Recording is always on for the whole run; there is no user on/off or pause. It stops only on quit.
         let clipboard = ClipboardFeature(directory: directory.appendingPathComponent("clipboard", isDirectory: true), autoStart: true)
         self.preferences = preferences; self.shortcuts = shortcuts; self.clipboard = clipboard
+        let setIgnoringNextCopy: (Bool) -> Void = { clipboard.controller.setIgnoringNextCopy($0) }
+        let copyCapture = V2ClipboardCopyCapture(setIgnoringNextCopy: setIgnoringNextCopy)
+        self.selectedText = V2SelectedTextStrategyChain(strategies: [
+            V2AccessibilitySelectedText(),
+            V2AppleScriptSelectedText(),
+            V2MenuActionSelectedText(capture: copyCapture),
+            V2SimulatedCopySelectedText(capture: copyCapture)
+        ])
         let translation = TranslationController(configuration: configuration)
         self.translation = translation
         let editor = CaptureEditorController(), capture = V2CaptureSession()
@@ -136,16 +144,19 @@ import TrayletCore
         guard !editor.isOpen, !capture.isBusy else { NSSound.beep(); return }
         switch action {
         case .inputTranslation:
-            // Read the selection before Traylet takes focus; a found selection replaces the source text and translates.
-            let selection = selectedText.selectedText()
-            let needsAccessibility = selection == nil && !selectedText.isAuthorized
+            let needsAccessibility = !selectedText.isAuthorized
             if needsAccessibility, !requestedAccessibility {
                 requestedAccessibility = true
                 V2AccessibilitySelectedText.requestTrust()
             }
-            translation.present(text: selection ?? "")
-            if selection != nil { translation.startSubmission() }
-            else if needsAccessibility { translation.showAccessibilityNotice() }
+            // Resolve before presenting: presenting activates Traylet, and every strategy rejects
+            // reading the selection from Traylet itself.
+            V2InputTranslationResolver.resolve(
+                reader: selectedText,
+                translation: translation,
+                needsAccessibility: needsAccessibility,
+                isTerminated: { [weak self] in self?.terminating ?? true }
+            )
         case .clipboard: clipboard.present()
         case .regionCapture, .screenCapture, .captureTranslation: startCapture(action)
         }

@@ -45,9 +45,9 @@
 
 - 现象：辅助功能已授权，在其他应用（尤其 Chrome）选中文本后按 `⌃⌥R`，翻译窗口打开但原文框为空；应用级、窗口级和 system-wide 三级 `AXFocusedUIElement` 查询都没有返回焦点元素。
 - 原因：部分应用（如 Chrome）在应用级 `AXFocusedUIElement` 返回无值，窗口级 `AXFocusedUIElement` 返回不支持，system-wide 查询返回 `kAXErrorCannotComplete`；焦点元素解析为空，选区读取在进入角色与选区读取前就结束。
-- 修复：三级查询都失败时，对前台焦点窗口的无障碍子树做有界遍历，只读取 `AXFocused`、`AXChildren`、`AXRole`、`AXSubrole` 等结构属性，找到最深的 `AXFocused` 元素后复用现有选区读取与安全校验；不读取正文内容，最多遍历 512 个节点、24 层。
-- 验证：`SelectedTextSafetyTests` 与 `TranslationControllerTests` 定向测试通过；真实 Chrome 前台选区仍需在授权后的实机上确认。
-- 边界：该回退依赖应用在其焦点窗口子树内暴露 `AXFocused`；不扫描未聚焦窗口，也不读取非焦点元素的选中内容。
+- 修复：采用 Easydict 式分层策略链。无障碍路径保留三级焦点查询与有界遍历，并补上 `AXSelectedTextMarkerRange` + `AXStringForTextMarkerRange` 回退；无障碍读不到时依次尝试浏览器 AppleScript/JS 直读、AX 菜单栏 Copy（`requireEnabled` 预判无选区）、模拟 ⌘C + 剪贴板监听。后两者备份/恢复剪贴板，用 `changeCount` 一致性守卫避免覆盖用户并发复制，并用「忽略下一次复制」排除中间复制污染剪贴板历史。
+- 验证：`SelectedTextSafetyTests`、`SelectedTextStrategyTests`、`TranslationControllerTests`、`ShortcutDriverTests`、`AuthorizationGateTests` 定向测试通过；真实 Chrome 前台选区仍需在授权后的实机上确认。
+- 边界：该回退依赖应用在焦点窗口子树内暴露 `AXFocused` 或 `AXSelectedTextMarkerRange`；AppleScript 首次使用会触发 macOS「自动化」权限弹窗；⌘C 兜底会短暂改写并恢复系统剪贴板。
 
 ## 实现防线
 
