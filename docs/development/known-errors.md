@@ -41,6 +41,14 @@
 - 验证：`accessibilityNoticeStaysUntilTheNextPresentation` 覆盖提示生命周期；本机系统设置实查确认 Traylet 无授权条目。未在授权后执行真实前台选区读取，因为授权必须由用户本人确认。
 - 边界：必须由用户在系统设置中授权后才能读取选区；每重新签名的 ad-hoc 构建可能需要再次授权。该记录不构成“授权后真实选区已通过”的验收结果。
 
+### 输入翻译快捷键在 Chrome 等应用中读不到选中文本（已授权仍无法预填）
+
+- 现象：辅助功能已授权，在其他应用（尤其 Chrome）选中文本后按 `⌃⌥R`，翻译窗口打开但原文框为空；应用级、窗口级和 system-wide 三级 `AXFocusedUIElement` 查询都没有返回焦点元素。
+- 原因：部分应用（如 Chrome）在应用级 `AXFocusedUIElement` 返回无值，窗口级 `AXFocusedUIElement` 返回不支持，system-wide 查询返回 `kAXErrorCannotComplete`；焦点元素解析为空，选区读取在进入角色与选区读取前就结束。
+- 修复：三级查询都失败时，对前台焦点窗口的无障碍子树做有界遍历，只读取 `AXFocused`、`AXChildren`、`AXRole`、`AXSubrole` 等结构属性，找到最深的 `AXFocused` 元素后复用现有选区读取与安全校验；不读取正文内容，最多遍历 512 个节点、24 层。
+- 验证：`SelectedTextSafetyTests` 与 `TranslationControllerTests` 定向测试通过；真实 Chrome 前台选区仍需在授权后的实机上确认。
+- 边界：该回退依赖应用在其焦点窗口子树内暴露 `AXFocused`；不扫描未聚焦窗口，也不读取非焦点元素的选中内容。
+
 ## 实现防线
 
 - `TranslationSession` 只在当前 SwiftUI `translationTask` 宿主生命周期使用；宿主关闭或配置变化后新建工作，不缓存旧 session。
