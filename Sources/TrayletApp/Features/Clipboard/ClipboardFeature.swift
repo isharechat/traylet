@@ -29,9 +29,11 @@ import ImageIO
     private var dismissal: NSObjectProtocol?
     private var closeObservation: NSObjectProtocol?
     private var mainMoveObservation: NSObjectProtocol?
+    private var mainResizeObservation: NSObjectProtocol?
     private var detailPanel: NSPanel?
     private var detailBacking: V2GlassWindowBacking?
     private var detailDismissal: NSObjectProtocol?
+    private var detailResignObservation: NSObjectProtocol?
     private let preferences: Task<Void, Never>
     private var shuttingDown = false
     init(directory: URL, source: (any ClipboardSource)? = nil, writer: (any ClipboardWriting)? = nil, archive: (any V2ClipboardArchiving)? = nil, clock: @escaping () -> Date = Date.init,
@@ -134,6 +136,9 @@ import ImageIO
             mainMoveObservation = NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.positionDetailPanel() }
             }
+            mainResizeObservation = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.positionDetailPanel() }
+            }
         }
         refreshTitle()
         if let panel {
@@ -168,6 +173,18 @@ import ImageIO
                 MainActor.assumeIsolated {
                     guard let self, !self.shuttingDown else { return }
                     self.controller.selectedID = nil
+                }
+            }
+            detailResignObservation = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        guard let self, let detailPanel = self.detailPanel, let mainPanel = self.panel,
+                              detailPanel.isVisible, !self.shuttingDown else { return }
+                        let keepOpen = NSApp.keyWindow === mainPanel || V2FloatingWindow.ownsKeyPopup(of: mainPanel)
+                        if !keepOpen, mainPanel.isVisible, detailPanel.attachedSheet == nil, NSApp.modalWindow == nil {
+                            self.dismiss()
+                        }
+                    }
                 }
             }
         }
@@ -272,6 +289,15 @@ extension ClipboardKind {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onExitCommand { feature.dismiss() }
+        .background {
+            Button {
+                if let entry = controller.selectedEntry { controller.copy(entry.id) }
+            } label: { EmptyView() }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
         .onChange(of: localization.languageCode) { _, _ in feature.refreshTitle() }
         .alert(V2L("删除所有收藏？"), isPresented: $confirmDeleteFavorites) {
             Button(V2L("取消"), role: .cancel) {}
@@ -377,19 +403,31 @@ extension ClipboardKind {
     @ObservedObject private var controller: ClipboardController
     init(feature: ClipboardFeature) { self.feature = feature; controller = feature.controller }
     var body: some View {
-        if let entry = controller.selectedEntry {
-            let display = controller.display(entry)
-            VStack(alignment: .leading, spacing: 12) {
-                sourceHeader(entry: entry, display: display)
-                content(entry: entry, display: display)
+        Group {
+            if let entry = controller.selectedEntry {
+                let display = controller.display(entry)
+                VStack(alignment: .leading, spacing: 12) {
+                    sourceHeader(entry: entry, display: display)
+                    content(entry: entry, display: display)
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else {
+                Text(V2L("未选择内容"))
+                    .font(.callout).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        } else {
-            Text(V2L("未选择内容"))
-                .font(.callout).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .background {
+            Button {
+                if let entry = controller.selectedEntry { controller.copy(entry.id) }
+            } label: { EmptyView() }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
+        .onExitCommand { feature.dismiss() }
     }
     private func sourceHeader(entry: ClipboardEntry, display: ClipboardDisplay) -> some View {
         HStack(spacing: 10) {
