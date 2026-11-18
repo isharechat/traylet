@@ -4,10 +4,14 @@ import Combine
 import ImageIO
 
 @MainActor final class ClipboardFeature: ObservableObject {
-    static let windowWidth: CGFloat = 720
+    static let windowWidth: CGFloat = 420
     static let windowHeight: CGFloat = 520
-    static let minimumWidth: CGFloat = 640
-    static let minimumHeight: CGFloat = 420
+    static let minimumWidth: CGFloat = 360
+    static let minimumHeight: CGFloat = 400
+    static let detailWidth: CGFloat = 440
+    static let detailHeight: CGFloat = 560
+    static let detailMinimumWidth: CGFloat = 320
+    static let detailMinimumHeight: CGFloat = 240
     let controller: ClipboardController
     let imageEditing: ClipboardImageEditing
     let storageDirectory: URL
@@ -24,6 +28,10 @@ import ImageIO
     private var backing: V2GlassWindowBacking?
     private var dismissal: NSObjectProtocol?
     private var closeObservation: NSObjectProtocol?
+    private var mainMoveObservation: NSObjectProtocol?
+    private var detailPanel: NSPanel?
+    private var detailBacking: V2GlassWindowBacking?
+    private var detailDismissal: NSObjectProtocol?
     private let preferences: Task<Void, Never>
     private var shuttingDown = false
     init(directory: URL, source: (any ClipboardSource)? = nil, writer: (any ClipboardWriting)? = nil, archive: (any V2ClipboardArchiving)? = nil, clock: @escaping () -> Date = Date.init,
@@ -39,6 +47,9 @@ import ImageIO
         controller.$query.removeDuplicates().dropFirst().sink { [weak imageEditing] _ in imageEditing?.cancel() }.store(in: &imageObservations)
         controller.$favoritesOnly.removeDuplicates().dropFirst().sink { [weak imageEditing] _ in imageEditing?.cancel() }.store(in: &imageObservations)
         controller.$selectedID.removeDuplicates().dropFirst().sink { [weak imageEditing] _ in imageEditing?.cancel() }.store(in: &imageObservations)
+        controller.$selectedID.removeDuplicates().dropFirst().sink { [weak self] _ in
+            MainActor.assumeIsolated { self?.syncDetailPanel() }
+        }.store(in: &imageObservations)
         controller.$entries.sink { [weak imageEditing] in imageEditing?.validate(entries: $0) }.store(in: &imageObservations)
         // The application records for the whole run with no user on/off or pause; it passes autoStart to begin collecting here.
         if autoStart { Task { await start(poll: true) } }
@@ -53,13 +64,17 @@ import ImageIO
     }
     /// Double-click / Return on a row: copy it, and close the window only when the copy really succeeded.
     func copyAndClose(_ id: UUID) {
-        if controller.copy(id) { imageEditing.cancel(); if let panel { dismissWindow(panel) } }
+        if controller.copy(id) { dismiss() }
     }
     func copySelectedAndClose() {
         guard let entry = controller.selectedEntry else { return }
         copyAndClose(entry.id)
     }
-    func dismiss() { imageEditing.cancel(); if let panel { dismissWindow(panel) } }
+    func dismiss() {
+        imageEditing.cancel()
+        hideDetailPanel()
+        if let panel { dismissWindow(panel) }
+    }
     /// Explicit image action, separate from Return/double-click's original-format copy.
     @discardableResult func editImage(_ id: UUID, itemIndex: Int) -> Task<Void, Never>? {
         guard !shuttingDown, !imageEditing.isPreparing,
@@ -116,12 +131,16 @@ import ImageIO
             closeObservation = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.imageEditing.cancel() }
             }
+            mainMoveObservation = NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.positionDetailPanel() }
+            }
         }
         refreshTitle()
         if let panel {
             panel.contentView?.layoutSubtreeIfNeeded()
             presentWindow(panel)
             focusSearchIfNeeded()
+            syncDetailPanel()
         }
     }
     func attachSearchField(_ field: NSTextField) {
@@ -132,13 +151,56 @@ import ImageIO
         guard wantsSearchFocus, let panel, let searchField, searchField.window === panel else { return }
         if panel.makeFirstResponder(searchField) { wantsSearchFocus = false }
     }
+    /// The full content lives in a companion popup instead of the list window.
+    private func syncDetailPanel() {
+        guard !shuttingDown, let panel, controller.selectedEntry != nil else {
+            hideDetailPanel()
+            return
+        }
+        if detailPanel == nil {
+            let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: Self.detailWidth, height: Self.detailHeight), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            window.title = V2L("剪贴板详情"); window.minSize = NSSize(width: Self.detailMinimumWidth, height: Self.detailMinimumHeight)
+            window.isReleasedWhenClosed = false
+            detailBacking = V2GlassWindowBacking(window: window, content: NSHostingView(rootView: ClipboardDetailView(feature: self)))
+            detailPanel = window
+            panel.addChildWindow(window, ordered: .above)
+            detailDismissal = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, !self.shuttingDown else { return }
+                    self.controller.selectedID = nil
+                }
+            }
+        }
+        positionDetailPanel()
+        detailPanel?.orderFront(nil)
+    }
+    private func hideDetailPanel() {
+        detailPanel?.orderOut(nil)
+    }
+    /// Places the detail popup to the right of the list window, falling back to the left when the right edge has no room.
+    private func positionDetailPanel() {
+        guard let panel, let detailPanel else { return }
+        let gap: CGFloat = 8
+        let size = detailPanel.frame.size
+        let mainFrame = panel.frame
+        var origin = NSPoint(x: mainFrame.maxX + gap, y: mainFrame.midY - size.height / 2)
+        if let screen = panel.screen ?? NSScreen.main {
+            let visible = screen.visibleFrame
+            if mainFrame.maxX + gap + size.width > visible.maxX {
+                origin.x = mainFrame.minX - gap - size.width
+                if origin.x < visible.minX { origin.x = visible.minX }
+            }
+            origin.y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
+        }
+        detailPanel.setFrameOrigin(origin)
+    }
     var showsDetail: Bool { controller.selectedEntry != nil }
     var storagePath: String {
         storageDirectory.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
     }
     func refreshTitle() { panel?.title = V2L("剪贴板") }
-    func shutdown() { shuttingDown = true; imageEditing.cancel(); controller.stop(); panel?.close(); Task { await controller.shutdown() } }
-    func shutdownAndWait() async { shuttingDown = true; imageEditing.cancel(); panel?.close(); await controller.shutdown() }
+    func shutdown() { shuttingDown = true; imageEditing.cancel(); controller.stop(); detailPanel?.close(); panel?.close(); Task { await controller.shutdown() } }
+    func shutdownAndWait() async { shuttingDown = true; imageEditing.cancel(); detailPanel?.close(); panel?.close(); await controller.shutdown() }
 }
 
 extension ClipboardKind {
@@ -153,7 +215,6 @@ extension ClipboardKind {
     @State private var confirmClear = false
     @State private var confirmDeleteFavorites = false
     @State private var confirmDelete = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     init(feature: ClipboardFeature) { self.feature = feature; controller = feature.controller; imageEditing = feature.imageEditing }
     var body: some View {
         VStack(spacing: 0) {
@@ -201,14 +262,14 @@ extension ClipboardKind {
                     .menuStyle(.borderlessButton).fixedSize().help(V2L("更多")).accessibilityLabel(V2L("更多"))
             }.padding(12)
             Divider()
-            HStack(spacing: 0) {
-                historyList
-                    .frame(minWidth: 280, idealWidth: 320, maxWidth: 360)
+            if let message = activeMessage {
+                Text(message).font(.caption).foregroundStyle(.orange).lineLimit(2)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Divider()
-                detailColumn
-                    .frame(minWidth: 340, maxWidth: .infinity, maxHeight: .infinity)
             }
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: feature.showsDetail)
+            historyList
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onExitCommand { feature.dismiss() }
         .onChange(of: localization.languageCode) { _, _ in feature.refreshTitle() }
@@ -262,125 +323,6 @@ extension ClipboardKind {
         if let message = controller.message { return V2L(message) }
         return nil
     }
-    /// A stable right-hand column. The detail slides in over a friendly empty state so the window
-    /// frame never changes when the selection changes.
-    @ViewBuilder private var detailColumn: some View {
-        ZStack(alignment: .topLeading) {
-            emptyDetail
-                .opacity(feature.showsDetail ? 0 : 1)
-                .allowsHitTesting(!feature.showsDetail)
-                .accessibilityHidden(feature.showsDetail)
-            if feature.showsDetail {
-                preview
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipped()
-    }
-    private var emptyDetail: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "doc.on.doc")
-                .font(.system(size: 32, weight: .regular))
-                .foregroundStyle(.tertiary)
-            if let message = activeMessage {
-                Text(message).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            } else {
-                Text(V2L("选择一条历史记录"))
-                    .font(.callout).foregroundStyle(.secondary)
-                Text(V2L("在此查看内容、复制、收藏或删除。"))
-                    .font(.caption).foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(24)
-    }
-    @ViewBuilder private var preview: some View {
-        if let entry = controller.selectedEntry {
-            let display = controller.display(entry)
-            let kind = display.kind
-            VStack(alignment: .leading, spacing: 12) {
-                previewHeader(entry: entry, display: display, kind: kind)
-                if let message = activeMessage {
-                    Text(message).font(.caption).foregroundStyle(.orange).lineLimit(2)
-                }
-                previewContent(entry: entry, display: display)
-                previewActions(entry: entry)
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        }
-    }
-    private func previewHeader(entry: ClipboardEntry, display: ClipboardDisplay, kind: ClipboardKind) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: kind.symbol)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.tint)
-                .frame(width: 30, height: 30)
-                .v2GlassBackground(in: RoundedRectangle(cornerRadius: V2Design.Radius.control))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(kind.title).font(.headline)
-                Text(entry.application).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-            }
-            Spacer(minLength: 12)
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(entry.capturedAt.formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption).foregroundStyle(.secondary)
-                Text(previewSize(entry: entry, display: display, kind: kind))
-                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-            }
-        }
-    }
-    private func previewSize(entry: ClipboardEntry, display: ClipboardDisplay, kind: ClipboardKind) -> String {
-        if kind == .image {
-            let bytes = ByteCountFormatter.string(fromByteCount: Int64(entry.byteCount), countStyle: .file)
-            return display.text.isEmpty ? bytes : bytes + " · " + String(format: V2L("%d 字符"), display.text.count)
-        }
-        return String(format: V2L("%d 字符"), display.text.count)
-    }
-    @ViewBuilder private func previewContent(entry: ClipboardEntry, display: ClipboardDisplay) -> some View {
-        ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: 12) {
-                if entry.imageData != nil { ClipboardPreviewImage(entry: entry) }
-                if !display.text.isEmpty { previewText(display) }
-            }
-            .padding(12)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .v2GlassBackground(in: RoundedRectangle(cornerRadius: V2Design.Radius.card))
-    }
-    /// Wrapped text reads best; a URL or an unbreakable ASCII token scrolls horizontally instead of clipping.
-    @ViewBuilder private func previewText(_ display: ClipboardDisplay) -> some View {
-        if display.singleLine {
-            ScrollView(.horizontal) {
-                Text(display.text)
-                    .textSelection(.enabled)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-            }
-        } else {
-            Text(display.text)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-    private func previewActions(entry: ClipboardEntry) -> some View {
-        HStack {
-            Button(V2L("复制")) { controller.copy(entry.id) }.buttonStyle(.borderedProminent).keyboardShortcut("c", modifiers: [.command, .shift])
-            Button { Task { await controller.toggleFavorite(entry.id) } } label: {
-                Image(systemName: entry.favorite ? "star.fill" : "star")
-            }.accessibilityLabel(V2L(entry.favorite ? "取消收藏" : "收藏"))
-                .help(V2L("收藏会把内容未加密保存在本机，不会被自动清理"))
-            if entry.imageData != nil {
-                Menu { imageEditActions(entry); imageRecognitionActions(entry) } label: { Image(systemName: "photo") }
-                    .menuStyle(.borderedButton).fixedSize().disabled(imageEditing.isPreparing)
-                    .help(V2L("图片操作")).accessibilityLabel(V2L("图片操作"))
-            }
-            Spacer()
-            Button(V2L("删除"), role: .destructive) { requestDeletion(entry.id) }
-        }
-    }
     private func requestDeletion(_ id: UUID) {
         controller.requestDeletion(id)
         confirmDelete = controller.pendingDeletionID != nil
@@ -425,6 +367,70 @@ extension ClipboardKind {
         guard let index = ids.firstIndex(of: id), ids.indices.contains(index + offset) else { return }
         ids.swapAt(index, index + offset)
         Task { await controller.reorderFavorites(ids) }
+    }
+}
+
+/// Full clipboard content in a separate popup beside the list window. It shows only the content
+/// and its source application; copy/delete/favorite actions stay in the list window.
+@MainActor struct ClipboardDetailView: View {
+    @ObservedObject private var feature: ClipboardFeature
+    @ObservedObject private var controller: ClipboardController
+    init(feature: ClipboardFeature) { self.feature = feature; controller = feature.controller }
+    var body: some View {
+        if let entry = controller.selectedEntry {
+            let display = controller.display(entry)
+            VStack(alignment: .leading, spacing: 12) {
+                sourceHeader(entry: entry, display: display)
+                content(entry: entry, display: display)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            Text(V2L("未选择内容"))
+                .font(.callout).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+    private func sourceHeader(entry: ClipboardEntry, display: ClipboardDisplay) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: display.kind.symbol)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.tint)
+                .frame(width: 30, height: 30)
+                .v2GlassBackground(in: RoundedRectangle(cornerRadius: V2Design.Radius.control))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(V2L("来源")).font(.caption).foregroundStyle(.secondary)
+                Text(entry.application).font(.callout).lineLimit(1).truncationMode(.middle)
+            }
+            Spacer(minLength: 12)
+            Text(entry.capturedAt.formatted(date: .abbreviated, time: .shortened))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+    @ViewBuilder private func content(entry: ClipboardEntry, display: ClipboardDisplay) -> some View {
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 12) {
+                if entry.imageData != nil { ClipboardPreviewImage(entry: entry) }
+                if !display.text.isEmpty { text(display) }
+            }
+            .padding(12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .v2GlassBackground(in: RoundedRectangle(cornerRadius: V2Design.Radius.card))
+    }
+    @ViewBuilder private func text(_ display: ClipboardDisplay) -> some View {
+        if display.singleLine {
+            ScrollView(.horizontal) {
+                Text(display.text)
+                    .textSelection(.enabled)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+        } else {
+            Text(display.text)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 
