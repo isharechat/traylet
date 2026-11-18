@@ -11,6 +11,7 @@ import SwiftUI
     @ObservedObject var actions: V2SettingsActions
     @ObservedObject var localization: V2Localization = .shared
     @ObservedObject private var appearance = V2AppearanceState.shared
+    @StateObject private var permissionStatus = V2PermissionStatus()
     @State private var confirmPreferenceRecovery = false
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -77,6 +78,7 @@ import SwiftUI
                 case .shortcuts: shortcutSettings
                 case .translation: TranslationConfigurationView(configuration: translation, languagePacks: languagePacks)
                 case .clipboard: ClipboardFeatureSettingsView(feature: clipboard)
+                case .permissions: V2PermissionsSettingsView(status: permissionStatus)
                 case .about: about
                 }
             }

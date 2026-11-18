@@ -35,7 +35,7 @@ struct TranslationConfigurationView: View {
             Section {
                 LabeledContent(V2L("读取选中文本")) {
                     HStack(spacing: 8) {
-                        Text(V2L(accessibilityGranted ? "已授权" : "未授权"))
+                        Text(V2L(accessibilityGranted ? "已允许" : "未允许"))
                             .foregroundStyle(accessibilityGranted ? Color.secondary : Color.orange)
                         Button(V2L(accessibilityGranted ? "系统设置" : "请求权限")) {
                             if accessibilityGranted { V2AccessibilitySelectedText.openSettings() }

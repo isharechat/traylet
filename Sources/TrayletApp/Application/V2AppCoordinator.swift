@@ -13,8 +13,11 @@ import TrayletCore
     let settings: V2SettingsController
     let clipboardEditing: ClipboardEditorBridge
     let clipboardTranslation: ClipboardTranslationBridge
+    let permissionStatus: V2PermissionStatus
+    private var permissionRecovery: V2PermissionRecovery!
     private var statusItem: NSStatusItem?
     private var welcome: NSWindow?
+    private var recoveryWindow: NSWindow?
     private var progress: NSPanel?
     private var observations: Set<AnyCancellable> = []
     private var previousApp: NSRunningApplication?
@@ -50,7 +53,13 @@ import TrayletCore
             editor.discardHiddenSession(); return !capture.isBusy && !editor.isOpen
         })
         settings = V2SettingsController(preferences: preferences, shortcuts: shortcuts, translation: configuration, clipboard: clipboard)
+        let permissionStatus = V2PermissionStatus()
+        self.permissionStatus = permissionStatus
         super.init()
+        permissionRecovery = V2PermissionRecovery(
+            snapshotStore: V2PermissionSnapshotStore(file: directory.appendingPathComponent("permissions.json")),
+            status: permissionStatus,
+            present: { [weak self] losses in self?.presentPermissionRecovery(losses: losses) })
         shortcuts.onInvoke = { [weak self] in self?.invoke($0) }
         translation.onOpenSettings = { [weak self] pair in self?.settings.present(section: .translation, languagePackPair: pair) }
         editor.onComplete = { [weak self] in
@@ -86,6 +95,7 @@ import TrayletCore
         do { try shortcuts.start() }
         catch { showProblem((error as? FeatureIssue)?.localizedDescription ?? "全局快捷键未就绪，请从菜单栏打开设置。") }
         if !preferences.value.hasCompletedWelcome { showWelcome() }
+        _ = permissionRecovery.runStartupCheck(hasCompletedWelcome: preferences.value.hasCompletedWelcome)
     }
     private var english: Bool { V2Localization.shared.english }
     private func refreshMenu(value: V2UserPreferences? = nil) {
@@ -186,8 +196,24 @@ import TrayletCore
         previousApp = nil; previousWindow = nil
     }
     func openPermissions() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") else { return }
-        NSWorkspace.shared.open(url)
+        V2PermissionStatus.openScreenRecordingSettings()
+    }
+    private func presentPermissionRecovery(losses: V2PermissionLoss) {
+        if recoveryWindow == nil {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 300), styleMask: [.titled], backing: .buffered, defer: false)
+            window.title = english ? "Permissions" : "权限"
+            window.isReleasedWhenClosed = false
+            window.center()
+            recoveryWindow = window
+        }
+        let hosting = NSHostingView(rootView: V2PermissionRecoveryView(
+            status: permissionStatus,
+            losses: losses,
+            english: english,
+            onLater: { [weak self] in self?.recoveryWindow?.close() }))
+        recoveryWindow?.contentView = hosting
+        recoveryWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
     private func requestScreenRecording() {
         if !CGPreflightScreenCaptureAccess(), !CGRequestScreenCaptureAccess() { openPermissions() }
@@ -271,15 +297,9 @@ struct V2WelcomeView: View {
         VStack(alignment: .leading, spacing: V2Design.Space.l) {
             HStack(spacing: V2Design.Space.s) { V2BrandIcon(size: 48); Text("Traylet").font(.largeTitle.weight(.semibold)) }
             V2SettingsGroup(footer: screenRecordingGranted ? nil : (english ? "If the status does not update, reopen Traylet." : "若状态未更新，请重新打开 Traylet。")) {
-                permissionRow(granted: screenRecordingGranted, symbol: "record.circle",
-                              title: english ? "Screen Recording" : "屏幕录制",
-                              detail: english ? "Required for captures" : "截图功能需要",
-                              prominent: true, action: requestScreenRecording)
+                permissionRow(.screenRecording, granted: screenRecordingGranted, prominent: true, action: requestScreenRecording)
                 Divider()
-                permissionRow(granted: accessibilityGranted, symbol: "accessibility",
-                              title: english ? "Accessibility (optional)" : "辅助功能（可选）",
-                              detail: english ? "Brings selected text into Input Translation" : "输入翻译时带入选中文字",
-                              prominent: false, action: requestAccessibility)
+                permissionRow(.accessibility, granted: accessibilityGranted, prominent: false, action: requestAccessibility)
             }
             Spacer(minLength: 0)
             HStack {
@@ -290,18 +310,15 @@ struct V2WelcomeView: View {
             }
         }.padding(V2Design.Space.xl + 4).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
-    private func permissionRow(granted: Bool, symbol: String, title: String, detail: String, prominent: Bool, action: @escaping () -> Void) -> some View {
-        HStack(spacing: V2Design.Space.m) {
-            Image(systemName: granted ? "checkmark.circle.fill" : symbol).font(.system(size: 20)).foregroundStyle(granted ? Color.green : Color.secondary)
-                .frame(width: 28, height: 28).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.body.weight(.medium))
-                Text(detail).font(.caption).foregroundStyle(.secondary)
+    private func permissionRow(_ kind: V2PermissionKind, granted: Bool, prominent: Bool, action: @escaping () -> Void) -> some View {
+        V2PermissionRow(symbol: kind.symbol, title: kind.title(english: english), detail: kind.shortDetail(english: english), granted: granted) {
+            if !granted {
+                if prominent {
+                    Button(english ? "Allow…" : "允许…", action: action).buttonStyle(.borderedProminent)
+                } else {
+                    Button(english ? "Allow…" : "允许…", action: action)
+                }
             }
-            Spacer(minLength: V2Design.Space.s)
-            if granted { Text(english ? "Allowed" : "已允许").foregroundStyle(.secondary) }
-            else if prominent { Button(english ? "Allow…" : "允许…", action: action).buttonStyle(.borderedProminent) }
-            else { Button(english ? "Allow…" : "允许…", action: action) }
-        }.padding(.vertical, V2Design.Space.m)
+        }
     }
 }
