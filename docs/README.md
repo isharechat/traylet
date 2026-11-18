@@ -5,6 +5,7 @@
 | 文档 | 用途 |
 | --- | --- |
 | [MVP 产品范围](product/mvp.md) | 首个 Beta 的用户、核心任务、包含与排除范围 |
+| [软件权限授权设置](product/permissions.md) | 系统权限分区的信息架构、交互、文案与升级失效引导 |
 | [产品地图](development/map.md) | 产品边界、当前导航和状态口径 |
 | [架构与模块](development/architecture.md) | 代码分层、数据流和模块职责 |
 | [数据与隐私](development/privacy.md) | 剪贴板同意、数据保存、外部发送和权限 |
