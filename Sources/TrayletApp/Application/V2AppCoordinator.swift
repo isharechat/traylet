@@ -25,7 +25,7 @@ import TrayletCore
     private var terminating = false
     private var authorizationTimer: Timer?
     private var requestedAccessibility = false
-    var selectedText: any V2SelectedTextReading = V2AccessibilitySelectedText()
+    let selectedText: any V2SelectedTextReading
     private var accessibilityGranted = false
     private var welcomeBacking: V2GlassWindowBacking?
     private var screenRecordingGranted = false
@@ -42,6 +42,14 @@ import TrayletCore
         // Recording is always on for the whole run; there is no user on/off or pause. It stops only on quit.
         let clipboard = ClipboardFeature(directory: directory.appendingPathComponent("clipboard", isDirectory: true), autoStart: true)
         self.preferences = preferences; self.shortcuts = shortcuts; self.clipboard = clipboard
+        let markIgnoreNextCopy = { clipboard.controller.setIgnoringNextCopy(true) }
+        let copyCapture = V2ClipboardCopyCapture(markIgnoreNextCopy: markIgnoreNextCopy)
+        self.selectedText = V2SelectedTextStrategyChain(strategies: [
+            V2AccessibilitySelectedText(),
+            V2AppleScriptSelectedText(),
+            V2MenuActionSelectedText(capture: copyCapture),
+            V2SimulatedCopySelectedText(capture: copyCapture)
+        ])
         let translation = TranslationController(configuration: configuration)
         self.translation = translation
         let editor = CaptureEditorController(), capture = V2CaptureSession()

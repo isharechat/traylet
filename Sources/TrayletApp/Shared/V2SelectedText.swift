@@ -59,6 +59,18 @@ enum V2SelectedTextAttributeResult {
         if let attributed = value as? NSAttributedString { return attributed.string }
         return nil
     }
+    /// Ordered fallback for the selected text of one focus snapshot: AXSelectedText, then a plain
+    /// selected range, then a TextMarker range (Chrome/Edge often expose only the marker range).
+    static func selectedTextFallback(selection: () -> V2SelectedTextAttributeResult,
+                                     selectedRange: () -> CFRange?,
+                                     stringForRange: (CFRange) -> V2SelectedTextAttributeResult,
+                                     selectedTextMarkerRange: () -> CFTypeRef?,
+                                     stringForTextMarkerRange: (CFTypeRef) -> V2SelectedTextAttributeResult) -> V2SelectedTextAttributeResult {
+        if case .value(let text) = selection(), !text.isEmpty { return .value(text) }
+        if let range = selectedRange() { return stringForRange(range) }
+        if let markerRange = selectedTextMarkerRange() { return stringForTextMarkerRange(markerRange) }
+        return .unavailable
+    }
     func selectedText() -> String? {
         guard let focus = focus(), focus.isCurrent(), canReadSelection(focus), focus.isCurrent(),
               case .value(let text) = focus.selectedText(),
@@ -170,10 +182,27 @@ enum V2SelectedTextAttributeResult {
             guard result == .success, let string = Self.text(from: value) else { return .unavailable }
             return .value(string)
         }
+        func selectedTextMarkerRange() -> CFTypeRef? {
+            var value: CFTypeRef?
+            let result = AXUIElementCopyAttributeValue(element, kAXSelectedTextMarkerRangeAttribute as CFString, &value)
+            guard result == .success, let value, CFGetTypeID(value) == AXTextMarkerRangeGetTypeID() else { return nil }
+            return value
+        }
+        func readString(forTextMarkerRange markerRange: CFTypeRef) -> V2SelectedTextAttributeResult {
+            var value: CFTypeRef?
+            let result = AXUIElementCopyParameterizedAttributeValue(element, kAXStringForTextMarkerRangeParameterizedAttribute as CFString, markerRange, &value)
+            if result == .attributeUnsupported { return .unsupported }
+            guard result == .success, let string = Self.text(from: value) else { return .unavailable }
+            return .value(string)
+        }
         return V2SelectedTextFocus(attribute: read, selectedText: {
-            if case .value(let text) = read(.selection), !text.isEmpty { return .value(text) }
-            guard let range = selectedRange() else { return .unavailable }
-            return readString(for: range)
+            Self.selectedTextFallback(
+                selection: { read(.selection) },
+                selectedRange: selectedRange,
+                stringForRange: readString,
+                selectedTextMarkerRange: selectedTextMarkerRange,
+                stringForTextMarkerRange: readString(forTextMarkerRange:)
+            )
         }, isCurrent: {
             guard isTrusted, NSWorkspace.shared.frontmostApplication?.processIdentifier == application,
                   let focused = focusedElement() else { return false }
