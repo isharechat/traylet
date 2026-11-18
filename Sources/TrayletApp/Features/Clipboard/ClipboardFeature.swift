@@ -168,32 +168,19 @@ extension ClipboardKind {
                 }
                 .padding(.horizontal, 12).frame(height: 30)
                 .v2GlassBackground(in: Capsule())
-            }.padding(12)
-            Divider()
-            HStack(spacing: 0) {
-                historyList
-                    .frame(minWidth: 280, idealWidth: 320, maxWidth: 360)
-                Divider()
-                detailColumn
-                    .frame(minWidth: 340, maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: feature.showsDetail)
-            Divider()
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(statusMessage).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    // The storage state is a standing privacy notice, so it keeps its own line and icon.
-                    Label(V2L("本机未加密保存"), systemImage: "lock.open")
-                        .font(.caption).foregroundStyle(Color.orange)
+                Button {
+                    controller.favoritesOnly.toggle()
+                } label: {
+                    Image(systemName: controller.favoritesOnly ? "star.fill" : "star")
+                        .foregroundStyle(controller.favoritesOnly ? Color.yellow : Color.secondary)
+                        .frame(width: 28, height: 28)
                 }
-                Spacer(minLength: 0)
+                .buttonStyle(.plain).help(V2L("仅收藏")).accessibilityLabel(V2L("仅收藏"))
                 if controller.ignoringNextCopy {
                     Button { controller.setIgnoringNextCopy(false) } label: { Image(systemName: "eye.slash.fill").frame(width: 28, height: 28) }
-                        .buttonStyle(.plain).accessibilityLabel(V2L("取消忽略下一次复制"))
-                        .help(V2L("将跳过下一次检测到的外部变化；不读取正文。"))
+                        .buttonStyle(.plain).help(V2L("取消忽略下一次复制")).accessibilityLabel(V2L("取消忽略下一次复制"))
                 }
                 Menu {
-                    Toggle(V2L("仅收藏"), isOn: $controller.favoritesOnly)
                     Toggle(V2L("忽略下一次复制"), isOn: Binding(get: { controller.ignoringNextCopy }, set: controller.setIgnoringNextCopy))
                         .disabled(!controller.enabled)
                     if controller.canRetryFavoritesLoading {
@@ -210,9 +197,18 @@ extension ClipboardKind {
                     Divider()
                     Button(V2L("清空"), role: .destructive) { confirmClear = true }
                     Button(V2L("删除所有收藏…"), role: .destructive) { confirmDeleteFavorites = true }.disabled(!controller.hasFavorites)
-                } label: { Image(systemName: "ellipsis.circle") }
+                } label: { Image(systemName: "ellipsis.circle").frame(width: 28, height: 28) }
                     .menuStyle(.borderlessButton).fixedSize().help(V2L("更多")).accessibilityLabel(V2L("更多"))
-            }.padding(.horizontal, 12).padding(.vertical, 8)
+            }.padding(12)
+            Divider()
+            HStack(spacing: 0) {
+                historyList
+                    .frame(minWidth: 280, idealWidth: 320, maxWidth: 360)
+                Divider()
+                detailColumn
+                    .frame(minWidth: 340, maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: feature.showsDetail)
         }
         .onExitCommand { feature.dismiss() }
         .onChange(of: localization.languageCode) { _, _ in feature.refreshTitle() }
@@ -261,10 +257,10 @@ extension ClipboardKind {
         } primaryAction: { ids in if let id = ids.first { feature.copyAndClose(id) } }
         .overlay { if controller.filteredEntries.isEmpty { Text(V2L("暂无匹配历史")).foregroundStyle(.secondary) } }
     }
-    private var statusMessage: String {
+    private var activeMessage: String? {
         if let message = imageEditing.message { return V2L(message) }
         if let message = controller.message { return V2L(message) }
-        return String(format: V2L("%d / %d 条 · 保留 %d 天"), controller.entries.count, controller.settings.maximumCount, controller.settings.retentionDays)
+        return nil
     }
     /// A stable right-hand column. The detail slides in over a friendly empty state so the window
     /// frame never changes when the selection changes.
@@ -287,11 +283,15 @@ extension ClipboardKind {
             Image(systemName: "doc.on.doc")
                 .font(.system(size: 32, weight: .regular))
                 .foregroundStyle(.tertiary)
-            Text(V2L("选择一条历史记录"))
-                .font(.callout).foregroundStyle(.secondary)
-            Text(V2L("在此查看内容、复制、收藏或删除。"))
-                .font(.caption).foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
+            if let message = activeMessage {
+                Text(message).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            } else {
+                Text(V2L("选择一条历史记录"))
+                    .font(.callout).foregroundStyle(.secondary)
+                Text(V2L("在此查看内容、复制、收藏或删除。"))
+                    .font(.caption).foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(24)
@@ -302,6 +302,9 @@ extension ClipboardKind {
             let kind = display.kind
             VStack(alignment: .leading, spacing: 12) {
                 previewHeader(entry: entry, display: display, kind: kind)
+                if let message = activeMessage {
+                    Text(message).font(.caption).foregroundStyle(.orange).lineLimit(2)
+                }
                 previewContent(entry: entry, display: display)
                 previewActions(entry: entry)
             }
@@ -347,9 +350,9 @@ extension ClipboardKind {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .v2GlassBackground(in: RoundedRectangle(cornerRadius: V2Design.Radius.card))
     }
-    /// Wrapped text reads best; one unbreakable token (a long URL or blob) scrolls horizontally instead of clipping.
+    /// Wrapped text reads best; a URL or an unbreakable ASCII token scrolls horizontally instead of clipping.
     @ViewBuilder private func previewText(_ display: ClipboardDisplay) -> some View {
-        if display.text.count > 80 && !display.text.contains(where: { $0.isWhitespace }) {
+        if display.singleLine {
             ScrollView(.horizontal) {
                 Text(display.text)
                     .textSelection(.enabled)
@@ -525,10 +528,20 @@ private struct ClipboardPreviewImage: View {
     @State private var image: NSImage?
     var body: some View {
         Group {
-            if let image { Image(nsImage: image).resizable().scaledToFit() }
-            else { Color.primary.opacity(0.05).aspectRatio(4 / 3, contentMode: .fit) }
+            if let image {
+                // Shrink-only: keep the image at its natural point size when it fits the column,
+                // and scale it down only when it is wider than the available space.
+                ViewThatFits(in: .horizontal) {
+                    Image(nsImage: image)
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity)
+                }
+            } else {
+                Color.primary.opacity(0.05).aspectRatio(4 / 3, contentMode: .fit).frame(maxWidth: 260)
+            }
         }
-        .frame(maxWidth: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: V2Design.Radius.control))
         .task(id: entry.id) {
             image = nil
