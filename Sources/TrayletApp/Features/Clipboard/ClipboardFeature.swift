@@ -3,6 +3,12 @@ import SwiftUI
 import Combine
 import ImageIO
 
+/// A borderless companion panel that can still become key so scrolling, text selection and Escape work.
+@MainActor private final class ClipboardDetailPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
 @MainActor final class ClipboardFeature: ObservableObject {
     static let windowWidth: CGFloat = 420
     static let windowHeight: CGFloat = 520
@@ -10,8 +16,6 @@ import ImageIO
     static let minimumHeight: CGFloat = 400
     static let detailWidth: CGFloat = 440
     static let detailHeight: CGFloat = 560
-    static let detailMinimumWidth: CGFloat = 320
-    static let detailMinimumHeight: CGFloat = 240
     let controller: ClipboardController
     let imageEditing: ClipboardImageEditing
     let storageDirectory: URL
@@ -31,7 +35,6 @@ import ImageIO
     private var mainMoveObservation: NSObjectProtocol?
     private var mainResizeObservation: NSObjectProtocol?
     private var detailPanel: NSPanel?
-    private var detailBacking: V2GlassWindowBacking?
     private var detailDismissal: NSObjectProtocol?
     private var detailResignObservation: NSObjectProtocol?
     private let preferences: Task<Void, Never>
@@ -163,10 +166,12 @@ import ImageIO
             return
         }
         if detailPanel == nil {
-            let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: Self.detailWidth, height: Self.detailHeight), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-            window.title = V2L("剪贴板详情"); window.minSize = NSSize(width: Self.detailMinimumWidth, height: Self.detailMinimumHeight)
+            let window = ClipboardDetailPanel(contentRect: NSRect(x: 0, y: 0, width: Self.detailWidth, height: Self.detailHeight), styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isOpaque = true
+            window.backgroundColor = .windowBackgroundColor
+            window.hasShadow = true
             window.isReleasedWhenClosed = false
-            detailBacking = V2GlassWindowBacking(window: window, content: NSHostingView(rootView: ClipboardDetailView(feature: self)))
+            window.contentView = NSHostingView(rootView: ClipboardDetailView(feature: self))
             detailPanel = window
             panel.addChildWindow(window, ordered: .above)
             detailDismissal = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
@@ -435,7 +440,7 @@ extension ClipboardKind {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.tint)
                 .frame(width: 30, height: 30)
-                .v2GlassBackground(in: RoundedRectangle(cornerRadius: V2Design.Radius.control))
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: V2Design.Radius.control))
             VStack(alignment: .leading, spacing: 2) {
                 Text(V2L("来源")).font(.caption).foregroundStyle(.secondary)
                 Text(entry.application).font(.callout).lineLimit(1).truncationMode(.middle)
@@ -454,7 +459,8 @@ extension ClipboardKind {
             .padding(12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .v2GlassBackground(in: RoundedRectangle(cornerRadius: V2Design.Radius.card))
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: V2Design.Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: V2Design.Radius.card).strokeBorder(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 0.5))
     }
     @ViewBuilder private func text(_ display: ClipboardDisplay) -> some View {
         if display.singleLine {
