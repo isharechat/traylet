@@ -54,6 +54,35 @@ import Testing
         #expect(reopened.entries.map(\.plainText) == ["persist without a setting"])
         await reopened.shutdown()
     }
+    @Test func detailPopupIsPrebuiltAndReRendersForEachSelection() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-clipboard-detail-stale-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        _ = NSApplication.shared
+        let source = MemoryClipboardSource()
+        let feature = ClipboardFeature(directory: directory, source: source, writer: MemoryClipboardWriter(),
+                                       presentWindow: { _ in }, dismissWindow: { _ in })
+        await feature.start(poll: false)
+        for (generation, text) in ["first", "second"].enumerated() {
+            source.value = .init(generation: generation + 1, items: [.text(text)], application: "test.app")
+            await feature.controller.refresh()
+        }
+        let first = try #require(feature.controller.entries.last?.id)
+        let second = try #require(feature.controller.entries.first?.id)
+        feature.present()
+        // The companion popup is built before the first selection, so the first click never pays construction cost.
+        #expect(feature.isDetailPanelBuilt)
+        feature.controller.selectedID = first
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(feature.renderedDetailID == first)
+        feature.controller.selectedID = second
+        try await Task.sleep(for: .milliseconds(20))
+        // The popup re-renders synchronously for the new selection instead of showing the previous entry.
+        #expect(feature.renderedDetailID == second)
+        feature.controller.selectedID = nil
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(feature.renderedDetailID == nil)
+        await feature.shutdownAndWait()
+    }
     @Test(arguments: ["system", "/tmp", "/private/tmp"])
     func freshSystemTemporaryDirectoryHasNoPreferencesError(location: String) async throws {
         let root = location == "system" ? FileManager.default.temporaryDirectory : URL(fileURLWithPath: location)
