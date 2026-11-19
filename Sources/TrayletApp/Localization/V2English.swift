@@ -423,5 +423,14 @@ enum V2English {
         "第三方声明": "Third-Party Notices",
         "开发版": "Development Build",
         "图片无效或超过安全尺寸。": "The image is invalid or exceeds safe dimensions.",
+        "需在系统设置 → 通用 → 登录项中批准": "Approve in System Settings → General → Login Items",
+        "授权变更后回到本页会自动刷新。": "Permission changes refresh automatically when you return to this page.",
+        "登录后在菜单栏自动打开 Traylet": "Open Traylet in the menu bar after login",
+        "设为默认": "Make Default",
+        "本机 · 离线": "On this Mac · Offline",
+        "需密钥": "Needs a key",
+        "免费": "Free",
+        "仅本机安装，不上传内容。": "Installed on this Mac only. No content is uploaded.",
+        "显示引擎图标": "Visible engine icons",
     ]
 }

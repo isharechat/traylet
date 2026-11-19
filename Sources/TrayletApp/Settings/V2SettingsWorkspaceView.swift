@@ -78,7 +78,7 @@ import SwiftUI
                 case .shortcuts: shortcutSettings
                 case .translation: TranslationConfigurationView(configuration: translation, languagePacks: languagePacks)
                 case .clipboard: ClipboardFeatureSettingsView(feature: clipboard)
-                case .permissions: V2PermissionsSettingsView(status: permissionStatus)
+                case .permissions: V2PermissionsSettingsView(status: permissionStatus, actions: actions)
                 case .about: about
                 }
             }
@@ -100,13 +100,6 @@ import SwiftUI
                     Text(text("深色", "Dark")).tag(V2Appearance.dark)
                 }.pickerStyle(.segmented)
                 Toggle(text("玻璃效果", "Glass effects"), isOn: Binding(get: { preferences.value.glassEnabled }, set: actions.setGlass))
-            }
-            Section {
-                Toggle(text("登录时启动", "Open at login"), isOn: Binding(get: { actions.loginEnabled }, set: actions.setLoginEnabled))
-                if actions.loginRequiresApproval {
-                    Label(text("需在系统设置 → 通用 → 登录项中批准", "Approve in System Settings → General → Login Items"), systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
-                }
             }
             if preferences.failure != nil || actions.issue != nil {
                 Section {
