@@ -15,7 +15,7 @@ import ImageIO
     static let minimumWidth: CGFloat = 360
     static let minimumHeight: CGFloat = 400
     static let detailWidth: CGFloat = 440
-    static let detailHeight: CGFloat = 560
+    static let detailHeight: CGFloat = 520
     let controller: ClipboardController
     let imageEditing: ClipboardImageEditing
     let storageDirectory: URL
@@ -35,6 +35,7 @@ import ImageIO
     private var mainMoveObservation: NSObjectProtocol?
     private var mainResizeObservation: NSObjectProtocol?
     private var detailPanel: NSPanel?
+    private var detailBacking: V2GlassWindowBacking?
     private var detailHosting: NSHostingView<AnyView>?
     private var detailDismissal: NSObjectProtocol?
     private var detailResignObservation: NSObjectProtocol?
@@ -167,14 +168,10 @@ import ImageIO
     private func ensureDetailPanel() {
         guard detailPanel == nil, let panel else { return }
         let window = ClipboardDetailPanel(contentRect: NSRect(x: 0, y: 0, width: Self.detailWidth, height: Self.detailHeight), styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isOpaque = true
-        window.backgroundColor = .windowBackgroundColor
         window.hasShadow = true
         window.isReleasedWhenClosed = false
         let hosting = NSHostingView(rootView: AnyView(ClipboardDetailView(feature: self)))
-        hosting.frame = NSRect(x: 0, y: 0, width: Self.detailWidth, height: Self.detailHeight)
-        hosting.autoresizingMask = [.width, .height]
-        window.contentView = hosting
+        detailBacking = V2GlassWindowBacking(window: window, content: hosting, cornerRadius: V2Design.Radius.panel)
         hosting.layoutSubtreeIfNeeded()
         detailHosting = hosting
         detailPanel = window
@@ -209,7 +206,7 @@ import ImageIO
         // Re-render synchronously for the current selection before the popup appears, so it can never show an empty or stale frame.
         detailHosting?.rootView = AnyView(ClipboardDetailView(feature: self).id(entry.id))
         renderedDetailID = entry.id
-        detailPanel?.contentView?.layoutSubtreeIfNeeded()
+        detailHosting?.layoutSubtreeIfNeeded()
         positionDetailPanel()
         detailPanel?.orderFront(nil)
     }
