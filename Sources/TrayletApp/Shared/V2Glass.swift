@@ -41,12 +41,14 @@ extension View {
 }
 
 /// Puts a window's SwiftUI content on system glass (or a solid window background) and follows the setting live.
+/// `cornerRadius` rounds the surface for borderless panels; 0 keeps the native full-window look.
 @MainActor final class V2GlassWindowBacking {
     private weak var window: NSWindow?
     private var content: NSView
+    private let cornerRadius: CGFloat
     private var observers: Set<AnyCancellable> = []
-    init(window: NSWindow, content: NSView) {
-        self.window = window; self.content = content
+    init(window: NSWindow, content: NSView, cornerRadius: CGFloat = 0) {
+        self.window = window; self.content = content; self.cornerRadius = cornerRadius
         apply()
         V2AppearanceState.shared.$glassEnabled.dropFirst().sink { [weak self] _ in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.apply() } }
@@ -60,24 +62,34 @@ extension View {
         content.removeFromSuperview()
         window.styleMask.insert(.fullSizeContentView)
         window.titlebarAppearsTransparent = true
-        let container = NSView()
+        let contentContainer: NSView
         if V2AppearanceState.shared.glassActive {
             window.isOpaque = false; window.backgroundColor = .clear
+            let container = NSView()
+            contentContainer = container
             if #available(macOS 26, *) {
-                let glass = NSGlassEffectView(); glass.cornerRadius = 0; glass.contentView = container
+                let glass = NSGlassEffectView(); glass.cornerRadius = cornerRadius; glass.contentView = container
                 window.contentView = glass
             } else {
                 let effect = NSVisualEffectView(); effect.material = .underWindowBackground
                 effect.blendingMode = .behindWindow; effect.state = .active
-                container.frame = effect.bounds; container.autoresizingMask = [.width, .height]; effect.addSubview(container)
                 window.contentView = effect
+                if cornerRadius > 0 { effect.maskImage = Self.roundedMask(size: Self.contentSize(of: window), radius: cornerRadius) }
+                container.frame = effect.bounds; container.autoresizingMask = [.width, .height]; effect.addSubview(container)
             }
+        } else if cornerRadius > 0 {
+            window.isOpaque = false; window.backgroundColor = .clear
+            let solid = V2RoundedSolidView(cornerRadius: cornerRadius)
+            contentContainer = solid
+            window.contentView = solid
         } else {
             window.isOpaque = true; window.backgroundColor = .windowBackgroundColor
+            let container = NSView()
+            contentContainer = container
             window.contentView = container
         }
         content.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(content)
+        contentContainer.addSubview(content)
         if let guide = window.contentLayoutGuide as? NSLayoutGuide {
             NSLayoutConstraint.activate([
                 content.leadingAnchor.constraint(equalTo: guide.leadingAnchor),
@@ -86,9 +98,39 @@ extension View {
                 content.bottomAnchor.constraint(equalTo: guide.bottomAnchor)
             ])
         } else {
-            content.frame = container.bounds
+            content.frame = contentContainer.bounds
             content.autoresizingMask = [.width, .height]
             content.translatesAutoresizingMaskIntoConstraints = true
         }
+    }
+    private static func contentSize(of window: NSWindow) -> CGSize {
+        window.contentRect(forFrameRect: window.frame).size
+    }
+    private static func roundedMask(size: CGSize, radius: CGFloat) -> NSImage {
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor.black.setFill()
+        NSBezierPath(roundedRect: NSRect(origin: .zero, size: size), xRadius: radius, yRadius: radius).fill()
+        image.unlockFocus()
+        return image
+    }
+}
+
+/// A transparent container that paints a rounded solid window background when glass is off.
+private final class V2RoundedSolidView: NSView {
+    let cornerRadius: CGFloat
+    init(cornerRadius: CGFloat) {
+        self.cornerRadius = cornerRadius
+        super.init(frame: .zero)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        NSColor.windowBackgroundColor.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius).fill()
+    }
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
     }
 }
