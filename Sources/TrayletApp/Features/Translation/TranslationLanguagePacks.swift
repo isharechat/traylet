@@ -163,8 +163,9 @@ struct TranslationLanguagePackSettings: View {
                 .disabled(!controller.canDownload)
                 Spacer(minLength: 0)
             }
-            Text(V2L("语言包由 macOS 按系统批准流程下载并安装到本机；不会上传原文、截图或剪贴板。"))
+            Text(V2L("仅本机安装，不上传内容。"))
                 .font(.caption).foregroundStyle(.secondary)
+                .help(V2L("语言包由 macOS 按系统批准流程下载并安装到本机；不会上传原文、截图或剪贴板。"))
         }
         .background {
             if let request = controller.request {

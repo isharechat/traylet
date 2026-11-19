@@ -23,18 +23,17 @@ Traylet 目前用到的系统权限及现状：
 
 | # | 决策点 | 结论 |
 | --- | --- | --- |
-| 1 | 登录项归属 | 留在「通用」分区；权限分区只放 TCC 类权限（屏幕录制、辅助功能） |
+| 1 | 登录项归属 | 改归「权限」分区；屏幕录制、辅助功能、登录项三类系统授权统一一处管理 |
 | 2 | 失效引导形态 | 仅当确实失效时弹一次轻量弹窗，复用欢迎窗权限行组件 |
 | 3 | 签名方式 | 两种都兼容：正式版 Developer ID 签名（升级权限保持，根治）；ad-hoc 预览版（升级后需重新授权，检测 + 引导兜底） |
 
 ## 权限清单（最终范围）
 
-权限分区只包含两项 TCC 权限：
+权限分区统一管理三类系统授权：
 
 - **屏幕录制**：必需，供区域/整屏截图。
 - **辅助功能**（可选）：供输入翻译快捷键读取其他应用的选中文本。
-
-登录项继续留在「通用」分区，不在权限分区展示。
+- **登录项**（可选）：登录时启动；由 `SMAppService.mainApp.status` 检测，设置页提供开关。
 
 ## 信息架构与交互
 
@@ -52,14 +51,18 @@ Traylet 目前用到的系统权限及现状：
 │ 辅助功能（可选）              已允许 / 未允许  │
 │ 输入翻译时带入其他应用的选中文字 [请求权限]    │
 │                                [打开系统设置]  │
+├──────────────────────────────────────────────┤
+│ 登录时启动                          [开关]     │
+│ 登录后在菜单栏自动打开 Traylet                 │
 └──────────────────────────────────────────────┘
-说明：修改授权后回到本页会自动刷新状态，如仍无法读取请重新打开 Traylet。
+说明：授权变更后回到本页会自动刷新。
 ```
 
 交互规则：
 
 - 未允许：主按钮「请求权限」触发系统授权弹窗（`CGRequestScreenCaptureAccess()` / `AXIsProcessTrustedWithOptions`），副按钮「打开系统设置」跳 `Privacy_ScreenCapture` / `Privacy_Accessibility`。
 - 已允许：只显示「打开系统设置」（供查看/撤销），状态徽标为绿色「已允许」。
+- 登录项：提供开关切换 `SMAppService.mainApp.status`；需批准时显示提示，回到本页时刷新。
 - 进入分区与 App 重新激活（`NSApplication.didBecomeActiveNotification`）时刷新状态。
 
 ### 升级后失效引导（一次性）
@@ -89,6 +92,8 @@ Traylet 目前用到的系统权限及现状：
 | 用途 | 截图功能需要（区域/整屏截图） | Required for captures (region / full screen) |
 | 权限名 | 辅助功能（可选） | Accessibility (optional) |
 | 用途 | 输入翻译时带入其他应用的选中文字 | Brings selected text from other apps into Input Translation |
+| 权限名 | 登录时启动 | Launch at Login |
+| 用途 | 登录后在菜单栏自动打开 Traylet | Open Traylet in the menu bar after login |
 | 状态 | 已允许 | Allowed |
 | 状态 | 未允许 | Not Allowed |
 | 按钮 | 请求权限 | Request Permission |
@@ -97,7 +102,7 @@ Traylet 目前用到的系统权限及现状：
 | 弹窗标题 | 权限需要重新授权 | Permissions need to be re-granted |
 | 弹窗正文 | 升级后，Traylet 需要你重新允许以下系统权限。 | After the update, Traylet needs you to allow the following permissions again. |
 | 按钮 | 稍后 | Later |
-| 页脚 | 修改授权后回到本页会自动刷新状态，如仍无法读取请重新打开 Traylet。 | This page refreshes when you return to it after changing the permission. If it still doesn't update, reopen Traylet. |
+| 页脚 | 授权变更后回到本页会自动刷新。 | Permission changes refresh automatically when you return to this page. |
 
 文案规范：翻译设置旧文案 `已授权/未授权` 建议统一收敛为 `已允许/未允许`，与欢迎窗一致，避免两处措辞漂移。
 
@@ -110,7 +115,7 @@ Traylet 目前用到的系统权限及现状：
 
 ## 验收标准（DoD）
 
-- 权限分区展示屏幕录制、辅助功能两项，状态与系统实际一致，请求/跳转两路可用。
+- 权限分区展示屏幕录制、辅助功能、登录时启动三项，状态与系统实际一致，请求/跳转/开关三路可用。
 - 旧版已授权 → 覆盖安装新版（ad-hoc 重建签名）→ 首次启动弹出一次性重新授权引导；全新用户不误报。
 - 完成授权或点「稍后」后本次运行不再重复弹出；下次再次失效才再弹。
 - 欢迎窗与权限分区共用同一权限行组件，文案一致（`已允许/未允许`）。

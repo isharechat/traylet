@@ -3,15 +3,17 @@ import ApplicationServices
 import Combine
 import SwiftUI
 
-/// The two TCC permissions Traylet exposes in its Permissions settings pane.
-/// Login Items stay in General; this pane is only for the TCC class permissions.
+/// The system authorizations Traylet exposes in its Permissions settings pane.
+/// Screen Recording and Accessibility are TCC class permissions; the Login Item row is the
+/// SMAppService registration, grouped here so every system grant is managed in one place.
 enum V2PermissionKind: String, CaseIterable, Codable, Sendable {
-    case screenRecording, accessibility
+    case screenRecording, accessibility, loginItem
 
     var symbol: String {
         switch self {
         case .screenRecording: "record.circle"
         case .accessibility: "accessibility"
+        case .loginItem: "power"
         }
     }
 
@@ -19,6 +21,7 @@ enum V2PermissionKind: String, CaseIterable, Codable, Sendable {
         switch self {
         case .screenRecording: english ? "Screen Recording" : "屏幕录制"
         case .accessibility: english ? "Accessibility (optional)" : "辅助功能（可选）"
+        case .loginItem: english ? "Launch at Login" : "登录时启动"
         }
     }
 
@@ -27,6 +30,7 @@ enum V2PermissionKind: String, CaseIterable, Codable, Sendable {
         switch self {
         case .screenRecording: english ? "Required for captures" : "截图功能需要"
         case .accessibility: english ? "Brings selected text into Input Translation" : "输入翻译时带入选中文字"
+        case .loginItem: english ? "Open Traylet in the menu bar after login" : "登录后在菜单栏自动打开 Traylet"
         }
     }
 
@@ -35,6 +39,7 @@ enum V2PermissionKind: String, CaseIterable, Codable, Sendable {
         switch self {
         case .screenRecording: english ? "Required for captures (region / full screen)" : "截图功能需要（区域/整屏截图）"
         case .accessibility: english ? "Brings selected text from other apps into Input Translation" : "输入翻译时带入其他应用的选中文字"
+        case .loginItem: english ? "Open Traylet in the menu bar after login" : "登录后在菜单栏自动打开 Traylet"
         }
     }
 }
@@ -135,6 +140,41 @@ struct V2PermissionRow<Actions: View>: View {
                 .font(.caption)
                 .foregroundStyle(granted ? Color.secondary : Color.orange)
             actions()
+        }
+        .padding(.vertical, V2Design.Space.m)
+    }
+}
+
+/// Login-item row for the Permissions pane. It shares the icon/title/detail lead of
+/// `V2PermissionRow` but ends in a toggle instead of a status badge, because launch at
+/// login is an on/off registration rather than a TCC grant.
+struct V2LoginItemRow: View {
+    let symbol: String
+    let title: String
+    let detail: String
+    let enabled: Bool
+    let requiresApproval: Bool
+    let setEnabled: (Bool) -> Void
+
+    var body: some View {
+        HStack(spacing: V2Design.Space.m) {
+            Image(systemName: symbol)
+                .font(.system(size: 20))
+                .foregroundStyle(Color.secondary)
+                .frame(width: 28, height: 28)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.body.weight(.medium))
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+                if requiresApproval {
+                    Text(V2L("需在系统设置 → 通用 → 登录项中批准"))
+                        .font(.caption).foregroundStyle(.orange)
+                }
+            }
+            Spacer(minLength: V2Design.Space.s)
+            Toggle(title, isOn: Binding(get: { enabled }, set: setEnabled))
+                .labelsHidden()
+                .toggleStyle(.switch)
         }
         .padding(.vertical, V2Design.Space.m)
     }

@@ -81,5 +81,9 @@ import Testing
         #expect(V2PermissionKind.accessibility.title(english: true) == "Accessibility (optional)")
         #expect(V2PermissionKind.accessibility.detail(english: false) == "输入翻译时带入其他应用的选中文字")
         #expect(V2PermissionKind.accessibility.detail(english: true) == "Brings selected text from other apps into Input Translation")
+        #expect(V2PermissionKind.loginItem.title(english: false) == "登录时启动")
+        #expect(V2PermissionKind.loginItem.title(english: true) == "Launch at Login")
+        #expect(V2PermissionKind.loginItem.detail(english: false) == "登录后在菜单栏自动打开 Traylet")
+        #expect(V2PermissionKind.loginItem.detail(english: true) == "Open Traylet in the menu bar after login")
     }
 }

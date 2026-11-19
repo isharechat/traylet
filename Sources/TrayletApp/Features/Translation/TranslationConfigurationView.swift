@@ -10,7 +10,6 @@ struct TranslationConfigurationView: View {
     @State private var showsModelPicker = false
     @State private var expanded: Set<TranslationEngineChoice>
     @State private var dragging: TranslationEngineChoice?
-    @State private var accessibilityGranted = V2AccessibilitySelectedText.isTrusted
     @FocusState private var modelFieldFocused: Bool
     init(configuration: TranslationConfiguration, expanded: Set<TranslationEngineChoice> = [],
          languagePacks: TranslationLanguagePackController = TranslationLanguagePackController()) {
@@ -22,32 +21,13 @@ struct TranslationConfigurationView: View {
         Form {
             TranslationLanguagePackSettings(controller: languagePacks)
             Section {
-                Picker(V2L("默认翻译引擎"), selection: $configuration.engine) {
-                    ForEach(TranslationEngineChoice.allCases) { Text(V2L(TranslationWorkspaceView.engineTitle($0))).tag($0) }
-                }
-                LabeledContent(V2L("最多显示引擎图标")) {
+                LabeledContent(V2L("显示引擎图标")) {
                     HStack(spacing: 6) {
                         Text("\(configuration.maxVisible)").monospacedDigit()
-                        Stepper(V2L("最多显示引擎图标"), value: $configuration.maxVisible, in: TranslationConfiguration.visibleRange).labelsHidden()
+                        Stepper(V2L("显示引擎图标"), value: $configuration.maxVisible, in: TranslationConfiguration.visibleRange).labelsHidden()
                     }
+                    .help(V2L("翻译窗口会按此数量加宽最小宽度，保证最小窗口下图标全部可见；超出个数的引擎不显示。"))
                 }
-            }
-            Section {
-                LabeledContent(V2L("读取选中文本")) {
-                    HStack(spacing: 8) {
-                        Text(V2L(accessibilityGranted ? "已允许" : "未允许"))
-                            .foregroundStyle(accessibilityGranted ? Color.secondary : Color.orange)
-                        Button(V2L(accessibilityGranted ? "系统设置" : "请求权限")) {
-                            if accessibilityGranted { V2AccessibilitySelectedText.openSettings() }
-                            else { V2AccessibilitySelectedText.requestTrust() }
-                        }
-                        .controlSize(.small)
-                    }
-                }
-            } header: {
-                Text(V2L("辅助功能"))
-            } footer: {
-                Text(V2L("允许 Traylet 在按下输入翻译快捷键时读取其他应用的选中文本；修改授权后回到本页会自动刷新状态，如仍无法读取请重新打开 Traylet。"))
             }
             Section(V2L("翻译引擎")) {
                 engineRow(configuration.engine)
@@ -70,9 +50,6 @@ struct TranslationConfigurationView: View {
         }
         .formStyle(.grouped)
         .onDisappear { configuration.cancel() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            accessibilityGranted = V2AccessibilitySelectedText.isTrusted
-        }
         .alert(V2L("备份并恢复默认配置？"), isPresented: $showsStorageRecovery) {
             Button(V2L("取消"), role: .cancel) { configuration.cancelStorageRecovery() }
             Button(V2L("备份并恢复")) { configuration.confirmStorageRecovery() }
@@ -92,9 +69,9 @@ struct TranslationConfigurationView: View {
             Toggle(title, isOn: Binding(get: { enabled }, set: { configuration.setEnabled(engine, $0) }))
                 .labelsHidden().toggleStyle(.checkbox).disabled(engine == .system || isDefault)
             TranslationEngineIcon(engine: engine, size: 18).frame(width: 22).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                Text(V2L(Self.note(engine))).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                engineBadge(engine)
             }
             Spacer(minLength: 8)
             if configurable { configureButton(engine, open: open, title: title) }
@@ -102,6 +79,17 @@ struct TranslationConfigurationView: View {
                 Text(V2L("默认")).font(.caption.weight(.medium)).foregroundStyle(.secondary)
                     .padding(.horizontal, 8).frame(height: 20).background(Color(nsColor: .quaternarySystemFill), in: Capsule())
             } else {
+                Button { configuration.engine = engine } label: {
+                    Text(V2L("设为默认"))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Color.accentColor)
+                        .padding(.horizontal, 8).frame(height: 20)
+                        .background(Color.accentColor.opacity(0.12), in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help(V2L("设为默认"))
+                .accessibilityLabel(V2L("设为默认") + " " + title)
                 Image(systemName: "line.3.horizontal").font(.system(size: 13, weight: .medium)).foregroundStyle(.tertiary)
                     .frame(width: 24, height: 28).contentShape(Rectangle())
                     .help(V2L("拖动调整顺序")).accessibilityHidden(true)
@@ -115,9 +103,19 @@ struct TranslationConfigurationView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityActions {
+            if !isDefault { Button(V2L("设为默认") + " " + title) { configuration.engine = engine } }
             if !isDefault, list.first != engine { Button(V2L("上移") + " " + title) { configuration.move(engine, by: -1) } }
             if !isDefault, list.last != engine { Button(V2L("下移") + " " + title) { configuration.move(engine, by: 1) } }
         }
+    }
+    /// A short capsule badge under an engine title, replacing the previous verbose subtitle.
+    private func engineBadge(_ engine: TranslationEngineChoice) -> some View {
+        Text(V2L(Self.note(engine)))
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .frame(height: 18)
+            .background(Color(nsColor: .quaternarySystemFill), in: Capsule())
     }
     /// An open engine's settings are ordinary form rows right under it, indented past the checkbox.
     @ViewBuilder private func configurationRows(_ engine: TranslationEngineChoice) -> some View {
@@ -233,9 +231,9 @@ struct TranslationConfigurationView: View {
     }
     private static func note(_ engine: TranslationEngineChoice) -> String {
         switch engine {
-        case .system: "本机翻译，无需联网"
-        case .ai, .deepl: "需 API Key"
-        case .google, .myMemory: "免费，无需密钥"
+        case .system: "本机 · 离线"
+        case .ai, .deepl: "需密钥"
+        case .google, .myMemory: "免费"
         }
     }
 }
