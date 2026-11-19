@@ -57,7 +57,7 @@ scripts/build-from-source.sh
 scripts/package-local.sh
 ```
 
-本地签名需要已有 `Traylet Local Signing` 身份。GitHub Actions 手动运行时会上传 14 天有效的 ZIP artifact；推送匹配版本 tag 时，先运行测试和打包，再自动创建 GitHub Beta Release 并附上 ZIP 与 SHA-256 校验文件。Pull request 和手动构建产物仅供开发检查。公开 Release 必须通过 Developer ID 签名、Apple 公证、签名验证和 Gatekeeper 评估；所需凭据配置前不会发布修正版。
+本地签名需要已有 `Traylet Local Signing` 身份。GitHub Actions 手动运行时会上传 14 天有效的 ZIP artifact；推送匹配版本 tag 时，先运行测试和打包，再自动创建 GitHub Beta Release 并附上 ZIP 与 SHA-256 校验文件。**合并 PR 到 `main` 后会自动发布新版本**：`release-on-merge.yml` 递增 `VERSION` 的 beta 序号与 `BUILD_NUMBER`，把递增提交回 `main`、推送版本 tag，再运行构建、打包与发布——配置了 Developer ID 凭据时发布正式签名版，未配置时回退为未签名的预览版。Pull request 和手动构建产物仅供开发检查。公开 Release 必须通过 Developer ID 签名、Apple 公证、签名验证和 Gatekeeper 评估；所需凭据配置前不会发布修正版。
 
 完整流程与边界见[Beta 打包说明](docs/development/packaging.md)。
 
