@@ -2,7 +2,7 @@
 
 ## 当前版本与验证状态
 
-- **当前目标版本**：`0.1.0-beta.6` / build `6`（`VERSION` 与 `BUILD_NUMBER`）。
+- **当前目标版本**：`0.1.0-beta.1` / build `1`（`VERSION` 与 `BUILD_NUMBER`）。
 - **本机构建与测试**（目录结构重整后，Apple Silicon，Swift 测试在沙箱外执行以便 SwiftPM 写入 `.build`）：
   - `scripts/dev/swift-local.sh build`：退出码 `0`，Build complete。
   - `scripts/dev/swift-local.sh test --no-parallel --skip EditingColorWellTests`：退出码 `0`。共 407 个测试、81 个 suite；**387 个通过、20 个跳过**（环境条件未设置，如离屏快照目录未指定或无 AX 树）、**0 个失败**；`EditingColorWellTests` 按命令显式排除。

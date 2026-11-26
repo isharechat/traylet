@@ -1,6 +1,6 @@
 # 发布验收清单
 
-本清单用于当前构建目标 `0.1.0-beta.6` / build `6`。应用功能与边界见[快速上手](../guide/getting-started.md)与[数据与隐私](privacy.md)；每项需记录环境、命令/动作、结果和证据路径。
+本清单用于当前构建目标 `0.1.0-beta.1` / build `1`。应用功能与边界见[快速上手](../guide/getting-started.md)与[数据与隐私](privacy.md)；每项需记录环境、命令/动作、结果和证据路径。
 
 ## 本地功能回归
 
@@ -28,8 +28,8 @@
 
 ## 包与放行
 
-- [ ] `VERSION` 为 `0.1.0-beta.6`，`BUILD_NUMBER` 为 `6`。
-- [ ] `.app` 的 `CFBundleShortVersionString` 为 `0.1.0`，`CFBundleVersion` 为 `6`，并含 `TrayletReleaseVersion=0.1.0-beta.6`。
+- [ ] `VERSION` 为 `0.1.0-beta.1`，`BUILD_NUMBER` 为 `1`。
+- [ ] `.app` 的 `CFBundleShortVersionString` 为 `0.1.0`，`CFBundleVersion` 为 `1`，并含 `TrayletReleaseVersion=0.1.0-beta.1`。
 - [ ] 包内二进制与同包合成证据一致；校验文件与 ZIP 哈希匹配。
 - [ ] 当前测试结果、未解决问题、签名状态和安装状态分别报告。
 - [ ] 正式发布前验证 Developer ID 签名、公证票据固定、Gatekeeper 评估和 SHA-256；任一项未通过不得创建正式签名 Release。

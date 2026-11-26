@@ -4,7 +4,7 @@
   <p><strong>轻量、本机优先的 macOS 原生菜单栏效率工具 — 截图编辑 · 划词/截图翻译 · 剪贴板历史</strong></p>
 
   <p>
-    <a href="https://github.com/isharechat/traylet/releases"><img src="https://img.shields.io/badge/version-0.1.0--beta.6-blue" alt="Version" /></a>
+    <a href="https://github.com/isharechat/traylet/releases"><img src="https://img.shields.io/badge/version-0.1.0--beta.1-blue" alt="Version" /></a>
     <img src="https://img.shields.io/badge/macOS-15%2B-black?logo=apple" alt="macOS 15+" />
     <img src="https://img.shields.io/badge/Apple%20Silicon-arm64-orange" alt="Apple Silicon" />
     <img src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white" alt="Swift 6" />
@@ -29,7 +29,7 @@ Traylet 是一个基于 Swift 6、SwiftUI 与 AppKit 构建的纯原生 macOS �
 - **原生体验**：遵循 macOS Liquid Glass 材质偏好、深浅色外观与系统权限流程，提供中英文界面。
 - **开源可验证**：内置基于 GitHub Releases API 与 SHA-256 校验的原生自动更新，零第三方框架。
 
-> **当前版本状态（`0.1.0-beta.6` / build `6`）：** 正式签名版需配置 Apple Developer ID 与公证凭据后发布；在此之前，`-preview` 通道提供 ad-hoc 签名的开源预览包，或可直接使用仓库脚本从源码在本机构建。
+> **当前版本状态（`0.1.0-beta.1` / build `1`）：** 正式签名版需配置 Apple Developer ID 与公证凭据后发布；在此之前，`-preview` 通道提供 ad-hoc 签名的开源预览包，或可直接使用仓库脚本从源码在本机构建。
 
 ## 核心特性
 

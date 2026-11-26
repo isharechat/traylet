@@ -20,7 +20,7 @@
 | [模块说明](development/modules/README.md) | 截图编辑、翻译、剪贴板、设置、本地化与取证模块职责 |
 | [数据与隐私](development/privacy.md) | 本机处理、剪贴板归档、外部发送确认与系统权限边界 |
 | [原生界面与设计规范](development/design.md) | SwiftUI / AppKit 原生交互与视觉约束 |
-| [构建、打包与发布](development/packaging.md) | `0.1.0-beta.6` / build `6`、源码构建、签名公证与本地交付 |
+| [构建、打包与发布](development/packaging.md) | `0.1.0-beta.1` / build `1`、源码构建、签名公证与本地交付 |
 | [开发与验证](development/verification.md) | 构建与测试命令、证据分级与当前验证状态 |
 | [发布验收清单](development/acceptance.md) | 发布前必须核对的功能回归、系统集成与签名放行项 |
 | [已知限制](development/known-errors.md) | 当前已知限制、已确认缺陷与防复发规则 |

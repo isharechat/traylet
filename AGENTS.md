@@ -33,7 +33,7 @@ scripts/dev/swift-local.sh test --no-parallel --skip EditingColorWellTests
 python3 -m unittest discover -s Tests/TrayletToolingTests
 ```
 
-当前修正版 Beta 目标为 `0.1.0-beta.6` / build `6`：`VERSION` 与 `BUILD_NUMBER` 是打包元数据源。Beta 1 因签名封装错误已撤回，该缺陷已修复。
+当前修正版 Beta 目标为 `0.1.0-beta.1` / build `1`：`VERSION` 与 `BUILD_NUMBER` 是打包元数据源。Beta 1 因签名封装错误已撤回，该缺陷已修复。
 
 脚本按用途分在 `scripts/dev`、`scripts/package`、`scripts/install`。应用组装与签名统一走 `scripts/package/assemble-app.sh`：`build-from-source.sh`（开源用户，无需证书）、`package-local.sh` 和 `package-ci.sh` 都调用它。新增打包入口或改动资源时不得绕过它单独签名二进制，否则会重现"已损坏"提示。
 
