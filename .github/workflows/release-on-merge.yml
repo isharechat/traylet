@@ -1,0 +1,104 @@
+name: Release on merge to main
+
+# Every pull request that is merged into main triggers a new release: the
+# version is bumped, the bump is committed back to main, a release tag is
+# pushed, and the shared build-and-publish pipeline builds, signs, notarizes
+# (when the Developer ID secrets are configured) and publishes the release.
+#
+# Security note: this workflow uses pull_request_target so it can access
+# repository secrets and a write token even for pull requests opened from
+# forks. It never checks out the pull request's head — it only checks out the
+# trusted refs/heads/main and reads github.event.pull_request.merged, so no
+# untrusted code from the PR is ever executed here.
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      mode: ${{ steps.bump.outputs.mode }}
+      tag_name: ${{ steps.bump.outputs.tag_name }}
+      tag_ref: ${{ steps.bump.outputs.tag_ref }}
+      release_note: ${{ steps.bump.outputs.release_note }}
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v6
+        with:
+          ref: refs/heads/main
+          fetch-depth: 0
+
+      - name: Bump version and push release tag
+        id: bump
+        env:
+          P12: ${{ secrets.MACOS_DEVELOPER_ID_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          NOTARY_KEY_ID: ${{ secrets.APPSTORE_CONNECT_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.APPSTORE_CONNECT_ISSUER_ID }}
+          NOTARY_PRIVATE_KEY_P8: ${{ secrets.APPSTORE_CONNECT_PRIVATE_KEY_P8 }}
+        run: |
+          set -euo pipefail
+
+          version="$(cat VERSION)"
+          build_number="$(cat BUILD_NUMBER)"
+
+          if [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)-beta\.([0-9]+)$ ]]; then
+            new_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}-beta.$((BASH_REMATCH[4] + 1))"
+          elif [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            new_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
+          else
+            echo "Unsupported VERSION format: $version" >&2
+            exit 1
+          fi
+          new_build="$((build_number + 1))"
+
+          if [[ -n "$P12" && -n "$P12_PASSWORD" && -n "$APPLE_TEAM_ID" && -n "$NOTARY_KEY_ID" && -n "$NOTARY_ISSUER_ID" && -n "$NOTARY_PRIVATE_KEY_P8" ]]; then
+            mode="release-signed"
+            tag_name="v${new_version}"
+            release_note="已使用 Developer ID 签名并完成 Apple 公证。"
+          else
+            mode="release-preview"
+            tag_name="v${new_version}-preview"
+            release_note="预览版本：未使用 Developer ID 签名，也未经过 Apple 公证，系统可能提示应用无法验证或已损坏。适合愿意自行排查的开发者，普通用户请等待正式签名版。"
+          fi
+
+          printf '%s\n' "$new_version" > VERSION
+          printf '%s\n' "$new_build" > BUILD_NUMBER
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add VERSION BUILD_NUMBER
+          git commit -m "chore(release): bump version to ${new_version} (build ${new_build})"
+
+          git tag "$tag_name"
+          git push origin HEAD:main
+          git push origin "refs/tags/${tag_name}"
+
+          {
+            echo "mode=$mode"
+            echo "tag_name=$tag_name"
+            echo "tag_ref=refs/tags/${tag_name}"
+            echo "release_note=$release_note"
+          } >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: bump
+    permissions:
+      contents: write
+      actions: read
+    secrets: inherit
+    uses: ./.github/workflows/build-and-publish.yml
+    with:
+      ref: ${{ needs.bump.outputs.tag_ref }}
+      mode: ${{ needs.bump.outputs.mode }}
+      tag_name: ${{ needs.bump.outputs.tag_name }}
+      release_note: ${{ needs.bump.outputs.release_note }}

@@ -1,0 +1,69 @@
+name: macOS build and package
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+      - "v*-preview"
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.compute.outputs.mode }}
+      tag_name: ${{ steps.compute.outputs.tag_name }}
+      release_note: ${{ steps.compute.outputs.release_note }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Compute pipeline mode
+        id: compute
+        run: |
+          mode=""
+          tag_name=""
+          release_note=""
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            mode="test"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            # Tag push (or manual dispatch on a tag). The tag decides the
+            # release channel and must match VERSION.
+            version="$(cat VERSION)"
+            tag="${GITHUB_REF_NAME#v}"
+            case "$tag" in
+              "$version") mode="release-signed" ;;
+              "$version-preview") mode="release-preview" ;;
+              *) echo "Tag $GITHUB_REF_NAME does not match VERSION $version" >&2; exit 1 ;;
+            esac
+            tag_name="$GITHUB_REF_NAME"
+            if [[ "$mode" == "release-preview" ]]; then
+              release_note="预览版本：未使用 Developer ID 签名，也未经过 Apple 公证，系统可能提示应用无法验证或已损坏。适合愿意自行排查的开发者，普通用户请等待正式签名版。"
+            else
+              release_note="已使用 Developer ID 签名并完成 Apple 公证。"
+            fi
+          else
+            # Manual dispatch on a branch: build an ad-hoc inspection package.
+            mode="package"
+          fi
+          {
+            echo "mode=$mode"
+            echo "tag_name=$tag_name"
+            echo "release_note=$release_note"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    permissions:
+      contents: write
+      actions: read
+    secrets: inherit
+    uses: ./.github/workflows/build-and-publish.yml
+    with:
+      mode: ${{ needs.prepare.outputs.mode }}
+      tag_name: ${{ needs.prepare.outputs.tag_name }}
+      release_note: ${{ needs.prepare.outputs.release_note }}

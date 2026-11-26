@@ -1,0 +1,142 @@
+name: build-and-publish
+
+# Reusable build/publish pipeline shared by the tag/manual entry point
+# (macos-package.yml) and the automatic release-on-merge entry point
+# (release-on-merge.yml). Callers decide the mode; this workflow owns the
+# macOS build, test, signing, packaging, smoke test and GitHub release steps.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to check out. Empty falls back to the caller's ref.
+        type: string
+        default: ''
+      mode:
+        description: 'test | package | release-signed | release-preview'
+        type: string
+        required: true
+      tag_name:
+        description: Release tag (required for release modes).
+        type: string
+        default: ''
+      release_note:
+        description: Channel note shown at the top of the release body.
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-package:
+    runs-on: xcode-27
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Prepare Developer ID signing and notarization
+        if: inputs.mode == 'release-signed'
+        env:
+          CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_P12_BASE64 }}
+          CERTIFICATE_P12_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          NOTARY_KEY_ID: ${{ secrets.APPSTORE_CONNECT_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.APPSTORE_CONNECT_ISSUER_ID }}
+          NOTARY_PRIVATE_KEY_P8: ${{ secrets.APPSTORE_CONNECT_PRIVATE_KEY_P8 }}
+        run: |
+          if [[ -z "$CERTIFICATE_P12_BASE64" || -z "$CERTIFICATE_P12_PASSWORD" || -z "$APPLE_TEAM_ID" || -z "$NOTARY_KEY_ID" || -z "$NOTARY_ISSUER_ID" || -z "$NOTARY_PRIVATE_KEY_P8" ]]; then
+            echo "Missing Developer ID / notarization repository secrets; refusing to build a public release." >&2
+            exit 1
+          fi
+          keychain_path="$RUNNER_TEMP/traylet-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          certificate_path="$RUNNER_TEMP/traylet-developer-id.p12"
+          notary_key_path="$RUNNER_TEMP/AuthKey_${NOTARY_KEY_ID}.p8"
+          python3 -c 'import base64,os,sys; open(sys.argv[1], "wb").write(base64.b64decode(os.environ["CERTIFICATE_P12_BASE64"]))' "$certificate_path"
+          python3 -c 'import os,sys; open(sys.argv[1], "w").write(os.environ["NOTARY_PRIVATE_KEY_P8"])' "$notary_key_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" -k "$keychain_path" -P "$CERTIFICATE_P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          identity="$(security find-identity -v -p codesigning "$keychain_path" | sed -n 's/^ *[0-9][0-9]*) .* "\(Developer ID Application:.*\)"$/\1/p' | head -n 1)"
+          if [[ -z "$identity" || "$identity" != *"$APPLE_TEAM_ID"* ]]; then
+            echo "No Developer ID Application identity for the configured Apple team was imported." >&2
+            exit 1
+          fi
+          echo "TRAYLET_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "TRAYLET_NOTARY_KEY_PATH=$notary_key_path" >> "$GITHUB_ENV"
+          echo "TRAYLET_NOTARY_KEY_ID=$NOTARY_KEY_ID" >> "$GITHUB_ENV"
+          echo "TRAYLET_NOTARY_ISSUER_ID=$NOTARY_ISSUER_ID" >> "$GITHUB_ENV"
+
+      - name: Build and test
+        run: |
+          swift --version
+          swift test --no-parallel --skip EditingColorWellTests
+          python3 -m unittest discover -s Tests/TrayletToolingTests
+
+      - name: Package app
+        id: package
+        # Run even when the tests above failed: the release build can still
+        # succeed, and the artifact should be available for inspection.
+        if: success() || failure()
+        run: scripts/package/package-ci.sh
+
+      - name: Smoke test packaged app
+        if: (success() || failure()) && steps.package.outcome == 'success'
+        run: scripts/package/smoke-package.sh build/ci-artifacts/Traylet-macos-arm64-*/*.zip
+
+      - name: Upload package artifact
+        if: (success() || failure()) && steps.package.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Traylet-macos-arm64-build-${{ github.run_number }}
+          path: |
+            build/ci-artifacts/Traylet-macos-arm64-*/*.zip
+            build/ci-artifacts/Traylet-macos-arm64-*/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-release:
+    needs: test-and-package
+    if: inputs.mode == 'release-signed' || inputs.mode == 'release-preview'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download tested package
+        uses: actions/download-artifact@v5
+        with:
+          name: Traylet-macos-arm64-build-${{ github.run_number }}
+          path: release-assets
+
+      - name: Create GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ inputs.tag_name }}
+          RELEASE_NOTE: ${{ inputs.release_note }}
+        run: |
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Release already exists for $TAG_NAME; refusing to replace it."
+            exit 1
+          fi
+          {
+            printf '%s\n\n' "$RELEASE_NOTE"
+            printf '安装：下载 ZIP 后解压得到 `Traylet.app`，拖入「应用程序」文件夹。首次启动后，屏幕捕获与辅助功能需在「系统设置 → 隐私与安全性」中按提示授权。\n\n'
+            printf '未公证预览包首次打开提示：若系统拦截，可在访达中按住 Control 键右键点击应用选择「打开」，或执行 `xattr -cr /Applications/Traylet.app`。\n\n'
+            printf '自动更新：应用内「设置 → 关于」支持自动检查 GitHub Releases 更新并校验 SHA-256。\n\n'
+            printf '校验：`shasum -a 256 -c Traylet-macos-arm64-*.zip.sha256`\n'
+            printf '\n也可以直接从源码构建：`scripts/package/build-from-source.sh`\n'
+          } > "$RUNNER_TEMP/release-notes.md"
+          gh release create "$TAG_NAME" \
+            release-assets/Traylet-macos-arm64-*/*.zip \
+            release-assets/Traylet-macos-arm64-*/*.sha256 \
+            --verify-tag \
+            --prerelease \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            --title "Traylet $TAG_NAME"
