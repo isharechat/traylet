@@ -33,6 +33,8 @@ import ImageIO
     private var detailHosting: NSHostingView<AnyView>?
     private var detailDismissal: NSObjectProtocol?
     private var detailResignObservation: NSObjectProtocol?
+    private var focusObservations: [NSObjectProtocol] = []
+    @Published private(set) var isWindowFocused = false
     private(set) var renderedDetailID: UUID?
     private let preferences: Task<Void, Never>
     private var pendingMutations: [UUID: Task<Void, Never>] = [:]
@@ -80,6 +82,7 @@ import ImageIO
         dismissing = true
         defer { dismissing = false }
         imageEditing.cancel()
+        isWindowFocused = false
         hideDetailPanel()
         if let panel { dismissWindow(panel) }
     }
@@ -160,12 +163,18 @@ import ImageIO
             mainResizeObservation = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.positionDetailPanel() }
             }
+            for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+                focusObservations.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.refreshWindowFocus() }
+                })
+            }
         }
         refreshTitle()
         ensureDetailPanel()
         if let panel {
             panel.contentView?.layoutSubtreeIfNeeded()
             presentWindow(panel)
+            isWindowFocused = true
             focusSearchIfNeeded()
             syncDetailPanel()
         }
@@ -178,20 +187,28 @@ import ImageIO
         guard wantsSearchFocus, let panel, let searchField, searchField.window === panel else { return }
         if panel.makeFirstResponder(searchField) { wantsSearchFocus = false }
     }
-    /// Builds the companion popup once with the same native window chrome and glass backing as the list window.
+    /// Builds the companion popup once with the same glass backing as the list window, without titlebar buttons.
     private func ensureDetailPanel() {
-        guard detailPanel == nil, let panel else { return }
-        let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: Self.detailWidth, height: Self.detailHeight), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        guard detailPanel == nil, panel != nil else { return }
+        let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: Self.detailWidth, height: Self.detailHeight), styleMask: [.titled, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
         window.title = L("剪贴板详情")
         window.minSize = NSSize(width: Self.minimumWidth, height: Self.minimumHeight)
+        window.becomesKeyOnlyIfNeeded = true
         window.hasShadow = true
         window.isReleasedWhenClosed = false
         let hosting = NSHostingView(rootView: AnyView(ClipboardDetailView(feature: self)))
         detailBacking = GlassWindowBacking(window: window, content: hosting)
+        for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
+            window.standardWindowButton(button)?.isHidden = true
+        }
         hosting.layoutSubtreeIfNeeded()
         detailHosting = hosting
         detailPanel = window
-        panel.addChildWindow(window, ordered: .above)
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            focusObservations.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshWindowFocus() }
+            })
+        }
         detailDismissal = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, !self.shuttingDown else { return }
@@ -231,6 +248,9 @@ import ImageIO
     }
     private func hideDetailPanel() {
         detailPanel?.orderOut(nil)
+    }
+    private func refreshWindowFocus() {
+        isWindowFocused = (panel?.isKeyWindow == true) || (detailPanel?.isKeyWindow == true)
     }
     /// Places the detail popup to the right of the list window, falling back to the left when the right edge has no room.
     private func positionDetailPanel() {
@@ -359,12 +379,11 @@ extension ClipboardKind {
             HStack(spacing: 8) {
                 Text(String(format: L("%d / %d 条 · 保留 %d 天"), controller.entries.count, controller.settings.maximumCount, controller.settings.retentionDays))
                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                Spacer(minLength: 8)
-                Label(L("本机未加密保存"), systemImage: "lock.open")
-                    .font(.caption).foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 12).padding(.vertical, 7)
         }
+        .environment(\.controlActiveState, feature.isWindowFocused ? .key : .inactive)
         .onExitCommand { feature.dismiss() }
         .background {
             Button {
@@ -512,6 +531,7 @@ extension ClipboardKind {
                 .opacity(0)
                 .accessibilityHidden(true)
         }
+        .environment(\.controlActiveState, feature.isWindowFocused ? .key : .inactive)
         .onExitCommand { feature.dismiss() }
     }
     private func sourceHeader(entry: ClipboardEntry, display: ClipboardDisplay) -> some View {
@@ -573,7 +593,7 @@ extension ClipboardKind {
             }
             .help(L("混合复制须全部允许，保留原格式。富文本可含内嵌内容，图片可附带文字。"))
             Section {
-                Label(L("历史始终未加密保存在本机"), systemImage: "externaldrive")
+                Label(L("历史始终保存在本机"), systemImage: "externaldrive")
                 LabeledContent(L("保存路径")) {
                     Text(feature.storagePath).font(.caption.monospaced()).textSelection(.enabled)
                         .foregroundStyle(.secondary)
@@ -581,7 +601,7 @@ extension ClipboardKind {
             } header: {
                 Text(L("本机保存"))
             } footer: {
-                Text(L("按设置的数量与期限清理；不提供加密或安全擦除保证。")).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+                Text(L("按设置的数量与期限清理。")).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
             }
             Section(L("排除应用")) {
                 HStack {

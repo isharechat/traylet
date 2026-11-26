@@ -113,7 +113,9 @@ struct StatusPill: View {
     func apply() {
         guard let window else { return }
         content.removeFromSuperview()
-        window.styleMask.insert(.fullSizeContentView)
+        if !window.styleMask.contains(.fullSizeContentView) {
+            window.styleMask.insert(.fullSizeContentView)
+        }
         window.titlebarAppearsTransparent = true
         let contentContainer: NSView
         if AppearanceState.shared.glassActive {

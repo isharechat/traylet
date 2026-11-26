@@ -175,15 +175,31 @@ import Testing
         source.value = .init(generation: 1, items: [.text("detail sample")], application: "test.app")
         await feature.controller.refresh()
         feature.present()
+        #expect(feature.isWindowFocused)
         let detail = try #require(feature.detailPanelForTesting)
         #expect(detail.styleMask.contains(.titled))
-        #expect(detail.styleMask.contains(.closable))
+        #expect(!detail.styleMask.contains(.closable))
         #expect(detail.styleMask.contains(.resizable))
+        #expect(detail.styleMask.contains(.nonactivatingPanel))
+        #expect(detail.becomesKeyOnlyIfNeeded)
+        #expect(detail.standardWindowButton(.closeButton)?.isHidden == true)
+        #expect(detail.standardWindowButton(.miniaturizeButton)?.isHidden == true)
+        #expect(detail.standardWindowButton(.zoomButton)?.isHidden == true)
         #expect(detail.title == L("剪贴板详情"))
         #expect(detail.minSize == NSSize(width: ClipboardFeature.minimumWidth, height: ClipboardFeature.minimumHeight))
         detail.close()
         #expect(dismissals == 1)
+        #expect(!feature.isWindowFocused)
         await feature.shutdownAndWait()
+    }
+
+    @Test func clipboardStorageCopyRemovesEncryptionWording() {
+        #expect(English.strings["历史始终保存在本机"] == "History is always saved locally")
+        #expect(English.strings["按设置的数量与期限清理。"] == "Pruned by the configured count and retention period.")
+        for (source, translation) in English.strings {
+            #expect(!source.contains("加密"))
+            #expect(!translation.localizedCaseInsensitiveContains("encrypt"))
+        }
     }
 
 }

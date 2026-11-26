@@ -12,17 +12,54 @@ struct TranslationEnginesTests {
         return .init(id: UUID(), action: action, settings: TranslationConfiguration().settings(for: engine), content: text, source: source, target: target)
     }
 
-    @Test func googlePostsAFormToTheFreeEndpointAndJoinsSegments() async throws {
+    @Test func googleUsesGetForShortTextAndPostFormForLongTextAndJoinsSegments() async throws {
         let transport = TranslationStubHTTP(status: 200, body: #"[[["你好世界。","Hello world. ",null,null,10],["第二句。","Second.",null,null,3]],null,"en"]"#)
         let sent = request(.googleTranslate, "Hello world. Second.", source: "auto", target: "zh-Hant")
         #expect(try await TranslationOpenAIClient(transport: transport).perform(sent) == .text("你好世界。第二句。"))
         let http = try #require(await transport.requests.first)
-        #expect(http.httpMethod == "POST" && http.url?.host == "translate.googleapis.com" && http.url?.path == "/translate_a/single")
-        let query = http.url?.query ?? ""
-        #expect(query.contains("client=gtx") && query.contains("sl=auto") && query.contains("tl=zh-TW"))
+        #expect(http.httpMethod == "GET" && http.url?.host == "translate.googleapis.com" && http.url?.path == "/translate_a/single")
+        let components = try #require(http.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) })
+        let items = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        #expect(items["client"] == "gtx" && items["sl"] == "auto" && items["tl"] == "zh-TW" && items["dt"] == "t")
+        #expect(items["q"] == "Hello world. Second.")
+        #expect(http.httpBody == nil)
         #expect(http.value(forHTTPHeaderField: "Authorization") == nil)
-        let body = String(decoding: try #require(http.httpBody), as: UTF8.self)
-        #expect(body == "q=Hello%20world.%20Second.")
+        #expect(http.value(forHTTPHeaderField: "User-Agent")?.contains("Mozilla/5.0") == true)
+
+        let longTransport = TranslationStubHTTP(status: 200, body: #"[[["长文本","long",null,null,10]]]"#)
+        let longText = String(repeating: "a", count: 1600)
+        #expect(try await TranslationOpenAIClient(transport: longTransport).perform(request(.googleTranslate, longText)) == .text("长文本"))
+        let longHTTP = try #require(await longTransport.requests.first)
+        #expect(longHTTP.httpMethod == "POST")
+        #expect(longHTTP.value(forHTTPHeaderField: "Authorization") == nil)
+        let body = String(decoding: try #require(longHTTP.httpBody), as: UTF8.self)
+        #expect(body == "q=" + longText)
+    }
+
+    @Test func googleFollowsTrustedRedirectsAndRejectsSorryOrUntrustedTargets() async throws {
+        let followed = TranslationSequenceHTTP(responses: [
+            (302, ["Location": "https://translate.google.com/translate_a/single?client=gtx&sl=en&tl=zh-CN&dt=t&q=Hello"], ""),
+            (200, [:], #"[[["你好","Hello",null,null,10]]]"#)
+        ])
+        #expect(try await TranslationOpenAIClient(transport: followed).perform(request(.googleTranslate, "Hello")) == .text("你好"))
+        let requests = await followed.requests
+        #expect(requests.count == 2)
+        #expect(requests[1].url?.host == "translate.google.com")
+        #expect(requests[1].value(forHTTPHeaderField: "Authorization") == nil)
+
+        let sorry = TranslationSequenceHTTP(responses: [
+            (302, ["Location": "https://www.google.com/sorry/index?continue=https://translate.googleapis.com"], "")
+        ])
+        await #expect(throws: TranslationAIFailure.rateLimited) {
+            try await TranslationOpenAIClient(transport: sorry).perform(request(.googleTranslate, "Hello"))
+        }
+
+        let untrusted = TranslationSequenceHTTP(responses: [
+            (302, ["Location": "https://translate.google.evil.invalid/translate_a/single"], "")
+        ])
+        await #expect(throws: TranslationAIFailure.server) {
+            try await TranslationOpenAIClient(transport: untrusted).perform(request(.googleTranslate, "Hello"))
+        }
     }
 
     @Test func myMemorySplitsLongTextIntoSmallQueriesAndMapsQuota() async throws {
@@ -185,5 +222,21 @@ struct TranslationEngineIconTests {
         host.layoutSubtreeIfNeeded()
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds)); host.cacheDisplay(in: host.bounds, to: bitmap)
         try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: ProcessInfo.processInfo.environment["TRAYLET_ICON_SNAPSHOT"]!))
+    }
+}
+
+private actor TranslationSequenceHTTP: TranslationHTTPTransport {
+    private var responses: [(Int, [String: String], String)]
+    private(set) var requests: [URLRequest] = []
+
+    init(responses: [(Int, [String: String], String)]) {
+        self.responses = responses
+    }
+
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        requests.append(request)
+        let next = responses.isEmpty ? (500, [:], "") : responses.removeFirst()
+        let response = HTTPURLResponse(url: request.url!, statusCode: next.0, httpVersion: nil, headerFields: next.1)!
+        return (Data(next.2.utf8), response)
     }
 }

@@ -276,28 +276,88 @@ struct TranslationOpenAIClient: TranslationAIClient {
         return .text(text)
     }
 
-    /// Free web endpoint used by Easydict and many tools: POST form `q` to translate_a/single with client=gtx; the reply is nested arrays.
+    private static let googleUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    private static let googleRedirectHosts: Set<String> = [
+        "translate.googleapis.com",
+        "translate.google.com",
+        "translate.google.com.hk",
+        "translate.google.com.tw",
+        "translate.google.com.sg",
+        "translate.google.co.jp",
+        "translate.google.co.uk",
+        "translate.google.co.kr",
+        "translate.google.de",
+        "translate.google.fr",
+        "translate.google.ca",
+        "translate.google.com.au"
+    ]
+
+    /// Free web endpoint: prefers GET with `q` in the query string for short text, falling back to POST form `q` for longer text.
+    /// Follows up to 3 redirects only across trusted HTTPS Google Translate hosts without ever attaching credentials.
     private func performGoogle(_ operation: TranslationAIRequest, url: URL) async throws -> TranslationAIResult {
         guard operation.content.utf16.count <= TranslationFreeLanguages.googleLimit else { throw TranslationAIFailure.textTooLong }
         guard let target = TranslationFreeLanguages.google(operation.target) else { throw TranslationAIFailure.unsupportedLanguage }
         var source = "auto"
         if operation.source != "auto" { guard let code = TranslationFreeLanguages.google(operation.source) else { throw TranslationAIFailure.unsupportedLanguage }; source = code }
         guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { throw TranslationAIFailure.invalidEndpoint }
-        parts.queryItems = [.init(name: "client", value: "gtx"), .init(name: "sl", value: source), .init(name: "tl", value: target), .init(name: "dt", value: "t")]
+        var queryItems: [URLQueryItem] = [.init(name: "client", value: "gtx"), .init(name: "sl", value: source), .init(name: "tl", value: target), .init(name: "dt", value: "t")]
+        let useGET = operation.content.utf8.count <= 1500
+        if useGET { queryItems.append(.init(name: "q", value: operation.content)) }
+        parts.queryItems = queryItems
         guard let final = parts.url else { throw TranslationAIFailure.invalidEndpoint }
-        var request = URLRequest(url: final, timeoutInterval: 30)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
-        var allowed = CharacterSet.alphanumerics; allowed.insert(charactersIn: "-._~")
-        request.httpBody = Data(("q=" + (operation.content.addingPercentEncoding(withAllowedCharacters: allowed) ?? "")).utf8)
-        let (data, response) = try await transport.send(request)
-        try Task.checkCancellation()
-        try Self.check(response.statusCode)
-        guard data.count <= 2 * 1024 * 1024, let object = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              let rows = object.first as? [Any] else { throw TranslationAIFailure.malformed }
-        let text = rows.compactMap { ($0 as? [Any])?.first as? String }.joined()
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw TranslationAIFailure.malformed }
-        return .text(text)
+        var current = URLRequest(url: final, timeoutInterval: 30)
+        current.httpMethod = useGET ? "GET" : "POST"
+        current.setValue("application/json", forHTTPHeaderField: "Accept")
+        current.setValue(Self.googleUserAgent, forHTTPHeaderField: "User-Agent")
+        if !useGET {
+            current.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
+            var allowed = CharacterSet.alphanumerics; allowed.insert(charactersIn: "-._~")
+            current.httpBody = Data(("q=" + (operation.content.addingPercentEncoding(withAllowedCharacters: allowed) ?? "")).utf8)
+        }
+
+        for hop in 0..<4 {
+            let (data, response) = try await transport.send(current)
+            try Task.checkCancellation()
+            if (300...399).contains(response.statusCode) {
+                guard hop < 3,
+                      let location = response.value(forHTTPHeaderField: "Location"),
+                      let base = current.url,
+                      let targetURL = URL(string: location, relativeTo: base)?.absoluteURL else {
+                    throw TranslationAIFailure.server
+                }
+                let host = targetURL.host?.lowercased() ?? ""
+                if host == "consent.google.com" || host == "accounts.google.com" || targetURL.path.lowercased().contains("/sorry") {
+                    throw TranslationAIFailure.rateLimited
+                }
+                guard let components = URLComponents(url: targetURL, resolvingAgainstBaseURL: false),
+                      components.scheme == "https",
+                      components.user == nil, components.password == nil,
+                      Self.googleRedirectHosts.contains(host) else {
+                    throw TranslationAIFailure.server
+                }
+                var next = URLRequest(url: targetURL, timeoutInterval: 30)
+                if response.statusCode == 307 || response.statusCode == 308 {
+                    next.httpMethod = current.httpMethod
+                    next.httpBody = current.httpBody
+                    if let contentType = current.value(forHTTPHeaderField: "Content-Type") {
+                        next.setValue(contentType, forHTTPHeaderField: "Content-Type")
+                    }
+                } else {
+                    next.httpMethod = "GET"
+                }
+                next.setValue("application/json", forHTTPHeaderField: "Accept")
+                next.setValue(Self.googleUserAgent, forHTTPHeaderField: "User-Agent")
+                current = next
+                continue
+            }
+            try Self.check(response.statusCode)
+            guard data.count <= 2 * 1024 * 1024, let object = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                  let rows = object.first as? [Any] else { throw TranslationAIFailure.malformed }
+            let text = rows.compactMap { ($0 as? [Any])?.first as? String }.joined()
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw TranslationAIFailure.malformed }
+            return .text(text)
+        }
+        throw TranslationAIFailure.server
     }
 
     /// MyMemory accepts at most 500 bytes per query, so longer text is sent as consecutive pieces and joined by line.

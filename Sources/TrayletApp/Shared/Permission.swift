@@ -122,10 +122,11 @@ struct PermissionRow<Actions: View>: View {
     let title: String
     let detail: String
     let granted: Bool
+    var verticalPadding: CGFloat = Design.Space.m
     @ViewBuilder var actions: () -> Actions
 
     var body: some View {
-        HStack(spacing: Design.Space.m) {
+        HStack(spacing: Design.Space.s) {
             Image(systemName: granted ? "checkmark.circle.fill" : symbol)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(granted ? Color.green : Color.accentColor)
@@ -138,13 +139,15 @@ struct PermissionRow<Actions: View>: View {
                 Text(detail).font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: Design.Space.s)
-            StatusPill(
-                text: L(granted ? "已允许" : "未允许"),
-                tint: granted ? .green : .orange
-            )
-            actions()
+            HStack(spacing: 6) {
+                StatusPill(
+                    text: L(granted ? "已允许" : "未允许"),
+                    tint: granted ? .green : .orange
+                )
+                actions()
+            }
         }
-        .padding(.vertical, Design.Space.m)
+        .padding(.vertical, verticalPadding)
     }
 }
 
@@ -160,7 +163,7 @@ struct LoginItemRow: View {
     let setEnabled: (Bool) -> Void
 
     var body: some View {
-        HStack(spacing: Design.Space.m) {
+        HStack(spacing: Design.Space.s) {
             Image(systemName: symbol)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(enabled ? Color.accentColor : Color.secondary)
@@ -181,6 +184,6 @@ struct LoginItemRow: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
         }
-        .padding(.vertical, Design.Space.m)
+        .padding(.vertical, 2)
     }
 }

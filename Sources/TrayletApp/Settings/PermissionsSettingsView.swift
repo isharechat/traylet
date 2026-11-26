@@ -14,9 +14,7 @@ struct PermissionsSettingsView: View {
         Form {
             Section {
                 row(.screenRecording)
-                Divider()
                 row(.accessibility)
-                Divider()
                 loginRow
             } footer: {
                 Text(text("授权变更后回到本页会自动刷新。",
@@ -42,7 +40,7 @@ struct PermissionsSettingsView: View {
 
     private func row(_ kind: PermissionKind) -> some View {
         let granted = kind == .screenRecording ? status.screenRecordingGranted : status.accessibilityGranted
-        return PermissionRow(symbol: kind.symbol, title: kind.title(english: english), detail: kind.detail(english: english), granted: granted) {
+        return PermissionRow(symbol: kind.symbol, title: kind.title(english: english), detail: kind.detail(english: english), granted: granted, verticalPadding: 2) {
             if granted {
                 Button(text("打开系统设置", "Open System Settings")) {
                     if kind == .screenRecording { status.openScreenRecordingSettings() } else { status.openAccessibilitySettings() }
