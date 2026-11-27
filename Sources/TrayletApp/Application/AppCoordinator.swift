@@ -32,7 +32,6 @@ import TrayletCore
     var shutdownTimeoutNanoseconds: UInt64 = 5_000_000_000
     var finishTermination: @MainActor (Bool) -> Void = { NSApp.reply(toApplicationShouldTerminate: $0) }
     var confirmQuitWithOpenEditor: (@MainActor () -> Bool)?
-    private var accessibilityGranted = false
     private var welcomeBacking: GlassWindowBacking?
     private var recoveryBacking: GlassWindowBacking?
     private var screenRecordingGranted = false
@@ -153,7 +152,10 @@ import TrayletCore
         statusItem = item; refreshMenu(); refreshApplicationMenu()
         do { try shortcuts.start() }
         catch { showProblem((error as? FeatureIssue)?.localizedDescription ?? "全局快捷键未就绪，请从菜单栏打开设置。") }
-        if !preferences.value.hasCompletedWelcome { showWelcome() }
+        if !preferences.value.hasCompletedWelcome {
+            if CGPreflightScreenCaptureAccess() { completeWelcome() }
+            else { showWelcome() }
+        }
         _ = permissionRecovery.runStartupCheck(hasCompletedWelcome: preferences.value.hasCompletedWelcome)
         updater.startAutomaticCheckIfNeeded()
     }
@@ -291,7 +293,7 @@ import TrayletCore
         NSApp.activate(ignoringOtherApps: true)
     }
     private func requestScreenRecording() {
-        if !CGPreflightScreenCaptureAccess(), !CGRequestScreenCaptureAccess() { openPermissions() }
+        permissionStatus.requestScreenRecording()
         refreshAuthorization()
     }
     func completeWelcome() {
@@ -303,25 +305,28 @@ import TrayletCore
         } catch { showProblem("首次运行状态未保存，原设置保持不变。") }
     }
     private func refreshAuthorization() {
-        let granted = CGPreflightScreenCaptureAccess(), accessible = AccessibilitySelectedText.isTrusted
-        guard granted != screenRecordingGranted || accessible != accessibilityGranted || welcome?.contentView == nil else { return }
-        screenRecordingGranted = granted; accessibilityGranted = accessible
+        let granted = CGPreflightScreenCaptureAccess()
+        if granted, !preferences.value.hasCompletedWelcome {
+            completeWelcome()
+            return
+        }
+        guard granted != screenRecordingGranted || welcome?.contentView == nil else { return }
+        screenRecordingGranted = granted
         renderWelcome()
     }
     private func renderWelcome() {
-        let hosting = NSHostingView(rootView: WelcomeView(english: english, screenRecordingGranted: screenRecordingGranted, accessibilityGranted: accessibilityGranted,
+        let hosting = NSHostingView(rootView: WelcomeView(english: english, screenRecordingGranted: screenRecordingGranted,
             requestScreenRecording: { [weak self] in self?.requestScreenRecording() },
-            requestAccessibility: { AccessibilitySelectedText.requestTrust() },
             openPermissions: { [weak self] in self?.openPermissions() }, complete: { [weak self] in self?.completeWelcome() }))
         guard let welcome else { return }
         if let welcomeBacking { welcomeBacking.replaceContent(hosting) } else { welcomeBacking = GlassWindowBacking(window: welcome, content: hosting) }
     }
     private func showWelcome() {
         if welcome == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 360), styleMask: [.titled], backing: .buffered, defer: false)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 260), styleMask: [.titled], backing: .buffered, defer: false)
             window.title = "Traylet"; window.isReleasedWhenClosed = false
             window.center(); welcome = window
-            screenRecordingGranted = CGPreflightScreenCaptureAccess(); accessibilityGranted = AccessibilitySelectedText.isTrusted; renderWelcome()
+            screenRecordingGranted = CGPreflightScreenCaptureAccess(); renderWelcome()
         }
         authorizationTimer?.invalidate()
         authorizationTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -339,7 +344,7 @@ import TrayletCore
         if message.contains("屏幕") && message.contains("权限") {
             alert.addButton(withTitle: L("请求屏幕录制权限"))
             if alert.runModal() == .alertSecondButtonReturn {
-                if !CGRequestScreenCaptureAccess() { openPermissions() }
+                permissionStatus.requestScreenRecording()
             }
         } else { alert.runModal() }
     }
@@ -410,44 +415,39 @@ enum AuthorizationGate {
 struct WelcomeView: View {
     let english: Bool
     var screenRecordingGranted = false
-    var accessibilityGranted = false
     var requestScreenRecording: () -> Void = {}
-    var requestAccessibility: () -> Void = {}
     let openPermissions: () -> Void
     let complete: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: Design.Space.l) {
             HStack(spacing: Design.Space.m) {
-                BrandIcon(size: 56)
+                BrandIcon(size: 48)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Traylet").font(.title.weight(.bold))
+                    Text("Traylet").font(.title2.weight(.bold))
                     Text(english ? "Capture, translate, and manage your clipboard from the menu bar." : "截图、翻译、剪贴板。轻巧常驻菜单栏。")
                         .font(.callout).foregroundStyle(.secondary)
                 }
             }
-            SettingsGroup(footer: screenRecordingGranted ? nil : (english ? "If the status does not update, reopen Traylet." : "若状态未更新，请重新打开 Traylet。")) {
-                permissionRow(.screenRecording, granted: screenRecordingGranted, prominent: true, action: requestScreenRecording)
-                Divider()
-                permissionRow(.accessibility, granted: accessibilityGranted, prominent: false, action: requestAccessibility)
+            SettingsGroup(footer: screenRecordingGranted ? nil : (english ? "Traylet opens automatically once allowed. Reopen Traylet if the status does not update." : "授权后将自动进入 Traylet；若状态未更新，请重新打开 Traylet。")) {
+                PermissionRow(
+                    symbol: PermissionKind.screenRecording.symbol,
+                    title: PermissionKind.screenRecording.title(english: english),
+                    detail: PermissionKind.screenRecording.shortDetail(english: english),
+                    granted: screenRecordingGranted
+                ) {
+                    EmptyView()
+                }
             }
             Spacer(minLength: 0)
             HStack {
-                Button(english ? "Open Screen Recording Settings" : "打开屏幕录制设置", action: openPermissions)
+                Button(english ? "Open System Settings" : "打开系统设置", action: openPermissions)
                 Spacer()
-                Button(english ? "Get Started" : "开始使用", action: complete).buttonStyle(.borderedProminent)
-                    .disabled(!AuthorizationGate.canComplete(screenRecordingGranted: screenRecordingGranted))
-            }
-        }.padding(Design.Space.xl + 4).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-    private func permissionRow(_ kind: PermissionKind, granted: Bool, prominent: Bool, action: @escaping () -> Void) -> some View {
-        PermissionRow(symbol: kind.symbol, title: kind.title(english: english), detail: kind.shortDetail(english: english), granted: granted) {
-            if !granted {
-                if prominent {
-                    Button(english ? "Allow…" : "允许…", action: action).buttonStyle(.borderedProminent)
+                if screenRecordingGranted {
+                    Button(english ? "Get Started" : "开始使用", action: complete).buttonStyle(.borderedProminent)
                 } else {
-                    Button(english ? "Allow…" : "允许…", action: action)
+                    Button(english ? "Allow Screen Recording" : "允许屏幕录制", action: requestScreenRecording).buttonStyle(.borderedProminent)
                 }
             }
-        }
+        }.padding(Design.Space.xl).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }

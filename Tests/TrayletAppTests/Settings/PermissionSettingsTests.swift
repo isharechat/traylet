@@ -38,7 +38,10 @@ import Testing
             openScreenRecordingAction: { opened.value = true },
             openAccessibilityAction: { /* Not exercised in this test. */ })
         status.requestScreenRecording()
-        #expect(requested.value && opened.value && !status.screenRecordingGranted)
+        #expect(requested.value && !opened.value && !status.screenRecordingGranted)
+        requested.value = false; opened.value = false
+        status.requestScreenRecording()
+        #expect(!requested.value && opened.value && !status.screenRecordingGranted)
         requested.value = false; opened.value = false; screen.value = true
         status.requestScreenRecording()
         #expect(!requested.value && !opened.value && status.screenRecordingGranted)

@@ -57,6 +57,7 @@ enum PermissionKind: String, CaseIterable, Codable, Sendable {
     private let requestAccessibilityAction: @MainActor () -> Void
     private let openScreenRecordingAction: @MainActor () -> Void
     private let openAccessibilityAction: @MainActor () -> Void
+    private var hasRequestedScreenRecording = false
     private var observations: Set<AnyCancellable> = []
 
     init(
@@ -86,11 +87,19 @@ enum PermissionKind: String, CaseIterable, Codable, Sendable {
 
     func refresh() {
         screenRecordingGranted = readScreenRecording()
+        if screenRecordingGranted { hasRequestedScreenRecording = false }
         accessibilityGranted = readAccessibility()
     }
 
     func requestScreenRecording() {
-        if !readScreenRecording(), !requestScreenRecordingAction() {
+        guard !readScreenRecording() else {
+            refresh()
+            return
+        }
+        if !hasRequestedScreenRecording {
+            hasRequestedScreenRecording = true
+            _ = requestScreenRecordingAction()
+        } else {
             openScreenRecordingAction()
         }
         refresh()
