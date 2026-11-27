@@ -17,7 +17,6 @@ import Combine
     private let onRequestQuitForUpdate: @MainActor () -> Void
     private var window: NSWindow?
     private var backing: GlassWindowBacking?
-    private var dismissal: NSObjectProtocol?
     private var appearanceObservation: AnyCancellable?
     private var localizationObservation: AnyCancellable?
     var isOpen: Bool { window?.isVisible == true }
@@ -58,9 +57,6 @@ import Combine
             created.appearance = Self.appearance(preferences.value.appearance)
             backing = GlassWindowBacking(window: created, content: hosting)
             created.center(); window = created
-            dismissal = FloatingWindow.hideOnResignKey(created, canHide: { [weak self] in self?.languagePacks.isDownloading != true }) { [weak self] in
-                self?.shortcuts.cancel(); self?.ocr.cancel(); self?.translation.cancel(); self?.languagePacks.cancel(); self?.window?.orderOut(nil)
-            }
         }
         actions.refreshLoginStatus()
         navigation.navigate(to: section)

@@ -5,12 +5,12 @@ import ImageIO
 import UniformTypeIdentifiers
 
 @MainActor final class ClipboardFeature: ObservableObject {
-    static let windowWidth: CGFloat = 420
-    static let windowHeight: CGFloat = 520
-    static let minimumWidth: CGFloat = 360
-    static let minimumHeight: CGFloat = 400
-    static let detailWidth: CGFloat = 440
-    static let detailHeight: CGFloat = 520
+    static let windowWidth: CGFloat = 380
+    static let windowHeight: CGFloat = 500
+    static let minimumWidth: CGFloat = 340
+    static let minimumHeight: CGFloat = 380
+    static let detailWidth: CGFloat = 380
+    static let detailHeight: CGFloat = 460
     let controller: ClipboardController
     let imageEditing: ClipboardImageEditing
     let storageDirectory: URL
@@ -315,7 +315,7 @@ extension ClipboardKind {
                     Button(L("取消")) { imageEditing.cancel() }
                 }
                 HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
+                    Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary).accessibilityHidden(true)
                     ClipboardSearchField(feature: feature)
                     if !controller.query.isEmpty {
                         Button { controller.query = "" } label: {
@@ -324,7 +324,7 @@ extension ClipboardKind {
                         .buttonStyle(.plain).help(L("清除搜索")).accessibilityLabel(L("清除搜索"))
                     }
                 }
-                .padding(.horizontal, 12).frame(height: 32)
+                .padding(.horizontal, 10).frame(height: 30)
                 .v2GlassBackground(in: Capsule(), interactive: true)
                 Button {
                     controller.favoritesOnly.toggle()
@@ -332,6 +332,7 @@ extension ClipboardKind {
                     Image(systemName: controller.favoritesOnly ? "star.fill" : "star")
                         .foregroundStyle(controller.favoritesOnly ? Color.yellow : Color.secondary)
                         .frame(width: Design.iconButton, height: Design.iconButton)
+                        .background(controller.favoritesOnly ? Color.yellow.opacity(0.16) : Color.clear, in: Circle())
                         .v2GlassBackground(in: Circle(), interactive: true)
                 }
                 .buttonStyle(.plain).help(L("仅收藏")).accessibilityLabel(L("仅收藏"))
@@ -366,11 +367,11 @@ extension ClipboardKind {
                         .v2GlassBackground(in: Circle(), interactive: true)
                 }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help(L("更多")).accessibilityLabel(L("更多"))
-            }.padding(12)
+            }.padding(.horizontal, 10).padding(.vertical, 8)
             Divider()
             if let message = activeMessage {
                 Text(message).font(.caption).foregroundStyle(.orange).lineLimit(2)
-                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Divider()
             }
@@ -379,10 +380,15 @@ extension ClipboardKind {
             Divider()
             HStack(spacing: 8) {
                 Text(String(format: L("%d / %d 条 · 保留 %d 天"), controller.entries.count, controller.settings.maximumCount, controller.settings.retentionDays))
-                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                HStack(spacing: 8) {
+                    Text(L("↵ 复制"))
+                    Text(L("Esc 关闭"))
+                }
+                .font(.caption2).foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 12).padding(.vertical, 7)
+            .padding(.horizontal, 10).padding(.vertical, 6)
         }
         .environment(\.controlActiveState, feature.isWindowFocused ? .key : .inactive)
         .onExitCommand { feature.dismiss() }
@@ -411,25 +417,38 @@ extension ClipboardKind {
     }
     /// Every row has the same height; long text is truncated to one line with an ellipsis.
     private var historyList: some View {
-        List(selection: $controller.selectedID) {
-            ForEach(controller.filteredEntries) { entry in
-                let display = controller.display(entry)
-                let line = display.line ?? L("图片")
-                ClipboardHistoryRow(
-                    entry: entry,
-                    kind: display.kind,
-                    line: line,
-                    onCopy: { controller.copy(entry.id) },
-                    onToggleFavorite: { feature.runMutation { await controller.toggleFavorite(entry.id) } }
-                )
-                .tag(entry.id).listRowSeparator(.visible)
-                .moveDisabled(!entry.favorite || !controller.query.isEmpty)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(display.kind.title + ", " + line)
+        let favoriteEntries = controller.filteredEntries.filter(\.favorite)
+        let recentEntries = controller.filteredEntries.filter { !$0.favorite }
+        return List(selection: $controller.selectedID) {
+            if controller.favoritesOnly {
+                ForEach(favoriteEntries) { entry in historyRow(entry) }
+                    .onMove { offsets, destination in feature.queueFavoriteMove(from: offsets, to: destination) }
+            } else if !favoriteEntries.isEmpty && !recentEntries.isEmpty {
+                Section {
+                    ForEach(favoriteEntries) { entry in
+                        historyRow(entry)
+                            .moveDisabled(!controller.query.isEmpty)
+                    }
+                    .onMove { offsets, destination in feature.queueFavoriteMove(from: offsets, to: destination) }
+                } header: {
+                    sectionHeader(title: L("收藏"), count: favoriteEntries.count)
+                }
+                Section {
+                    ForEach(recentEntries) { entry in historyRow(entry) }
+                } header: {
+                    sectionHeader(title: L("最近"), count: recentEntries.count)
+                }
+            } else if !favoriteEntries.isEmpty {
+                ForEach(favoriteEntries) { entry in
+                    historyRow(entry)
+                        .moveDisabled(!controller.query.isEmpty)
+                }
+                .onMove { offsets, destination in feature.queueFavoriteMove(from: offsets, to: destination) }
+            } else {
+                ForEach(recentEntries) { entry in historyRow(entry) }
             }
-            .onMove { offsets, destination in feature.queueFavoriteMove(from: offsets, to: destination) }
         }
-        .listStyle(.plain).scrollContentBackground(.hidden).environment(\.defaultMinListRowHeight, 44)
+        .listStyle(.plain).scrollContentBackground(.hidden).environment(\.defaultMinListRowHeight, 34)
         .contextMenu(forSelectionType: UUID.self) { ids in
             if let id = ids.first, let entry = controller.entries.first(where: { $0.id == id }) {
                 Button(L("复制")) { controller.copy(id) }
@@ -444,11 +463,48 @@ extension ClipboardKind {
         .overlay {
             if controller.filteredEntries.isEmpty {
                 VStack(spacing: 8) {
-                    Image(systemName: "clipboard").font(.system(size: 24)).foregroundStyle(.tertiary)
-                    Text(L("暂无匹配历史")).foregroundStyle(.secondary)
+                    if !controller.query.isEmpty || controller.favoritesOnly {
+                        Image(systemName: "magnifyingglass").font(.system(size: 22)).foregroundStyle(.tertiary)
+                        Text(L("暂无匹配历史")).font(.callout.weight(.medium)).foregroundStyle(.secondary)
+                        Button(L("清除筛选")) {
+                            controller.query = ""
+                            controller.favoritesOnly = false
+                        }
+                        .controlSize(.small)
+                    } else {
+                        Image(systemName: "clipboard").font(.system(size: 24)).foregroundStyle(.tertiary)
+                        Text(L("剪贴板历史为空")).font(.callout.weight(.medium)).foregroundStyle(.secondary)
+                        Text(L("复制文字或图片后会自动出现在这里")).font(.caption).foregroundStyle(.tertiary)
+                    }
                 }
+                .padding()
             }
         }
+    }
+    private func sectionHeader(title: String, count: Int) -> some View {
+        HStack(spacing: 4) {
+            Text(title)
+            Text("· \(count)").monospacedDigit().foregroundStyle(.tertiary)
+        }
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .padding(.vertical, 2)
+    }
+    private func historyRow(_ entry: ClipboardEntry) -> some View {
+        let display = controller.display(entry)
+        let line = display.line ?? L("图片")
+        return ClipboardHistoryRow(
+            entry: entry,
+            kind: display.kind,
+            line: line,
+            onCopy: { controller.copy(entry.id) },
+            onToggleFavorite: { feature.runMutation { await controller.toggleFavorite(entry.id) } }
+        )
+        .tag(entry.id)
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: 1, leading: 10, bottom: 1, trailing: 10))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(display.kind.title + ", " + line)
     }
     private var activeMessage: String? {
         if let message = imageEditing.message { return L(message) }
@@ -514,9 +570,11 @@ extension ClipboardKind {
                 let display = controller.display(entry)
                 VStack(spacing: 0) {
                     sourceHeader(entry: entry, display: display)
-                        .padding(12)
+                        .padding(.horizontal, 12).padding(.vertical, 10)
                     Divider()
                     content(entry: entry, display: display)
+                    Divider()
+                    detailFooter(entry: entry, display: display)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
@@ -541,10 +599,10 @@ extension ClipboardKind {
         let tint: Color = display.kind == .image ? .indigo : (display.kind == .link ? .teal : .accentColor)
         return HStack(spacing: 10) {
             Image(systemName: display.kind.symbol)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(tint)
-                .frame(width: 32, height: 32)
-                .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: Design.Radius.control))
+                .frame(width: 28, height: 28)
+                .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: Design.Radius.badge))
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(entry.application).font(.callout.weight(.semibold)).lineLimit(1).truncationMode(.middle)
@@ -553,7 +611,7 @@ extension ClipboardKind {
                 Text(entry.capturedAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Spacer(minLength: 12)
+            Spacer(minLength: 10)
             HStack(spacing: 2) {
                 let imageIndices = ClipboardImageEditing.imageIndices(in: entry)
                 if imageIndices.count == 1, let index = imageIndices.first {
@@ -561,6 +619,8 @@ extension ClipboardKind {
                         symbol: "pencil",
                         label: "编辑图片",
                         help: "编辑副本，保留历史原件",
+                        size: 26,
+                        iconSize: 12,
                         disabled: feature.imageEditing.isPreparing
                     ) {
                         feature.editImage(entry.id, itemIndex: index)
@@ -569,6 +629,8 @@ extension ClipboardKind {
                         symbol: "text.viewfinder",
                         label: "识别文字",
                         help: "本机识别，校正后再翻译",
+                        size: 26,
+                        iconSize: 12,
                         disabled: feature.imageEditing.isPreparing
                     ) {
                         feature.recognizeImage(entry.id, itemIndex: index)
@@ -577,11 +639,13 @@ extension ClipboardKind {
                 WorkspaceIconButton(
                     symbol: entry.favorite ? "star.fill" : "star",
                     label: entry.favorite ? "取消收藏" : "收藏",
-                    tint: entry.favorite ? .yellow : nil
+                    tint: entry.favorite ? .yellow : nil,
+                    size: 26,
+                    iconSize: 12
                 ) {
                     feature.runMutation { await controller.toggleFavorite(entry.id) }
                 }
-                CopyIconButton(label: "复制") {
+                CopyIconButton(label: "复制", size: 26, iconSize: 12) {
                     controller.copy(entry.id)
                 }
             }
@@ -593,9 +657,26 @@ extension ClipboardKind {
                 if entry.imageData != nil { ClipboardPreviewImage(entry: entry) }
                 if !display.text.isEmpty { ClipboardPreviewText(entryID: entry.id, text: display.text, singleLine: display.singleLine) }
             }
-            .padding(12)
+            .padding(14)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    private func detailFooter(entry: ClipboardEntry, display: ClipboardDisplay) -> some View {
+        let sizeText = ByteCountFormatter.string(fromByteCount: Int64(entry.byteCount), countStyle: .file)
+        return HStack(spacing: 10) {
+            Text(sizeText)
+            if !display.text.isEmpty {
+                let lineCount = max(1, display.text.split(separator: "\n", omittingEmptySubsequences: false).count)
+                Text("·")
+                Text(String(format: L("%d 字符"), display.text.count))
+                Text("·")
+                Text(String(format: L("%d 行"), lineCount))
+            }
+            Spacer(minLength: 0)
+        }
+        .font(.caption2.monospacedDigit())
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12).padding(.vertical, 7)
     }
 }
 
@@ -731,6 +812,7 @@ private struct ClipboardPreviewText: View {
                 }
             } else {
                 Text(rendered)
+                    .lineSpacing(3)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -768,28 +850,50 @@ private struct ClipboardHistoryRow: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             ClipboardRowLeading(entry: entry, kind: kind)
-            Text(line).lineLimit(1).truncationMode(.tail).frame(maxWidth: .infinity, alignment: .leading)
+            Text(line)
+                .font(.callout)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
             if hovering {
                 HStack(spacing: 2) {
                     WorkspaceIconButton(
                         symbol: entry.favorite ? "star.fill" : "star",
                         label: entry.favorite ? "取消收藏" : "收藏",
                         tint: entry.favorite ? .yellow : .secondary,
-                        size: 24,
-                        iconSize: 12,
+                        size: 22,
+                        iconSize: 11,
                         action: onToggleFavorite
                     )
-                    CopyIconButton(label: "复制", size: 24, iconSize: 12, action: onCopy)
+                    CopyIconButton(label: "复制", size: 22, iconSize: 11, action: onCopy)
                 }
             } else if entry.favorite {
-                Image(systemName: "star.fill").foregroundStyle(.yellow).accessibilityLabel(L("已收藏"))
+                Image(systemName: "star.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.yellow)
+                    .accessibilityLabel(L("已收藏"))
+            } else {
+                Text(Self.relativeTime(from: entry.capturedAt))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.tertiary)
             }
         }
-        .frame(height: 44)
+        .padding(.vertical, 2)
+        .frame(height: 34)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+    }
+
+    private static func relativeTime(from date: Date, now: Date = Date()) -> String {
+        let elapsed = max(0, Int(now.timeIntervalSince(date)))
+        if elapsed < 60 { return L("刚刚") }
+        let minutes = elapsed / 60
+        if minutes < 60 { return "\(minutes)m" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h" }
+        return date.formatted(.dateTime.month(.defaultDigits).day(.defaultDigits))
     }
 }
 
@@ -806,21 +910,21 @@ private struct ClipboardRowLeading: View {
                     if let thumbnail { Image(nsImage: thumbnail).resizable().scaledToFill() }
                     else { Color.primary.opacity(0.08) }
                 }
-                .frame(width: 30, height: 30)
-                .clipShape(RoundedRectangle(cornerRadius: Design.Radius.badge))
-                .overlay(RoundedRectangle(cornerRadius: Design.Radius.badge).strokeBorder(Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 0.5))
+                .frame(width: 22, height: 22)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 0.5))
             } else {
                 Image(systemName: kind.symbol)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(tint)
-                    .frame(width: 30, height: 30)
-                    .background(tint.opacity(0.13), in: RoundedRectangle(cornerRadius: Design.Radius.badge))
+                    .frame(width: 22, height: 22)
+                    .background(tint.opacity(0.13), in: RoundedRectangle(cornerRadius: 5))
             }
         }
         .help(kind.title).accessibilityHidden(true)
         .task(id: entry.id) {
             guard thumbnail == nil, let data = entry.imageData else { return }
-            thumbnail = await ClipboardThumbnails.image(data, key: entry.digest, maxPixels: 84, size: NSSize(width: 30, height: 30))
+            thumbnail = await ClipboardThumbnails.image(data, key: entry.digest, maxPixels: 84, size: NSSize(width: 22, height: 22))
         }
     }
 }

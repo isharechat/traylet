@@ -396,7 +396,7 @@ import Testing
         if copyWhileLoading { #expect(store.copy(beta.id)) }
         await archive.releaseLoad(); await retry.value
         #expect(!store.canRetryFavoritesLoading)
-        #expect(store.message == (copyWhileLoading ? "已复制。" : nil))
+        #expect(store.message == nil)
         #expect(store.entries == [beta, unknown])
         #expect(await archive.favorites == [beta, unknown])
         #expect(source.generationReads == generationReads && source.bodyReads == 0)

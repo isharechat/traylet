@@ -36,47 +36,52 @@ struct OCRWorkspaceView: View {
 
     private var previewPane: some View {
         VStack(spacing: Design.Space.xs) {
-            HStack(spacing: 2) {
-                WorkspaceIconButton(symbol: "minus.magnifyingglass", label: "缩小", size: 26, iconSize: 12, disabled: controller.previewImage == nil) {
-                    controller.zoomScale = max(0.25, controller.zoomScale - 0.25)
-                }
+            HStack(spacing: 6) {
+                HStack(spacing: 2) {
+                    WorkspaceIconButton(symbol: "minus.magnifyingglass", label: "缩小", size: 26, iconSize: 12, disabled: controller.previewImage == nil) {
+                        controller.zoomScale = max(0.25, controller.zoomScale - 0.25)
+                    }
 
-                Button { controller.zoomScale = 1.0 } label: {
-                    Text("\(Int((controller.zoomScale * 100).rounded()))%")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .frame(minWidth: 38).frame(height: 22)
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .disabled(controller.previewImage == nil)
-                .help(L("重置视图"))
+                    Button { controller.zoomScale = 1.0 } label: {
+                        Text("\(Int((controller.zoomScale * 100).rounded()))%")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(minWidth: 38).frame(height: 22)
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(controller.previewImage == nil)
+                    .help(L("重置视图"))
 
-                WorkspaceIconButton(symbol: "plus.magnifyingglass", label: "放大", size: 26, iconSize: 12, disabled: controller.previewImage == nil) {
-                    controller.zoomScale = min(4.0, controller.zoomScale + 0.25)
-                }
+                    WorkspaceIconButton(symbol: "plus.magnifyingglass", label: "放大", size: 26, iconSize: 12, disabled: controller.previewImage == nil) {
+                        controller.zoomScale = min(4.0, controller.zoomScale + 0.25)
+                    }
 
-                WorkspaceIconButton(symbol: "arrow.up.left.and.arrow.down.right", label: "重置视图", size: 26, iconSize: 11, disabled: controller.previewImage == nil) {
-                    controller.zoomScale = 1.0
+                    WorkspaceIconButton(symbol: "arrow.up.left.and.arrow.down.right", label: "重置视图", size: 26, iconSize: 11, disabled: controller.previewImage == nil) {
+                        controller.zoomScale = 1.0
+                    }
                 }
+                .padding(.horizontal, 4)
+                .frame(height: Design.iconButton)
+                .v2GlassBackground(in: Capsule(), interactive: true)
 
                 Spacer(minLength: 4)
 
-                WorkspaceIconButton(symbol: "camera.viewfinder", label: "重新截图", size: 26, iconSize: 12) {
+                WorkspaceIconButton(symbol: "camera.viewfinder", label: "重新截图") {
                     controller.recapture()
                 }
+                .v2GlassBackground(in: Circle(), interactive: true)
 
-                WorkspaceIconButton(symbol: "photo.badge.plus", label: "导入图片", size: 26, iconSize: 12) {
+                WorkspaceIconButton(symbol: "photo.badge.plus", label: "导入图片") {
                     chooseImageFile()
                 }
+                .v2GlassBackground(in: Circle(), interactive: true)
 
-                WorkspaceIconButton(symbol: "sidebar.left", label: "收起原图", size: 26, iconSize: 12) {
+                WorkspaceIconButton(symbol: "sidebar.left", label: "收起原图") {
                     withAnimation(Design.Animation.snappy) { controller.showsPreview = false }
                 }
+                .v2GlassBackground(in: Circle(), interactive: true)
             }
-            .padding(.horizontal, 6)
-            .frame(height: Design.iconButton)
-            .v2GlassBackground(in: Capsule(), interactive: true)
 
             ZStack {
                 if let nsImage = controller.previewImage {
@@ -109,6 +114,14 @@ struct OCRWorkspaceView: View {
                     }
                     .padding()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Design.Radius.panel - 6)
+                            .strokeBorder(
+                                isDropTargeted ? Color.accentColor : Color(nsColor: .separatorColor).opacity(0.45),
+                                style: StrokeStyle(lineWidth: isDropTargeted ? 2 : 1, dash: [5, 4])
+                            )
+                            .padding(8)
+                    )
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -207,7 +220,7 @@ struct OCRWorkspaceView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Text(L("识别结果"))
-                    .font(.caption.weight(.medium))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 if controller.phase == .recognizing {
                     ProgressView().controlSize(.mini)
@@ -288,7 +301,7 @@ struct OCRWorkspaceView: View {
             }
             .padding(.horizontal, 3)
             .v2GlassBackground(in: Capsule(), interactive: true)
-            .padding(8)
+            .padding(10)
         }
         .overlay(alignment: .bottomTrailing) {
             HStack(spacing: 6) {
@@ -323,7 +336,7 @@ struct OCRWorkspaceView: View {
                 .opacity(canTranslate ? 1 : 0.4)
                 .help(L("去翻译") + " ⌘↩")
             }
-            .padding(8)
+            .padding(10)
         }
         .v2GlassBackground(in: RoundedRectangle(cornerRadius: Design.Radius.panel))
         .v2PanelFocusRing(focused: editorFocused)

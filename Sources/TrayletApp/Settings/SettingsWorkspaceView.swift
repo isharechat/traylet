@@ -72,17 +72,26 @@ import SwiftUI
         .onChange(of: navigation.current) { _, _ in shortcuts.cancel() }
         .onDisappear { shortcuts.cancel() }
     }
-    /// macOS System Settings layout: a source list on the left, one grouped form at a time on the right.
+    /// macOS System Settings layout: a grouped source list on the left, one grouped form at a time on the right.
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            ForEach(SettingsSection.allCases) { section in
-                SettingsSidebarRow(
-                    section: section,
-                    title: section.title(english: english),
-                    selected: navigation.current == section
-                ) {
-                    withAnimation(Design.Animation.snappy) {
-                        navigation.navigate(to: section)
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(SettingsSectionGroup.allCases) { group in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(group.title(english: english))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 2)
+                    ForEach(group.sections) { section in
+                        SettingsSidebarRow(
+                            section: section,
+                            title: section.title(english: english),
+                            selected: navigation.current == section
+                        ) {
+                            withAnimation(Design.Animation.snappy) {
+                                navigation.navigate(to: section)
+                            }
+                        }
                     }
                 }
             }
@@ -101,9 +110,16 @@ import SwiftUI
                     .background(navigation.current.tint.gradient, in: RoundedRectangle(cornerRadius: Design.Radius.badge + 1))
                     .shadow(color: navigation.current.tint.opacity(0.25), radius: 3, y: 1)
                     .accessibilityHidden(true)
-                Text(navigation.current.title(english: english))
-                    .font(.title3.weight(.semibold))
-                    .accessibilityAddTraits(.isHeader)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(navigation.current.title(english: english))
+                        .font(.title3.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    Text(navigation.current.subtitle(english: english))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             }
             .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 6)
             Group {
@@ -344,10 +360,10 @@ private struct SettingsSidebarRow: View {
         Button(action: action) {
             HStack(spacing: 9) {
                 Image(systemName: section.symbol)
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white)
-                    .frame(width: 22, height: 22)
-                    .background(section.tint.gradient, in: RoundedRectangle(cornerRadius: Design.Radius.badge))
+                    .frame(width: 20, height: 20)
+                    .background(section.tint.gradient, in: RoundedRectangle(cornerRadius: 5))
                     .shadow(color: section.tint.opacity(0.24), radius: 2, y: 1)
                     .accessibilityHidden(true)
                 Text(title)
@@ -356,7 +372,7 @@ private struct SettingsSidebarRow: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
-            .frame(height: 32)
+            .frame(height: 30)
             .frame(maxWidth: .infinity, alignment: .leading)
             .foregroundStyle(selected ? Color.white : Color.primary)
             .background(

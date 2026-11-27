@@ -11,15 +11,15 @@ struct TranslationWorkspaceView: View {
     static let languages = [("auto", "自动检测"), ("zh-Hans", "简体中文"), ("zh-Hant", "繁體中文"), ("en", "English"), ("ja", "日本語"), ("ko", "한국어"), ("fr", "Français"), ("de", "Deutsch"), ("es", "Español"), ("it", "Italiano"), ("pt", "Português"), ("ru", "Русский"), ("ar", "العربية"), ("hi", "हिन्दी"), ("vi", "Tiếng Việt"), ("th", "ไทย"), ("id", "Bahasa Indonesia"), ("tr", "Türkçe"), ("pl", "Polski"), ("uk", "Українська"), ("nl", "Nederlands")]
     var body: some View {
         VStack(spacing: Design.Space.s) {
-            textBox(input: true)
             controlRow
+            textBox(input: true)
             textBox(input: false)
         }
         .padding(.horizontal, Design.Space.m).padding(.top, Design.Space.m).padding(.bottom, Design.Space.s)
         .background { if let work = controller.systemWork { TranslationSystemTaskHost(work: work, prepare: controller.preparingResources, completed: controller.finishSystem, failed: controller.failSystem).id(work.id) } }
         .onDisappear { controller.cancel() }
     }
-    /// One row of same-height glass controls: languages and Translate on the left, engines and settings on the right.
+    /// One row of same-height glass controls: languages on the left, engines and settings on the right.
     private var controlRow: some View {
         HStack(spacing: 6) {
             languageMenu("原文语言", selection: $flow.source, includeAuto: true)
@@ -33,14 +33,6 @@ struct TranslationWorkspaceView: View {
             }
             .v2GlassBackground(in: Circle(), interactive: true)
             languageMenu("译文语言", selection: $flow.target, includeAuto: false)
-            let unavailable = flow.phase == .recognizing || !flow.hasTranslatableContent
-            Button { controller.startSubmission() } label: {
-                Text(L("翻译")).font(.callout.weight(.semibold)).foregroundStyle(.white).lineLimit(1).fixedSize()
-                    .padding(.horizontal, 14).frame(height: Design.iconButton)
-                    .background(Color.accentColor.gradient, in: Capsule())
-                    .shadow(color: Color.accentColor.opacity(unavailable ? 0 : 0.25), radius: 4, y: 1)
-            }.buttonStyle(.plain).keyboardShortcut(.return, modifiers: .command).disabled(unavailable).opacity(unavailable ? 0.4 : 1)
-                .help(L("翻译") + " ⌘↩")
             Spacer(minLength: 4)
             engineIcons
             WorkspaceIconButton(
@@ -63,7 +55,7 @@ struct TranslationWorkspaceView: View {
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Text(L(input ? "原文" : "译文"))
-                    .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 if !input, !flow.output.isEmpty, !flow.outputIsCurrent {
                     StatusPill(text: L("内容已变更"), tint: .orange)
                 }
@@ -90,7 +82,7 @@ struct TranslationWorkspaceView: View {
             if input {
                 TextEditor(text: $flow.input).font(.body).scrollContentBackground(.hidden).focused($inputFocused).accessibilityLabel(L("原文输入"))
                     // TextEditor insets its text by 5pt; pull it back so it lines up with the caption above.
-                    .padding(.horizontal, -5).padding(.bottom, 34)
+                    .padding(.horizontal, -5).padding(.bottom, 38)
                     .onDrop(of: [.fileURL, .image, .png], isTargeted: nil) { providers in
                         for provider in providers {
                             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
@@ -113,11 +105,11 @@ struct TranslationWorkspaceView: View {
                     }
             } else {
                 ScrollView { VStack(alignment: .leading, spacing: 12) { status; if !controller.notice.isEmpty { Text(L(controller.notice)).font(.caption).textSelection(.enabled) }; Text(flow.output).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) } }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, 34)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, 38)
             }
         }
         .padding(Design.Space.m).frame(maxWidth: .infinity, minHeight: 120, maxHeight: .infinity)
-        // Floating glass action capsules: speak/copy at bottom-left (with detected language), clear at bottom-right.
+        // Floating glass action capsules: speak/copy at bottom-left (with detected language), clear + translate at bottom-right.
         .overlay(alignment: .bottomLeading) {
             HStack(spacing: 4) {
                 HStack(spacing: 2) {
@@ -140,10 +132,10 @@ struct TranslationWorkspaceView: View {
                         tint: .secondary
                     )
                 }
-            }.padding(8)
+            }.padding(10)
         }
         .overlay(alignment: .bottomTrailing) {
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
                 if !input, flow.active != nil || flow.phase == .recognizing {
                     Button(L("取消")) { controller.cancel() }.controlSize(.small)
                 }
@@ -155,7 +147,17 @@ struct TranslationWorkspaceView: View {
                     if input { flow.input = "" } else { controller.clearOutput() }
                 }
                 .v2GlassBackground(in: Circle(), interactive: true)
-            }.padding(8)
+                if input {
+                    let unavailable = flow.phase == .recognizing || !flow.hasTranslatableContent
+                    Button { controller.startSubmission() } label: {
+                        Text(L("翻译")).font(.callout.weight(.semibold)).foregroundStyle(.white).lineLimit(1).fixedSize()
+                            .padding(.horizontal, 14).frame(height: Design.iconButton)
+                            .background(Color.accentColor.gradient, in: Capsule())
+                            .shadow(color: Color.accentColor.opacity(unavailable ? 0 : 0.25), radius: 4, y: 1)
+                    }.buttonStyle(.plain).keyboardShortcut(.return, modifiers: .command).disabled(unavailable).opacity(unavailable ? 0.4 : 1)
+                        .help(L("翻译") + " ⌘↩")
+                }
+            }.padding(10)
         }
         .v2GlassBackground(in: RoundedRectangle(cornerRadius: Design.Radius.panel))
         .v2PanelFocusRing(focused: focused)

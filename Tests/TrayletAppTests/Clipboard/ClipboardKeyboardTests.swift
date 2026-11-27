@@ -53,6 +53,7 @@ import Testing
         fixture.writer.result = .copied(generation: 10)
         try press(36, characters: "\r", in: panel)
         #expect(fixture.presentation.dismissals == 1)
+        #expect(fixture.feature.controller.message == nil)
         let writesAfterSuccess = fixture.writer.writes.count
         fixture.feature.present()
         fixture.feature.controller.query = "no matches"

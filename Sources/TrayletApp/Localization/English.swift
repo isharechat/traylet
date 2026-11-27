@@ -508,5 +508,13 @@ enum English {
         "添加": "Add",
         "选择应用…": "Choose App…",
         "移除": "Remove",
+        "最近": "Recent",
+        "刚刚": "Just now",
+        "剪贴板历史为空": "Clipboard History Is Empty",
+        "复制文字或图片后会自动出现在这里": "Copied text or images will appear here automatically",
+        "清除筛选": "Clear Filters",
+        "↵ 复制": "↵ Copy",
+        "Esc 关闭": "Esc Close",
+        "%d 行": "%d lines",
     ]
 }

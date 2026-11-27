@@ -343,12 +343,23 @@ import Combine
             guard ClipboardPolicy.valid(output) else { message = "纯文本超过复制上限。"; return false }
         }
         switch writer.write(output, marker: marker) {
-        case .copied(let generation): selfGeneration = generation; message = "已复制。"; return true
+        case .copied(let generation):
+            selfGeneration = generation
+            if let message, Self.copyErrorMessages.contains(message) {
+                self.message = nil
+            }
+            return true
         case .changed: message = "剪贴板已被其他应用修改，请重试。"
         case .failed: message = "复制失败，当前剪贴板可能已清空。"
         }
         return false
     }
+    private static let copyErrorMessages: Set<String> = [
+        "此条目没有可复制的文本。",
+        "纯文本超过复制上限。",
+        "剪贴板已被其他应用修改，请重试。",
+        "复制失败，当前剪贴板可能已清空。"
+    ]
     func stop() { timer?.cancel(); timer = nil; enabled = false; ignoringNextCopy = false; canRetryFavoritesLoading = false; lifecycle &+= 1; runRevision &+= 1 }
     func shutdown() async {
         stop(); let token = lifecycle

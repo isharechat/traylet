@@ -247,6 +247,34 @@ import Testing
 
         await clipboard.shutdownAndWait()
     }
+    @Test func resignKeyDoesNotCloseSettingsWindowWhileCancellingShortcutRecording() async throws {
+        _ = NSApplication.shared
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-v2-settings-resign-open-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clipboard = ClipboardFeature(directory: directory, source: SettingsTestClipboardSource(), writer: SettingsTestClipboardWriter())
+        let store = PreferencesStore(), manager = ShortcutManager(preferences: store, driver: SettingsTestShortcutDriver())
+        var presentedWindow: NSWindow?
+        let controller = SettingsController(preferences: store, shortcuts: manager, translation: TranslationConfiguration(), clipboard: clipboard, presentWindow: { window in
+            presentedWindow = window
+            window.orderBack(nil)
+        })
+        controller.present()
+        let window = try #require(presentedWindow)
+        #expect(controller.isOpen)
+
+        manager.begin(.regionCapture)
+        #expect(manager.recordingAction == .regionCapture)
+
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+        try await Task.sleep(for: .milliseconds(50))
+
+        #expect(controller.isOpen)
+        #expect(window.isVisible)
+        #expect(manager.recordingAction == nil)
+
+        controller.close()
+        await clipboard.shutdownAndWait()
+    }
 }
 @MainActor private final class SettingsTestClipboardSource: ClipboardSource {
     var generation = 0
