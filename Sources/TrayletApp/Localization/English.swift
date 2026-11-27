@@ -498,5 +498,15 @@ enum English {
         "OCR 设置保存失败；当前更改仅保留在内存。": "OCR settings could not be saved. Changes are kept in memory only.",
         "留空使用默认提示词；支持 {source} 与 {target} 占位符": "Leave blank for default prompt; supports {source} and {target} placeholders",
         "OCR 引擎": "OCR Engines",
+        "翻译窗口": "Translation Window",
+        "内容已变更": "Outdated",
+        "留空使用默认提示词": "Leave blank for default prompt",
+        "留空使用默认提示词，支持 {source} 与 {target}": "Leave blank for default prompt; supports {source} and {target}",
+        "拖入或选择图片": "Drop or choose an image",
+        "在访达中显示": "Reveal in Finder",
+        "输入 Bundle ID": "Enter Bundle ID",
+        "添加": "Add",
+        "选择应用…": "Choose App…",
+        "移除": "Remove",
     ]
 }

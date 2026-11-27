@@ -101,17 +101,11 @@ import SwiftUI
                     .background(navigation.current.tint.gradient, in: RoundedRectangle(cornerRadius: Design.Radius.badge + 1))
                     .shadow(color: navigation.current.tint.opacity(0.25), radius: 3, y: 1)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(navigation.current.title(english: english))
-                        .font(.title3.weight(.semibold))
-                        .accessibilityAddTraits(.isHeader)
-                    Text(navigation.current.subtitle(english: english))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                Text(navigation.current.title(english: english))
+                    .font(.title3.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
             }
-            .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 4)
+            .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 6)
             Group {
                 switch navigation.current {
                 case .general: general
@@ -123,7 +117,7 @@ import SwiftUI
                 case .about: about
                 }
             }
-            .formStyle(.grouped).scrollContentBackground(.hidden)
+            .formStyle(.grouped).scrollContentBackground(.hidden).toggleStyle(.switch)
             .id(navigation.current)
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -141,10 +135,6 @@ import SwiftUI
                     Text(text("深色", "Dark")).tag(Appearance.dark)
                 }.pickerStyle(.segmented)
                 Toggle(text("玻璃效果", "Glass effects"), isOn: Binding(get: { preferences.value.glassEnabled }, set: actions.setGlass))
-            } footer: {
-                Text(text("关闭玻璃效果，或开启系统“减少透明度 / 增强对比度”时，将自动回退为实底窗口。",
-                         "Solid backgrounds are used automatically when Glass effects are off or when Reduce Transparency or Increase Contrast is enabled."))
-                    .font(.caption).foregroundStyle(.secondary)
             }
             if preferences.failure != nil || actions.issue != nil {
                 Section {
@@ -156,7 +146,6 @@ import SwiftUI
                 }
             }
         }
-        .toggleStyle(.switch)
         .alert(text("恢复新版本默认设置？", "Restore new-version defaults?"), isPresented: $confirmPreferenceRecovery) {
             Button(text("取消", "Cancel"), role: .cancel) {}
             Button(text("备份并恢复默认", "Back up and restore defaults"), role: .destructive) { actions.recoverPreferences(shortcuts: shortcuts) }
@@ -172,16 +161,17 @@ import SwiftUI
                     let recording = shortcuts.recordingAction == action
                     LabeledContent(actionTitle(action)) {
                         HStack(spacing: 6) {
-                            Button { shortcuts.begin(action) } label: {
-                                Text(recording ? text("请按组合键…", "Press shortcut…") : chord?.display ?? text("未设置", "Not set"))
-                                    .monospaced().foregroundStyle(recording ? Color.accentColor : (chord == nil ? .secondary : .primary))
-                                    .frame(minWidth: 102).padding(.horizontal, 10).frame(height: 26)
-                                    .background(recording ? Color.accentColor.opacity(0.12) : Color(nsColor: .quaternarySystemFill),
-                                                in: RoundedRectangle(cornerRadius: Design.Radius.control))
-                                    .overlay(RoundedRectangle(cornerRadius: Design.Radius.control)
-                                        .stroke(recording ? Color.accentColor : Color(nsColor: .separatorColor).opacity(0.35), lineWidth: recording ? 2 : 0.5))
-                            }.buttonStyle(.plain).help(text("录入快捷键；Esc 取消", "Record shortcut; Escape cancels"))
-                                .accessibilityLabel(actionTitle(action) + text("快捷键", " shortcut"))
+                            ShortcutRecorderButton(
+                                title: actionTitle(action),
+                                chordDisplay: chord?.display,
+                                recording: recording,
+                                promptText: text("请按组合键…", "Press shortcut…"),
+                                emptyText: text("未设置", "Not set"),
+                                helpText: text("录入快捷键；Esc 取消", "Record shortcut; Escape cancels"),
+                                accessibilitySuffix: text("快捷键", " shortcut")
+                            ) {
+                                shortcuts.begin(action)
+                            }
                             Button { shortcuts.clear(action) } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }
                                 .buttonStyle(.borderless).help(text("清空", "Clear") + " " + actionTitle(action))
                                 .accessibilityLabel(text("清空", "Clear") + " " + actionTitle(action))
@@ -189,9 +179,6 @@ import SwiftUI
                         }
                     }
                 }
-            } footer: {
-                Text(text("单击快捷键按钮录入组合键，按 Esc 取消。", "Click a shortcut button to record a key combination; press Esc to cancel."))
-                    .font(.caption).foregroundStyle(.secondary)
             }
             if let message = shortcuts.message {
                 Section { Label(L(message), systemImage: shortcuts.recordingAction == nil ? "exclamationmark.triangle" : "keyboard").textSelection(.enabled) }
@@ -205,21 +192,18 @@ import SwiftUI
         }
     }
     private func actionTitle(_ action: Action) -> String {
-        guard english else { return action.title }
-        switch action { case .regionCapture: return "Region capture"; case .screenCapture: return "Screen capture"; case .inputTranslation: return "Input translation"; case .captureTranslation: return "Capture translation"; case .ocr: return "OCR"; case .clipboard: return "Clipboard" }
+        L(action.title)
     }
     private var about: some View {
         Form {
             Section {
                 HStack(spacing: 14) {
-                    BrandIcon(size: 56)
-                    VStack(alignment: .leading, spacing: 4) {
+                    BrandIcon(size: 52)
+                    VStack(alignment: .leading, spacing: 6) {
                         Text("Traylet").font(.headline)
-                        Text(text("轻巧本机运行的 macOS 菜单栏工具", "Lightweight on-device macOS menu bar utility"))
-                            .font(.caption).foregroundStyle(.secondary)
                         StatusPill(text: version, tint: .accentColor)
                     }
-                }.padding(.vertical, 6)
+                }.padding(.vertical, 4)
             }
             Section {
                 Toggle(text("自动检查更新", "Check for updates automatically"),
@@ -229,10 +213,6 @@ import SwiftUI
                 updateStatusRow
             } header: {
                 Text(text("软件更新", "Software Updates"))
-            } footer: {
-                Text(text("仅从 GitHub Releases (api.github.com) 只读查询版本信息与校验文件，不上传任何本机数据。",
-                          "Queries GitHub Releases (api.github.com) read-only for version metadata and checksums. No local data is uploaded."))
-                    .font(.caption).foregroundStyle(.secondary)
             }
             Section {
                 DisclosureGroup(text("第三方声明", "Third-party notices")) {
@@ -245,15 +225,15 @@ import SwiftUI
 
     @ViewBuilder
     private var updateStatusRow: some View {
+        let updateHelp = text("仅从 GitHub Releases (api.github.com) 只读查询版本信息与校验文件，不上传任何本机数据。",
+                              "Queries GitHub Releases (api.github.com) read-only for version metadata and checksums. No local data is uploaded.")
         switch updater.state {
         case .idle:
-            HStack {
-                Text(text("通过 GitHub Releases 获取更新", "Check for updates via GitHub Releases"))
-                    .foregroundStyle(.secondary)
-                Spacer()
+            LabeledContent(text("检查更新", "Updates")) {
                 Button(text("检查更新", "Check for Updates")) {
                     Task { await updater.checkForUpdates(manual: true) }
                 }
+                .help(updateHelp)
             }
         case .checking:
             HStack(spacing: 8) {
@@ -269,6 +249,7 @@ import SwiftUI
                 Button(text("检查更新", "Check for Updates")) {
                     Task { await updater.checkForUpdates(manual: true) }
                 }
+                .help(updateHelp)
             }
         case .available(let release):
             VStack(alignment: .leading, spacing: 8) {
@@ -389,5 +370,39 @@ private struct SettingsSidebarRow: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+private struct ShortcutRecorderButton: View {
+    let title: String
+    let chordDisplay: String?
+    let recording: Bool
+    let promptText: String
+    let emptyText: String
+    let helpText: String
+    let accessibilitySuffix: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(recording ? promptText : chordDisplay ?? emptyText)
+                .monospaced()
+                .foregroundStyle(recording ? Color.accentColor : (chordDisplay == nil ? .secondary : .primary))
+                .frame(minWidth: 102).padding(.horizontal, 10).frame(height: 26)
+                .background(
+                    recording ? Color.accentColor.opacity(0.12)
+                              : Color(nsColor: hovering ? .tertiarySystemFill : .quaternarySystemFill),
+                    in: RoundedRectangle(cornerRadius: Design.Radius.control)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Design.Radius.control)
+                        .stroke(recording ? Color.accentColor : Color(nsColor: .separatorColor).opacity(hovering ? 0.55 : 0.35), lineWidth: recording ? 2 : 0.5)
+                )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(helpText)
+        .accessibilityLabel(title + accessibilitySuffix)
     }
 }

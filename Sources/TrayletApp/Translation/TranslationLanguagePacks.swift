@@ -152,26 +152,28 @@ struct TranslationLanguagePackSettings: View {
             Picker(L("译文语言"), selection: $controller.target) {
                 ForEach(languages, id: \.0) { Text(L($0.1)).tag($0.0) }
             }
-            LabeledContent(L("状态")) { status }
-            HStack(spacing: 8) {
-                Button(L("检查状态")) { controller.check() }
-                    .disabled(controller.state == .checking || controller.state == .preparing)
-                Button { controller.download() } label: {
-                    if controller.state == .preparing {
-                        HStack(spacing: 5) {
-                            ProgressView().controlSize(.small)
-                            Text(L("正在下载…"))
+            LabeledContent(L("状态")) {
+                HStack(spacing: 8) {
+                    status
+                    Spacer(minLength: 8)
+                    Button(L("检查状态")) { controller.check() }
+                        .controlSize(.small)
+                        .disabled(controller.state == .checking || controller.state == .preparing)
+                    Button { controller.download() } label: {
+                        if controller.state == .preparing {
+                            HStack(spacing: 5) {
+                                ProgressView().controlSize(.small)
+                                Text(L("正在下载…"))
+                            }
+                        } else {
+                            Text(L("下载语言包"))
                         }
-                    } else {
-                        Text(L("下载语言包"))
                     }
+                    .controlSize(.small)
+                    .disabled(!controller.canDownload)
+                    .help(L("语言包由 macOS 按系统批准流程下载并安装到本机；不会上传原文、截图或剪贴板。"))
                 }
-                .disabled(!controller.canDownload)
-                Spacer(minLength: 0)
             }
-            Text(L("仅本机安装，不上传内容。"))
-                .font(.caption).foregroundStyle(.secondary)
-                .help(L("语言包由 macOS 按系统批准流程下载并安装到本机；不会上传原文、截图或剪贴板。"))
         }
     }
 

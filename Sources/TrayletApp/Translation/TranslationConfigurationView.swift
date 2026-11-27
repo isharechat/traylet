@@ -8,6 +8,7 @@ struct TranslationConfigurationView: View {
     @StateObject private var languagePacks: TranslationLanguagePackController
     @State private var showsStorageRecovery = false
     @State private var showsModelPicker = false
+    @State private var promptExpanded: Bool
     @State private var expanded: Set<TranslationEngineChoice>
     @State private var dragging: TranslationEngineChoice?
     @State private var endpointDraft: String
@@ -20,6 +21,7 @@ struct TranslationConfigurationView: View {
     init(configuration: TranslationConfiguration, expanded: Set<TranslationEngineChoice> = [],
          languagePacks: TranslationLanguagePackController = TranslationLanguagePackController()) {
         self.configuration = configuration
+        _promptExpanded = State(initialValue: !configuration.customPrompt.isEmpty)
         _expanded = State(initialValue: expanded)
         _languagePacks = StateObject(wrappedValue: languagePacks)
         _endpointDraft = State(initialValue: configuration.endpoint)
@@ -30,16 +32,6 @@ struct TranslationConfigurationView: View {
     }
     var body: some View {
         Form {
-            TranslationLanguagePackSettings(controller: languagePacks)
-            Section {
-                LabeledContent(L("显示引擎图标")) {
-                    HStack(spacing: 6) {
-                        Text("\(configuration.maxVisible)").monospacedDigit()
-                        Stepper(L("显示引擎图标"), value: $configuration.maxVisible, in: TranslationConfiguration.visibleRange).labelsHidden()
-                    }
-                    .help(L("翻译窗口会按此数量加宽最小宽度，保证最小窗口下图标全部可见；超出个数的引擎不显示。"))
-                }
-            }
             Section(L("翻译引擎")) {
                 engineRow(configuration.engine)
                 configurationRows(configuration.engine)
@@ -49,6 +41,16 @@ struct TranslationConfigurationView: View {
                     configurationRows(engine)
                 }
             }
+            Section(L("翻译窗口")) {
+                LabeledContent(L("显示引擎图标")) {
+                    HStack(spacing: 6) {
+                        Text("\(configuration.maxVisible)").monospacedDigit()
+                        Stepper(L("显示引擎图标"), value: $configuration.maxVisible, in: TranslationConfiguration.visibleRange).labelsHidden()
+                    }
+                    .help(L("翻译窗口会按此数量加宽最小宽度，保证最小窗口下图标全部可见；超出个数的引擎不显示。"))
+                }
+            }
+            TranslationLanguagePackSettings(controller: languagePacks)
             if configuration.storageIssue != nil || configuration.storageRecoveryNotice != nil {
                 Section {
                     if let issue = configuration.storageIssue {
@@ -101,21 +103,15 @@ struct TranslationConfigurationView: View {
                 engineBadge(engine)
             }
             Spacer(minLength: 8)
-            if configurable { configureButton(engine, open: open, title: title) }
-            if isDefault {
-                StatusPill(text: L("默认"), tint: .secondary)
-            } else {
-                Button { configuration.engine = engine } label: {
-                    Text(L("设为默认"))
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(Color.accentColor)
-                        .padding(.horizontal, 8).frame(height: 20)
-                        .background(Color.accentColor.opacity(0.12), in: Capsule())
-                        .contentShape(Capsule())
+            if configurable {
+                EngineConfigureButton(open: open, title: title) {
+                    withAnimation(Design.Animation.snappy) { if open { expanded.remove(engine) } else { expanded.insert(engine) } }
                 }
-                .buttonStyle(.plain)
-                .help(L("设为默认"))
-                .accessibilityLabel(L("设为默认") + " " + title)
+            }
+            EngineDefaultControl(isDefault: isDefault, title: title) {
+                configuration.engine = engine
+            }
+            if !isDefault {
                 Image(systemName: "line.3.horizontal").font(.system(size: 13, weight: .medium)).foregroundStyle(.tertiary)
                     .frame(width: 24, height: 28).contentShape(Rectangle())
                     .help(L("拖动调整顺序")).accessibilityHidden(true)
@@ -150,138 +146,97 @@ struct TranslationConfigurationView: View {
                 .padding(.leading, 32)
         }
     }
-    /// A pill that reads as a button at rest and turns accent-tinted while its panel is open.
-    private func configureButton(_ engine: TranslationEngineChoice, open: Bool, title: String) -> some View {
-        Button {
-            withAnimation(.snappy(duration: 0.2)) { if open { expanded.remove(engine) } else { expanded.insert(engine) } }
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "slider.horizontal.3").font(.system(size: 11, weight: .medium))
-                Text(L("配置")).font(.caption.weight(.medium))
-                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).rotationEffect(.degrees(open ? 180 : 0))
-            }
-            .foregroundStyle(open ? Color.accentColor : Color.primary)
-            .padding(.horizontal, 10).frame(height: 24)
-            .background(open ? Color.accentColor.opacity(0.15) : Color(nsColor: .quaternarySystemFill), in: Capsule())
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .help(L(open ? "收起配置" : "展开配置"))
-        .accessibilityLabel(L("配置") + " " + title).accessibilityValue(L(open ? "已展开" : "已收起"))
-    }
     @ViewBuilder private var aiConfiguration: some View {
         Picker(L("提供商"), selection: $configuration.provider) { ForEach(TranslationAIProvider.allCases) { Text(L($0.title)).tag($0) } }
         TextField(L("服务地址"), text: debouncedBinding($endpointDraft), prompt: Text(verbatim: "https://example.com/v1"))
             .disabled(configuration.provider == .openAI)
             .onSubmit { flushDrafts() }
             .help(L("本机 HTTP 仅支持 localhost、127.0.0.1 或 ::1"))
-        LabeledContent(L("模型")) {
-            HStack(spacing: 0) {
-                TextField(L("模型"), text: debouncedBinding($modelDraft))
-                    .labelsHidden().textFieldStyle(.plain).focused($modelFieldFocused)
-                    .multilineTextAlignment(.leading)
-                    .onSubmit { flushDrafts() }
-                    .padding(.horizontal, 8).frame(maxWidth: .infinity)
-                Divider().frame(height: 16)
-                Button { flushDrafts(); showsModelPicker.toggle() } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
-                        .rotationEffect(.degrees(showsModelPicker ? 180 : 0))
-                        .foregroundStyle(showsModelPicker ? Color.accentColor : Color.secondary)
-                        .frame(width: 28, height: 24).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(L("从已获取的模型中选择"))
-                .accessibilityLabel(L("选择模型"))
-                .accessibilityValue(L(showsModelPicker ? "已展开" : "已收起"))
-                .accessibilityIdentifier("translation.model-list")
-            }
-            .frame(height: 24)
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 5))
-            .overlay {
-                RoundedRectangle(cornerRadius: 5)
-                    .stroke(modelFieldFocused || showsModelPicker ? Color.accentColor.opacity(0.8) : Color(nsColor: .separatorColor), lineWidth: 1)
-            }
-            .popover(isPresented: $showsModelPicker, arrowEdge: .bottom) {
-                TranslationModelPicker(models: configuration.models, selection: Binding(get: { modelDraft }, set: { modelDraft = $0; flushDrafts() }), isPresented: $showsModelPicker)
-            }
-            .onChange(of: configuration.models) { _, models in
-                showsModelPicker = !models.isEmpty
-            }
-            .onChange(of: configuration.feedback(for: .models)) { _, feedback in
-                if case .success? = feedback, !configuration.models.isEmpty { showsModelPicker = true }
-            }
-            .onDisappear { showsModelPicker = false }
+        AIModelComboField(
+            model: debouncedBinding($modelDraft),
+            models: configuration.models,
+            showsPicker: $showsModelPicker,
+            focused: $modelFieldFocused,
+            identifier: "translation.model-list",
+            onCommit: flushDrafts
+        )
+        .onChange(of: configuration.models) { _, models in
+            showsModelPicker = !models.isEmpty
+        }
+        .onChange(of: configuration.feedback(for: .models)) { _, feedback in
+            if case .success? = feedback, !configuration.models.isEmpty { showsModelPicker = true }
         }
         SecureField(L("API Key"), text: debouncedBinding($credentialDraft), prompt: Text(L("保存在 macOS 钥匙串")))
             .onSubmit { flushDrafts() }
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(L("自定义提示词")).font(.caption).foregroundStyle(.secondary)
-                Spacer()
+        DisclosureGroup(L("自定义提示词"), isExpanded: $promptExpanded) {
+            VStack(alignment: .leading, spacing: 6) {
+                PromptTextEditor(text: debouncedBinding($customPromptDraft), placeholder: L("留空使用默认提示词，支持 {source} 与 {target}"))
                 if !customPromptDraft.isEmpty {
-                    Button(L("恢复默认提示词")) {
-                        customPromptDraft = ""
-                        configuration.customPrompt = ""
+                    HStack {
+                        Spacer()
+                        Button(L("恢复默认提示词")) {
+                            customPromptDraft = ""
+                            configuration.customPrompt = ""
+                        }
+                        .controlSize(.small)
+                        .buttonStyle(.borderless)
                     }
-                    .controlSize(.small)
-                    .buttonStyle(.borderless)
                 }
             }
-            TextEditor(text: debouncedBinding($customPromptDraft))
-                .font(.callout)
-                .frame(minHeight: 60, maxHeight: 110)
-                .padding(4)
-                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: Design.Radius.control))
-                .overlay(RoundedRectangle(cornerRadius: Design.Radius.control).stroke(Color(nsColor: .separatorColor).opacity(0.4)))
-            Text(L("留空使用默认提示词；支持 {source} 与 {target} 占位符"))
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            .padding(.top, 4)
         }
         HStack(spacing: 8) {
             Spacer()
-            settingsActionButton(.models, idle: "获取模型", running: "获取中…", success: "获取成功", failure: "获取失败",
-                                 help: "向当前服务地址请求模型列表，不发送原文、截图或剪贴板。", identifier: "translation.fetch-models")
-            settingsActionButton(.connection, idle: "测试连接", running: "测试中…", success: "连接成功", failure: "连接失败",
-                                 help: "请求当前服务的模型列表，不发送原文、截图或剪贴板。", identifier: "translation.test-connection")
+            AISettingsActionButton(
+                isRunning: configuration.isRunning(.models),
+                feedback: configuration.feedback(for: .models),
+                isBusy: configuration.isBusy,
+                idle: "获取模型",
+                running: "获取中…",
+                success: "获取成功",
+                failure: "获取失败",
+                help: "向当前服务地址请求模型列表，不发送原文、截图或剪贴板。",
+                identifier: "translation.fetch-models"
+            ) {
+                flushDrafts()
+                modelFieldFocused = true
+                configuration.runSettingsAction(.models)
+            }
+            AISettingsActionButton(
+                isRunning: configuration.isRunning(.connection),
+                feedback: configuration.feedback(for: .connection),
+                isBusy: configuration.isBusy,
+                idle: "测试连接",
+                running: "测试中…",
+                success: "连接成功",
+                failure: "连接失败",
+                help: "请求当前服务的模型列表，不发送原文、截图或剪贴板。",
+                identifier: "translation.test-connection"
+            ) {
+                flushDrafts()
+                configuration.runSettingsAction(.connection)
+            }
         }
-    }
-    @ViewBuilder private func settingsActionButton(_ action: TranslationAIAction, idle: String, running: String, success: String, failure: String, help: String, identifier: String) -> some View {
-        let feedback = configuration.feedback(for: action)
-        let failureMessage: String? = if case .failure(let message)? = feedback { message } else { nil }
-        Button {
-            flushDrafts()
-            if action == .models { modelFieldFocused = true }
-            configuration.runSettingsAction(action)
-        } label: {
-            HStack(spacing: 5) {
-                if configuration.isRunning(action) {
-                    ProgressView().controlSize(.small)
-                    Text(L(running))
-                } else if case .success? = feedback {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                    Text(L(success))
-                } else if failureMessage != nil {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
-                    Text(L(failure))
-                } else {
-                    Text(L(idle))
-                }
-            }.frame(minWidth: 82)
-        }
-        .disabled(configuration.isBusy)
-        .help(L(failureMessage ?? help))
-        .accessibilityIdentifier(identifier)
-        .accessibilityValue(L(failureMessage ?? (feedback == .success ? success : configuration.isRunning(action) ? running : idle)))
     }
     @ViewBuilder private var deeplConfiguration: some View {
         SecureField(L("API Key"), text: debouncedBinding($deeplKeyDraft), prompt: Text(L("保存在 macOS 钥匙串")))
             .onSubmit { flushDrafts() }
         HStack {
             Spacer()
-            settingsActionButton(.deeplTranslate, idle: "测试连接", running: "测试中…", success: "连接成功", failure: "连接失败",
-                                 help: "发送固定短句 Hello. 测试连接，不发送原文、截图或剪贴板。", identifier: "translation.test-deepl")
-                .disabled(configuration.isBusy || deeplKeyDraft.isEmpty)
+            AISettingsActionButton(
+                isRunning: configuration.isRunning(.deeplTranslate),
+                feedback: configuration.feedback(for: .deeplTranslate),
+                isBusy: configuration.isBusy || deeplKeyDraft.isEmpty,
+                idle: "测试连接",
+                running: "测试中…",
+                success: "连接成功",
+                failure: "连接失败",
+                help: "发送固定短句 Hello. 测试连接，不发送原文、截图或剪贴板。",
+                identifier: "translation.test-deepl"
+            ) {
+                flushDrafts()
+                configuration.runSettingsAction(.deeplTranslate)
+            }
         }
     }
     private func debouncedBinding(_ draft: Binding<String>) -> Binding<String> {

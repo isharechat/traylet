@@ -95,22 +95,12 @@ struct OCRConfigurationView: View {
             }
             Spacer(minLength: 8)
             if engine == .ai {
-                configureButton(open: aiExpanded, title: title)
-            }
-            if isDefault {
-                StatusPill(text: L("默认"), tint: .secondary)
-            } else {
-                Button { configuration.defaultEngine = engine } label: {
-                    Text(L("设为默认"))
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(Color.accentColor)
-                        .padding(.horizontal, 8).frame(height: 20)
-                        .background(Color.accentColor.opacity(0.12), in: Capsule())
-                        .contentShape(Capsule())
+                EngineConfigureButton(open: aiExpanded, title: title) {
+                    withAnimation(Design.Animation.snappy) { aiExpanded.toggle() }
                 }
-                .buttonStyle(.plain)
-                .help(L("设为默认"))
-                .accessibilityLabel(L("设为默认") + " " + title)
+            }
+            EngineDefaultControl(isDefault: isDefault, title: title) {
+                configuration.defaultEngine = engine
             }
         }
         .frame(minHeight: 36)
@@ -129,26 +119,6 @@ struct OCRConfigurationView: View {
         }
     }
 
-    private func configureButton(open: Bool, title: String) -> some View {
-        Button {
-            withAnimation(.snappy(duration: 0.2)) { aiExpanded.toggle() }
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "slider.horizontal.3").font(.system(size: 11, weight: .medium))
-                Text(L("配置")).font(.caption.weight(.medium))
-                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).rotationEffect(.degrees(open ? 180 : 0))
-            }
-            .foregroundStyle(open ? Color.accentColor : Color.primary)
-            .padding(.horizontal, 10).frame(height: 24)
-            .background(open ? Color.accentColor.opacity(0.15) : Color(nsColor: .quaternarySystemFill), in: Capsule())
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .help(L(open ? "收起配置" : "展开配置"))
-        .accessibilityLabel(L("配置") + " " + title)
-        .accessibilityValue(L(open ? "已展开" : "已收起"))
-    }
-
     @ViewBuilder
     private var aiConfiguration: some View {
         Picker(L("提供商"), selection: $configuration.provider) {
@@ -158,47 +128,19 @@ struct OCRConfigurationView: View {
             .disabled(configuration.provider == .openAI)
             .onSubmit { flushDrafts() }
             .help(L("本机 HTTP 仅支持 localhost、127.0.0.1 或 ::1"))
-        LabeledContent(L("模型")) {
-            HStack(spacing: 0) {
-                TextField(L("模型"), text: debouncedBinding($modelDraft))
-                    .labelsHidden().textFieldStyle(.plain).focused($modelFieldFocused)
-                    .multilineTextAlignment(.leading)
-                    .onSubmit { flushDrafts() }
-                    .padding(.horizontal, 8).frame(maxWidth: .infinity)
-                Divider().frame(height: 16)
-                Button { flushDrafts(); showsModelPicker.toggle() } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
-                        .rotationEffect(.degrees(showsModelPicker ? 180 : 0))
-                        .foregroundStyle(showsModelPicker ? Color.accentColor : Color.secondary)
-                        .frame(width: 28, height: 24).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(L("从已获取的模型中选择"))
-                .accessibilityLabel(L("选择模型"))
-                .accessibilityValue(L(showsModelPicker ? "已展开" : "已收起"))
-                .accessibilityIdentifier("ocr.model-list")
-            }
-            .frame(height: 24)
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 5))
-            .overlay {
-                RoundedRectangle(cornerRadius: 5)
-                    .stroke(modelFieldFocused || showsModelPicker ? Color.accentColor.opacity(0.8) : Color(nsColor: .separatorColor), lineWidth: 1)
-            }
-            .popover(isPresented: $showsModelPicker, arrowEdge: .bottom) {
-                TranslationModelPicker(
-                    models: configuration.models,
-                    selection: Binding(get: { modelDraft }, set: { modelDraft = $0; flushDrafts() }),
-                    isPresented: $showsModelPicker
-                )
-            }
-            .onChange(of: configuration.models) { _, models in
-                showsModelPicker = !models.isEmpty
-            }
-            .onChange(of: configuration.feedback(for: .models)) { _, feedback in
-                if case .success? = feedback, !configuration.models.isEmpty { showsModelPicker = true }
-            }
-            .onDisappear { showsModelPicker = false }
+        AIModelComboField(
+            model: debouncedBinding($modelDraft),
+            models: configuration.models,
+            showsPicker: $showsModelPicker,
+            focused: $modelFieldFocused,
+            identifier: "ocr.model-list",
+            onCommit: flushDrafts
+        )
+        .onChange(of: configuration.models) { _, models in
+            showsModelPicker = !models.isEmpty
+        }
+        .onChange(of: configuration.feedback(for: .models)) { _, feedback in
+            if case .success? = feedback, !configuration.models.isEmpty { showsModelPicker = true }
         }
         SecureField(L("API Key"), text: debouncedBinding($credentialDraft), prompt: Text(L("保存在 macOS 钥匙串")))
             .onSubmit { flushDrafts() }
@@ -221,51 +163,41 @@ struct OCRConfigurationView: View {
                         .buttonStyle(.borderless)
                     }
                 }
-                TextEditor(text: debouncedBinding($promptDraft))
-                    .font(.callout)
-                    .frame(minHeight: 60, maxHeight: 110)
-                    .padding(4)
-                    .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: Design.Radius.control))
-                    .overlay(RoundedRectangle(cornerRadius: Design.Radius.control).stroke(Color(nsColor: .separatorColor).opacity(0.4)))
+                PromptTextEditor(text: debouncedBinding($promptDraft), placeholder: L("留空使用默认提示词"))
             }
         }
         HStack(spacing: 8) {
             Spacer()
-            settingsActionButton(.models, idle: "获取模型", running: "获取中…", success: "获取成功", failure: "获取失败",
-                                 help: "向当前服务地址请求模型列表，不发送原文、截图或剪贴板。", identifier: "ocr.fetch-models")
-            settingsActionButton(.connection, idle: "测试连接", running: "测试中…", success: "连接成功", failure: "连接失败",
-                                 help: "请求当前服务的模型列表，不发送原文、截图或剪贴板。", identifier: "ocr.test-connection")
+            AISettingsActionButton(
+                isRunning: configuration.isRunning(.models),
+                feedback: configuration.feedback(for: .models),
+                isBusy: configuration.isBusy,
+                idle: "获取模型",
+                running: "获取中…",
+                success: "获取成功",
+                failure: "获取失败",
+                help: "向当前服务地址请求模型列表，不发送原文、截图或剪贴板。",
+                identifier: "ocr.fetch-models"
+            ) {
+                flushDrafts()
+                modelFieldFocused = true
+                configuration.runSettingsAction(.models)
+            }
+            AISettingsActionButton(
+                isRunning: configuration.isRunning(.connection),
+                feedback: configuration.feedback(for: .connection),
+                isBusy: configuration.isBusy,
+                idle: "测试连接",
+                running: "测试中…",
+                success: "连接成功",
+                failure: "连接失败",
+                help: "请求当前服务的模型列表，不发送原文、截图或剪贴板。",
+                identifier: "ocr.test-connection"
+            ) {
+                flushDrafts()
+                configuration.runSettingsAction(.connection)
+            }
         }
-    }
-
-    @ViewBuilder
-    private func settingsActionButton(_ action: TranslationAIAction, idle: String, running: String, success: String, failure: String, help: String, identifier: String) -> some View {
-        let feedback = configuration.feedback(for: action)
-        let failureMessage: String? = if case .failure(let message)? = feedback { message } else { nil }
-        Button {
-            flushDrafts()
-            if action == .models { modelFieldFocused = true }
-            configuration.runSettingsAction(action)
-        } label: {
-            HStack(spacing: 5) {
-                if configuration.isRunning(action) {
-                    ProgressView().controlSize(.small)
-                    Text(L(running))
-                } else if case .success? = feedback {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                    Text(L(success))
-                } else if failureMessage != nil {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
-                    Text(L(failure))
-                } else {
-                    Text(L(idle))
-                }
-            }.frame(minWidth: 82)
-        }
-        .disabled(configuration.isBusy)
-        .help(L(failureMessage ?? help))
-        .accessibilityIdentifier(identifier)
-        .accessibilityValue(L(failureMessage ?? (feedback == .success ? success : configuration.isRunning(action) ? running : idle)))
     }
 
     private func debouncedBinding(_ draft: Binding<String>) -> Binding<String> {

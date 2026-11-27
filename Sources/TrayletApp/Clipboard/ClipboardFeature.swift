@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import Combine
 import ImageIO
+import UniformTypeIdentifiers
 
 @MainActor final class ClipboardFeature: ObservableObject {
     static let windowWidth: CGFloat = 420
@@ -414,12 +415,14 @@ extension ClipboardKind {
             ForEach(controller.filteredEntries) { entry in
                 let display = controller.display(entry)
                 let line = display.line ?? L("图片")
-                HStack(spacing: 10) {
-                    ClipboardRowLeading(entry: entry, kind: display.kind)
-                    Text(line).lineLimit(1).truncationMode(.tail).frame(maxWidth: .infinity, alignment: .leading)
-                    if entry.favorite { Image(systemName: "star.fill").foregroundStyle(.yellow).accessibilityLabel(L("已收藏")) }
-                }
-                .frame(height: 44).tag(entry.id).listRowSeparator(.visible)
+                ClipboardHistoryRow(
+                    entry: entry,
+                    kind: display.kind,
+                    line: line,
+                    onCopy: { controller.copy(entry.id) },
+                    onToggleFavorite: { feature.runMutation { await controller.toggleFavorite(entry.id) } }
+                )
+                .tag(entry.id).listRowSeparator(.visible)
                 .moveDisabled(!entry.favorite || !controller.query.isEmpty)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(display.kind.title + ", " + line)
@@ -551,6 +554,37 @@ extension ClipboardKind {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 12)
+            HStack(spacing: 2) {
+                let imageIndices = ClipboardImageEditing.imageIndices(in: entry)
+                if imageIndices.count == 1, let index = imageIndices.first {
+                    WorkspaceIconButton(
+                        symbol: "pencil",
+                        label: "编辑图片",
+                        help: "编辑副本，保留历史原件",
+                        disabled: feature.imageEditing.isPreparing
+                    ) {
+                        feature.editImage(entry.id, itemIndex: index)
+                    }
+                    WorkspaceIconButton(
+                        symbol: "text.viewfinder",
+                        label: "识别文字",
+                        help: "本机识别，校正后再翻译",
+                        disabled: feature.imageEditing.isPreparing
+                    ) {
+                        feature.recognizeImage(entry.id, itemIndex: index)
+                    }
+                }
+                WorkspaceIconButton(
+                    symbol: entry.favorite ? "star.fill" : "star",
+                    label: entry.favorite ? "取消收藏" : "收藏",
+                    tint: entry.favorite ? .yellow : nil
+                ) {
+                    feature.runMutation { await controller.toggleFavorite(entry.id) }
+                }
+                CopyIconButton(label: "复制") {
+                    controller.copy(entry.id)
+                }
+            }
         }
     }
     @ViewBuilder private func content(entry: ClipboardEntry, display: ClipboardDisplay) -> some View {
@@ -592,22 +626,52 @@ extension ClipboardKind {
                 }
             }
             .help(L("混合复制须全部允许，保留原格式。富文本可含内嵌内容，图片可附带文字。"))
-            Section {
-                Label(L("历史始终保存在本机"), systemImage: "externaldrive")
+            Section(L("本机保存")) {
                 LabeledContent(L("保存路径")) {
-                    Text(feature.storagePath).font(.caption.monospaced()).textSelection(.enabled)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        Text(feature.storagePath).font(.caption.monospaced()).textSelection(.enabled)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.middle)
+                        Button(L("在访达中显示")) {
+                            NSWorkspace.shared.activateFileViewerSelecting([feature.storageDirectory])
+                        }
+                        .controlSize(.small)
+                    }
                 }
-            } header: {
-                Text(L("本机保存"))
-            } footer: {
-                Text(L("按设置的数量与期限清理。")).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
             }
             Section(L("排除应用")) {
-                HStack {
-                    TextField(L("排除应用"), text: $exclusions, prompt: Text(L("Bundle ID，以逗号分隔"))).labelsHidden()
-                        .onSubmit { applyExclusions() }
-                    Button(L("应用")) { applyExclusions() }
+                let excluded = controller.settings.excludedApplications.sorted()
+                if !excluded.isEmpty {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 6)], alignment: .leading, spacing: 6) {
+                        ForEach(excluded, id: \.self) { bundleID in
+                            HStack(spacing: 4) {
+                                Text(bundleID)
+                                    .font(.caption.monospaced())
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Button {
+                                    update { $0.excludedApplications.remove(bundleID) }
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help(L("移除"))
+                                .accessibilityLabel(L("移除") + " " + bundleID)
+                            }
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(Color(nsColor: .quaternarySystemFill), in: Capsule())
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                HStack(spacing: 6) {
+                    TextField(L("排除应用"), text: $exclusions, prompt: Text(L("输入 Bundle ID"))).labelsHidden()
+                        .onSubmit { addExclusions() }
+                    Button(L("添加")) { addExclusions() }
+                        .disabled(exclusions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button(L("选择应用…")) { chooseExcludedApplication() }
                 }
             }
             Section {
@@ -619,7 +683,6 @@ extension ClipboardKind {
             }
         }
         .formStyle(.grouped)
-        .onAppear { exclusions = controller.settings.excludedApplications.sorted().joined(separator: ", ") }
     }
     private func setting(_ key: WritableKeyPath<ClipboardSettings, Int>) -> Binding<Int> {
         Binding(get: { controller.settings[keyPath: key] }, set: { value in update { $0[keyPath: key] = value } })
@@ -627,8 +690,22 @@ extension ClipboardKind {
     private func captureSetting(_ key: WritableKeyPath<ClipboardSettings, Bool>) -> Binding<Bool> {
         Binding(get: { controller.settings[keyPath: key] }, set: { value in update { $0[keyPath: key] = value } })
     }
-    private func applyExclusions() {
-        update { $0.excludedApplications = Set(exclusions.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }) }
+    private func addExclusions() {
+        let items = exclusions.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard !items.isEmpty else { return }
+        exclusions = ""
+        update { $0.excludedApplications.formUnion(items) }
+    }
+    private func chooseExcludedApplication() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        guard panel.runModal() == .OK else { return }
+        let bundleIDs = panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }
+        guard !bundleIDs.isEmpty else { return }
+        update { $0.excludedApplications.formUnion(bundleIDs) }
     }
     private func update(_ change: @escaping (inout ClipboardSettings) -> Void) {
         feature.runMutation { var value = controller.settings; change(&value); await controller.updateSettings(value) }
@@ -678,6 +755,41 @@ private struct ClipboardPreviewText: View {
                 rendered = result.0; truncated = result.1
             }
         }
+    }
+}
+
+/// Leading mark of a history row: a small thumbnail for images, the kind symbol for everything else.
+private struct ClipboardHistoryRow: View {
+    let entry: ClipboardEntry
+    let kind: ClipboardKind
+    let line: String
+    let onCopy: () -> Void
+    let onToggleFavorite: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ClipboardRowLeading(entry: entry, kind: kind)
+            Text(line).lineLimit(1).truncationMode(.tail).frame(maxWidth: .infinity, alignment: .leading)
+            if hovering {
+                HStack(spacing: 2) {
+                    WorkspaceIconButton(
+                        symbol: entry.favorite ? "star.fill" : "star",
+                        label: entry.favorite ? "取消收藏" : "收藏",
+                        tint: entry.favorite ? .yellow : .secondary,
+                        size: 24,
+                        iconSize: 12,
+                        action: onToggleFavorite
+                    )
+                    CopyIconButton(label: "复制", size: 24, iconSize: 12, action: onCopy)
+                }
+            } else if entry.favorite {
+                Image(systemName: "star.fill").foregroundStyle(.yellow).accessibilityLabel(L("已收藏"))
+            }
+        }
+        .frame(height: 44)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
     }
 }
 

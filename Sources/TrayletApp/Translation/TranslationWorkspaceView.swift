@@ -23,14 +23,15 @@ struct TranslationWorkspaceView: View {
     private var controlRow: some View {
         HStack(spacing: 6) {
             languageMenu("原文语言", selection: $flow.source, includeAuto: true)
-            Button { flow.swapLanguages() } label: {
-                Image(systemName: "arrow.left.arrow.right")
-                    .font(.system(size: 12, weight: .medium))
-                    .frame(width: Design.iconButton, height: Design.iconButton)
-                    .contentShape(Circle())
-                    .v2GlassBackground(in: Circle(), interactive: true)
-            }.buttonStyle(.plain).disabled(flow.source == "auto").opacity(flow.source == "auto" ? 0.35 : 1)
-                .help(L("互换语言")).accessibilityLabel(L("互换语言"))
+            WorkspaceIconButton(
+                symbol: "arrow.left.arrow.right",
+                label: "互换语言",
+                iconSize: 12,
+                disabled: flow.source == "auto"
+            ) {
+                flow.swapLanguages()
+            }
+            .v2GlassBackground(in: Circle(), interactive: true)
             languageMenu("译文语言", selection: $flow.target, includeAuto: false)
             let unavailable = flow.phase == .recognizing || !flow.hasTranslatableContent
             Button { controller.startSubmission() } label: {
@@ -39,24 +40,20 @@ struct TranslationWorkspaceView: View {
                     .background(Color.accentColor.gradient, in: Capsule())
                     .shadow(color: Color.accentColor.opacity(unavailable ? 0 : 0.25), radius: 4, y: 1)
             }.buttonStyle(.plain).keyboardShortcut(.return, modifiers: .command).disabled(unavailable).opacity(unavailable ? 0.4 : 1)
+                .help(L("翻译") + " ⌘↩")
             Spacer(minLength: 4)
             engineIcons
-            Button { controller.openOCR() } label: {
-                Image(systemName: "text.viewfinder")
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: Design.iconButton, height: Design.iconButton)
-                    .contentShape(Circle())
-                    .v2GlassBackground(in: Circle(), interactive: true)
-            }.buttonStyle(.plain)
-                .help(L(controller.lastSourceImage != nil ? "在 OCR 窗口查看原图" : "截图 OCR 识别"))
-                .accessibilityLabel(L(controller.lastSourceImage != nil ? "在 OCR 窗口查看原图" : "截图 OCR 识别"))
-            Button { controller.openLanguageSettings() } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: Design.iconButton, height: Design.iconButton)
-                    .contentShape(Circle())
-                    .v2GlassBackground(in: Circle(), interactive: true)
-            }.buttonStyle(.plain).help(L("设置")).accessibilityLabel(L("设置"))
+            WorkspaceIconButton(
+                symbol: "text.viewfinder",
+                label: controller.lastSourceImage != nil ? "在 OCR 窗口查看原图" : "截图 OCR 识别"
+            ) {
+                controller.openOCR()
+            }
+            .v2GlassBackground(in: Circle(), interactive: true)
+            WorkspaceIconButton(symbol: "gearshape", label: "设置") {
+                controller.openLanguageSettings()
+            }
+            .v2GlassBackground(in: Circle(), interactive: true)
         }
     }
     private func textBox(input: Bool) -> some View {
@@ -65,8 +62,11 @@ struct TranslationWorkspaceView: View {
         let focused = input && inputFocused
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Text(L(input ? "原文" : (!flow.output.isEmpty && !flow.outputIsCurrent ? "上次译文（输入或翻译设置已变更）" : "译文")))
+                Text(L(input ? "原文" : "译文"))
                     .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                if !input, !flow.output.isEmpty, !flow.outputIsCurrent {
+                    StatusPill(text: L("内容已变更"), tint: .orange)
+                }
                 // Screenshot text recognition runs on the source, so its progress is shown here.
                 if input, flow.phase == .recognizing { ProgressView().controlSize(.mini); Text(L("正在本机识别截图文字…")).font(.caption).foregroundStyle(.secondary) }
                 Spacer(minLength: 8)
@@ -121,10 +121,16 @@ struct TranslationWorkspaceView: View {
         .overlay(alignment: .bottomLeading) {
             HStack(spacing: 4) {
                 HStack(spacing: 2) {
-                    icon(speaking ? "stop.fill" : "speaker.wave.2", speaking ? "停止朗读" : (input ? "朗读原文" : "朗读译文")) {
+                    WorkspaceIconButton(
+                        symbol: speaking ? "stop.fill" : "speaker.wave.2",
+                        label: speaking ? "停止朗读" : (input ? "朗读原文" : "朗读译文"),
+                        disabled: text.isEmpty && !speaking
+                    ) {
                         controller.toggleSpeaking(text, language: input ? flow.source : flow.target, source: input)
-                    }.disabled(text.isEmpty && !speaking)
-                    icon("doc.on.doc", input ? "复制原文" : "复制译文") { controller.copy(text) }.disabled(text.isEmpty)
+                    }
+                    CopyIconButton(label: input ? "复制原文" : "复制译文", disabled: text.isEmpty) {
+                        controller.copy(text)
+                    }
                 }
                 .padding(.horizontal, 3)
                 .v2GlassBackground(in: Capsule(), interactive: true)
@@ -141,16 +147,18 @@ struct TranslationWorkspaceView: View {
                 if !input, flow.active != nil || flow.phase == .recognizing {
                     Button(L("取消")) { controller.cancel() }.controlSize(.small)
                 }
-                icon("xmark.circle", input ? "清空输入" : "清空译文") { if input { flow.input = "" } else { controller.clearOutput() } }
-                    .v2GlassBackground(in: Circle(), interactive: true)
+                WorkspaceIconButton(
+                    symbol: "xmark.circle",
+                    label: input ? "清空输入" : "清空译文",
+                    disabled: text.isEmpty
+                ) {
+                    if input { flow.input = "" } else { controller.clearOutput() }
+                }
+                .v2GlassBackground(in: Circle(), interactive: true)
             }.padding(8)
         }
         .v2GlassBackground(in: RoundedRectangle(cornerRadius: Design.Radius.panel))
-        .overlay(
-            RoundedRectangle(cornerRadius: Design.Radius.panel)
-                .strokeBorder(Color.accentColor.opacity(focused ? 0.9 : 0), lineWidth: focused ? 2 : 0)
-        )
-        .shadow(color: focused ? Color.accentColor.opacity(0.16) : .clear, radius: 6)
+        .v2PanelFocusRing(focused: focused)
     }
     /// The menu label is the selected language only, so each control is as narrow as its current value.
     private func languageMenu(_ title: String, selection: Binding<String>, includeAuto: Bool) -> some View {
@@ -212,7 +220,6 @@ struct TranslationWorkspaceView: View {
                     Button(L("直接准备并翻译")) { controller.prepareLanguages() }
                         .controlSize(.small)
                 }
-                Text(L("建议先在设置中提前下载语言包；下载完成后返回翻译窗口重试。自动检测时请先选择明确的原文语言。")).font(.caption)
             }
         case .failed(let message):
             VStack(alignment: .leading, spacing: 6) {
@@ -225,8 +232,5 @@ struct TranslationWorkspaceView: View {
                 }
             }
         }
-    }
-    private func icon(_ name: String, _ label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: name).font(.system(size: 13, weight: .regular)).frame(width: Design.iconButton, height: Design.iconButton).contentShape(Circle()) }.buttonStyle(.plain).help(L(label)).accessibilityLabel(L(label))
     }
 }

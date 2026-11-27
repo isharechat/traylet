@@ -93,6 +93,80 @@ struct StatusPill: View {
     }
 }
 
+/// 28pt circular workspace icon button with hover highlight and consistent accessibility labels.
+struct WorkspaceIconButton: View {
+    let symbol: String
+    let label: String
+    var help: String? = nil
+    var tint: Color? = nil
+    var size: CGFloat = Design.iconButton
+    var iconSize: CGFloat = 13
+    var disabled = false
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: iconSize, weight: .regular))
+                .foregroundStyle(tint ?? Color.primary)
+                .frame(width: size, height: size)
+                .background(hovering && !disabled ? Color.primary.opacity(0.08) : Color.clear, in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.4 : 1)
+        .onHover { hovering = $0 }
+        .help(L(help ?? label))
+        .accessibilityLabel(L(label))
+    }
+}
+
+/// Copy button that briefly confirms with a green checkmark after copying.
+struct CopyIconButton: View {
+    let label: String
+    var size: CGFloat = Design.iconButton
+    var iconSize: CGFloat = 13
+    var disabled = false
+    let action: () -> Void
+    @State private var copied = false
+    @State private var resetTask: Task<Void, Never>?
+
+    var body: some View {
+        WorkspaceIconButton(
+            symbol: copied ? "checkmark" : "doc.on.doc",
+            label: label,
+            tint: copied ? .green : nil,
+            size: size,
+            iconSize: iconSize,
+            disabled: disabled
+        ) {
+            action()
+            resetTask?.cancel()
+            withAnimation(Design.Animation.snappy) { copied = true }
+            resetTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(1200))
+                guard !Task.isCancelled else { return }
+                withAnimation(Design.Animation.snappy) { copied = false }
+            }
+        }
+        .onDisappear { resetTask?.cancel() }
+    }
+}
+
+extension View {
+    /// Unified focus border and subtle glow for workspace text panels.
+    func v2PanelFocusRing(focused: Bool) -> some View {
+        overlay(
+            RoundedRectangle(cornerRadius: Design.Radius.panel)
+                .strokeBorder(Color.accentColor.opacity(focused ? 0.85 : 0), lineWidth: focused ? 1.5 : 0)
+                .allowsHitTesting(false)
+        )
+        .shadow(color: focused ? Color.accentColor.opacity(0.14) : .clear, radius: 5)
+    }
+}
+
 /// Puts a window's SwiftUI content on system glass (or a solid window background) and follows the setting live.
 /// `cornerRadius` rounds the surface for borderless panels; 0 keeps the native full-window look.
 @MainActor final class GlassWindowBacking {

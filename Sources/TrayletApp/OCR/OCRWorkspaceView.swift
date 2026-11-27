@@ -20,71 +20,59 @@ struct OCRWorkspaceView: View {
         .padding(.horizontal, Design.Space.m)
         .padding(.top, Design.Space.m)
         .padding(.bottom, Design.Space.s)
+        .background {
+            Button {
+                if !controller.text.isEmpty && controller.phase != .recognizing {
+                    controller.copyText()
+                }
+            } label: { EmptyView() }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
         .onDisappear { controller.cancel() }
     }
 
     private var previewPane: some View {
         VStack(spacing: Design.Space.xs) {
-            HStack(spacing: 4) {
-                Button { controller.zoomScale = max(0.25, controller.zoomScale - 0.25) } label: {
-                    Image(systemName: "minus.magnifyingglass")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: 26, height: 26)
+            HStack(spacing: 2) {
+                WorkspaceIconButton(symbol: "minus.magnifyingglass", label: "缩小", size: 26, iconSize: 12, disabled: controller.previewImage == nil) {
+                    controller.zoomScale = max(0.25, controller.zoomScale - 0.25)
                 }
-                .buttonStyle(.plain)
-                .disabled(controller.previewImage == nil)
-                .help(L("缩小"))
-
-                Text("\(Int((controller.zoomScale * 100).rounded()))%")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .frame(minWidth: 38)
-
-                Button { controller.zoomScale = min(4.0, controller.zoomScale + 0.25) } label: {
-                    Image(systemName: "plus.magnifyingglass")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: 26, height: 26)
-                }
-                .buttonStyle(.plain)
-                .disabled(controller.previewImage == nil)
-                .help(L("放大"))
 
                 Button { controller.zoomScale = 1.0 } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 11, weight: .medium))
-                        .frame(width: 26, height: 26)
+                    Text("\(Int((controller.zoomScale * 100).rounded()))%")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 38).frame(height: 22)
+                        .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .disabled(controller.previewImage == nil)
                 .help(L("重置视图"))
 
+                WorkspaceIconButton(symbol: "plus.magnifyingglass", label: "放大", size: 26, iconSize: 12, disabled: controller.previewImage == nil) {
+                    controller.zoomScale = min(4.0, controller.zoomScale + 0.25)
+                }
+
+                WorkspaceIconButton(symbol: "arrow.up.left.and.arrow.down.right", label: "重置视图", size: 26, iconSize: 11, disabled: controller.previewImage == nil) {
+                    controller.zoomScale = 1.0
+                }
+
                 Spacer(minLength: 4)
 
-                Button { controller.recapture() } label: {
-                    Image(systemName: "camera.viewfinder")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: 26, height: 26)
+                WorkspaceIconButton(symbol: "camera.viewfinder", label: "重新截图", size: 26, iconSize: 12) {
+                    controller.recapture()
                 }
-                .buttonStyle(.plain)
-                .help(L("重新截图"))
 
-                Button { chooseImageFile() } label: {
-                    Image(systemName: "photo.badge.plus")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: 26, height: 26)
+                WorkspaceIconButton(symbol: "photo.badge.plus", label: "导入图片", size: 26, iconSize: 12) {
+                    chooseImageFile()
                 }
-                .buttonStyle(.plain)
-                .help(L("导入图片"))
 
-                Button {
+                WorkspaceIconButton(symbol: "sidebar.left", label: "收起原图", size: 26, iconSize: 12) {
                     withAnimation(Design.Animation.snappy) { controller.showsPreview = false }
-                } label: {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: 26, height: 26)
                 }
-                .buttonStyle(.plain)
-                .help(L("收起原图"))
             }
             .padding(.horizontal, 6)
             .frame(height: Design.iconButton)
@@ -109,7 +97,7 @@ struct OCRWorkspaceView: View {
                         Image(systemName: "photo.on.rectangle.angled")
                             .font(.system(size: 28))
                             .foregroundStyle(.secondary)
-                        Text(L("拖入图片或点击上方按钮导入"))
+                        Text(L("拖入或选择图片"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         HStack(spacing: 8) {
@@ -145,17 +133,10 @@ struct OCRWorkspaceView: View {
     private var topControlRow: some View {
         HStack(spacing: 6) {
             if !controller.showsPreview {
-                Button {
+                WorkspaceIconButton(symbol: "sidebar.left", label: "展开原图") {
                     withAnimation(Design.Animation.snappy) { controller.showsPreview = true }
-                } label: {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: Design.iconButton, height: Design.iconButton)
-                        .contentShape(Circle())
-                        .v2GlassBackground(in: Circle(), interactive: true)
                 }
-                .buttonStyle(.plain)
-                .help(L("展开原图"))
+                .v2GlassBackground(in: Circle(), interactive: true)
             }
 
             Picker("", selection: Binding(
@@ -204,26 +185,21 @@ struct OCRWorkspaceView: View {
 
             Spacer(minLength: 4)
 
-            Button { controller.recognize() } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .medium))
-                    .frame(width: Design.iconButton, height: Design.iconButton)
-                    .contentShape(Circle())
-                    .v2GlassBackground(in: Circle(), interactive: true)
+            WorkspaceIconButton(
+                symbol: "arrow.clockwise",
+                label: "重新识别",
+                help: L("重新识别") + " ⌘R",
+                disabled: controller.image == nil || controller.phase == .recognizing
+            ) {
+                controller.recognize()
             }
-            .buttonStyle(.plain)
-            .disabled(controller.image == nil || controller.phase == .recognizing)
-            .help(L("重新识别"))
+            .keyboardShortcut("r", modifiers: .command)
+            .v2GlassBackground(in: Circle(), interactive: true)
 
-            Button { controller.openSettings() } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: Design.iconButton, height: Design.iconButton)
-                    .contentShape(Circle())
-                    .v2GlassBackground(in: Circle(), interactive: true)
+            WorkspaceIconButton(symbol: "gearshape", label: "设置") {
+                controller.openSettings()
             }
-            .buttonStyle(.plain)
-            .help(L("设置"))
+            .v2GlassBackground(in: Circle(), interactive: true)
         }
     }
 
@@ -290,21 +266,25 @@ struct OCRWorkspaceView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .bottomLeading) {
             HStack(spacing: 2) {
-                capsuleIcon(controller.speaking ? "stop.fill" : "speaker.wave.2",
-                            controller.speaking ? "停止朗读" : "朗读") {
+                WorkspaceIconButton(
+                    symbol: controller.speaking ? "stop.fill" : "speaker.wave.2",
+                    label: controller.speaking ? "停止朗读" : "朗读",
+                    disabled: controller.text.isEmpty && !controller.speaking
+                ) {
                     controller.toggleSpeaking()
                 }
-                .disabled(controller.text.isEmpty && !controller.speaking)
 
-                capsuleIcon("doc.on.doc", "复制") {
+                CopyIconButton(label: "复制", disabled: controller.text.isEmpty) {
                     controller.copyText()
                 }
-                .disabled(controller.text.isEmpty)
 
-                capsuleIcon("text.alignleft", "合并换行") {
+                WorkspaceIconButton(
+                    symbol: "text.alignleft",
+                    label: "合并换行",
+                    disabled: controller.text.isEmpty
+                ) {
                     controller.applyMergeLineBreaks()
                 }
-                .disabled(controller.text.isEmpty)
             }
             .padding(.horizontal, 3)
             .v2GlassBackground(in: Capsule(), interactive: true)
@@ -316,11 +296,14 @@ struct OCRWorkspaceView: View {
                     Button(L("取消")) { controller.cancel() }
                         .controlSize(.small)
                 }
-                capsuleIcon("xmark.circle", "清空") {
+                WorkspaceIconButton(
+                    symbol: "xmark.circle",
+                    label: "清空",
+                    disabled: controller.text.isEmpty && controller.phase != .recognizing
+                ) {
                     controller.clear()
                 }
                 .v2GlassBackground(in: Circle(), interactive: true)
-                .disabled(controller.text.isEmpty && controller.phase != .recognizing)
 
                 let canTranslate = !controller.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && controller.phase != .recognizing
                 Button { controller.sendToTranslation() } label: {
@@ -338,27 +321,12 @@ struct OCRWorkspaceView: View {
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!canTranslate)
                 .opacity(canTranslate ? 1 : 0.4)
+                .help(L("去翻译") + " ⌘↩")
             }
             .padding(8)
         }
         .v2GlassBackground(in: RoundedRectangle(cornerRadius: Design.Radius.panel))
-        .overlay(
-            RoundedRectangle(cornerRadius: Design.Radius.panel)
-                .strokeBorder(editorFocused ? Color.accentColor.opacity(0.6) : Color.clear, lineWidth: 1.5)
-                .allowsHitTesting(false)
-        )
-    }
-
-    private func capsuleIcon(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 12, weight: .medium))
-                .frame(width: 26, height: 26)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .help(L(label))
-        .accessibilityLabel(L(label))
+        .v2PanelFocusRing(focused: editorFocused)
     }
 
     private func chooseImageFile() {

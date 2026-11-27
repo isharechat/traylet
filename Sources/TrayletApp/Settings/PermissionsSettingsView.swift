@@ -16,9 +16,6 @@ struct PermissionsSettingsView: View {
                 row(.screenRecording)
                 row(.accessibility)
                 loginRow
-            } footer: {
-                Text(text("授权变更后回到本页会自动刷新。",
-                         "Permission changes refresh automatically when you return to this page."))
             }
         }
         .formStyle(.grouped)
