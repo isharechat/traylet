@@ -27,6 +27,7 @@ import TrayletCore
         #expect(controller.phase == .ready)
         #expect(controller.text == "第一行第二行")
         #expect(writer.copied == ["第一行第二行"])
+        #expect(controller.notice.isEmpty)
     }
 
     @Test func switchesBetweenVisionAndAIAndSendsToTranslation() async throws {
@@ -55,6 +56,53 @@ import TrayletCore
         controller.sendToTranslation()
         #expect(translatedPayload?.0 == "AI Markdown")
         #expect(translatedPayload?.1 == image)
+    }
+
+    @Test func switchingEngineClearsParsedContentImmediately() async throws {
+        let config = OCRConfiguration()
+        let gatedAI = GatedOCRAIRecognizer(result: "AI Result")
+        let controller = OCRController(
+            configuration: config,
+            visionRecognizer: FakeVisionRecognizer(result: "Vision Result"),
+            aiRecognizer: gatedAI,
+            writer: FakeOCRWriter(),
+            speech: FakeOCRSpeech(),
+            presentWindow: { _ in }
+        )
+
+        let image = try makeSampleRasterImage()
+        controller.present(image: image, autoRecognize: true)
+        await controller.recognitionTaskHandle?.value
+        controller.copyText()
+        #expect(controller.text == "Vision Result")
+        #expect(controller.rawText == "Vision Result")
+        #expect(!controller.notice.isEmpty)
+
+        controller.selectEngine(.ai)
+        #expect(controller.text.isEmpty)
+        #expect(controller.rawText.isEmpty)
+        #expect(controller.notice.isEmpty)
+        #expect(controller.phase == .recognizing)
+
+        await gatedAI.waitUntilStarted()
+        await gatedAI.release()
+        await controller.recognitionTaskHandle?.value
+        #expect(controller.text == "AI Result")
+
+        let idleController = OCRController(
+            configuration: config,
+            visionRecognizer: FakeVisionRecognizer(result: "Vision"),
+            aiRecognizer: FakeAIRecognizer(result: "AI"),
+            writer: FakeOCRWriter(),
+            speech: FakeOCRSpeech(),
+            presentWindow: { _ in }
+        )
+        idleController.text = "Edited text"
+        idleController.selectEngine(.ai)
+        #expect(idleController.text.isEmpty)
+        #expect(idleController.rawText.isEmpty)
+        #expect(idleController.notice.isEmpty)
+        #expect(idleController.phase == .idle)
     }
 
     @Test func translationPreservesSourceImageAndJumpsBackToOCR() async throws {
@@ -95,6 +143,33 @@ private struct FakeVisionRecognizer: TranslationRecognizing {
 private struct FakeAIRecognizer: OCRAIRecognizing {
     let result: String
     func recognize(_ request: OCRAIRequest) async throws -> String { result }
+}
+
+private actor GatedOCRAIRecognizer: OCRAIRecognizing {
+    let result: String
+    private var started = false
+    private var startWaiter: CheckedContinuation<Void, Never>?
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+
+    init(result: String) { self.result = result }
+
+    func recognize(_ request: OCRAIRequest) async throws -> String {
+        started = true
+        startWaiter?.resume()
+        startWaiter = nil
+        await withCheckedContinuation { releaseWaiter = $0 }
+        return result
+    }
+
+    func waitUntilStarted() async {
+        guard !started else { return }
+        await withCheckedContinuation { startWaiter = $0 }
+    }
+
+    func release() {
+        releaseWaiter?.resume()
+        releaseWaiter = nil
+    }
 }
 
 @MainActor private final class FakeOCRWriter: TextOutputWriting {

@@ -158,10 +158,10 @@ import TrayletCore
             canvas.needsLayout = true; canvas.layoutSubtreeIfNeeded()
             let toolbar = try #require(canvas.subviews.first), options = try #require(canvas.subviews.dropFirst().first)
             #expect(toolbar.intrinsicContentSize.width <= toolbar.frame.width + 1)
-            #expect(canvas.bounds.contains(toolbar.frame) && toolbar.frame.height == 36)
+            #expect(canvas.bounds.contains(toolbar.frame) && toolbar.frame.height == EditingToolbarMetrics.barHeight)
             let maxOptionsWidth: CGFloat = width < 360 ? 180 : 280
             #expect(options.intrinsicContentSize.width <= maxOptionsWidth && options.intrinsicContentSize.width <= options.frame.width + 1)
-            #expect(canvas.bounds.contains(options.frame) && options.frame.height == 36 && !options.isHidden)
+            #expect(canvas.bounds.contains(options.frame) && options.frame.height == EditingToolbarMetrics.barHeight && !options.isHidden)
             func descendants(_ view:NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
             let controls = descendants(options)
             #expect(controls.filter { $0 is NSColorWell }.count == 1)
@@ -230,7 +230,7 @@ import TrayletCore
             let bitmap = try #require(canvas.bitmapImageRepForCachingDisplay(in:canvas.bounds))
             canvas.cacheDisplay(in:canvas.bounds,to:bitmap)
             try #require(bitmap.representation(using:.png,properties:[:])).write(to:directory.appendingPathComponent("highlight-\(name).png"))
-            #expect(!window.isVisible && canvas.barFrames.toolbar.height == 36)
+            #expect(!window.isVisible && canvas.barFrames.toolbar.height == EditingToolbarMetrics.barHeight)
         }
     }
 

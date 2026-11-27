@@ -175,7 +175,7 @@ import SwiftUI
         super.layout()
         textForeground?.frame = bounds
         // The capsule is the hosting view's own size, so its visible left edge is exactly the frame edge the option bar aligns to.
-        let size = CGSize(width:min(max(60,toolbar.intrinsicContentSize.width),max(0,bounds.width-8)),height:36)
+        let size = CGSize(width:min(max(60,toolbar.intrinsicContentSize.width),max(0,bounds.width-8)),height:EditingToolbarMetrics.barHeight)
         toolbar.frame = CGRect(origin:session.document.toolbarOrigin(size:size),size:size)
         if let customToolbarOrigin {
             toolbar.frame.origin = barOrigin(customToolbarOrigin,size:size)
@@ -189,7 +189,7 @@ import SwiftUI
             let r = session.viewport.viewRect(selected)
             if r.width < 32 || r.height < 32 {
                 let interaction = interactionRect(r)
-                let stackHeight:CGFloat = session.tool == nil || session.tool == .redaction ? 36 : 80
+                let stackHeight:CGFloat = session.tool == nil || session.tool == .redaction ? EditingToolbarMetrics.barHeight : EditingToolbarMetrics.barHeight*2+EditingToolbarMetrics.barGap
                 let y = interaction.maxY+26+stackHeight <= bounds.maxY-4 ? interaction.maxY+26 : interaction.minY-26-stackHeight
                 toolbar.frame.origin = barOrigin(CGPoint(x:interaction.maxX-size.width,y:y),size:size)
             }

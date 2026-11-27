@@ -224,7 +224,7 @@ import TrayletCore
                 canvas.needsLayout = true; canvas.layoutSubtreeIfNeeded()
                 let toolbar = try #require(canvas.subviews.first)
                 #expect(toolbar.intrinsicContentSize.width <= toolbar.frame.width + 1)
-                #expect(canvas.bounds.contains(toolbar.frame) && toolbar.frame.height == 36)
+                #expect(canvas.bounds.contains(toolbar.frame) && toolbar.frame.height == EditingToolbarMetrics.barHeight)
                 let bitmap = try #require(canvas.bitmapImageRepForCachingDisplay(in:canvas.bounds))
                 canvas.cacheDisplay(in:canvas.bounds,to:bitmap)
                 try #require(bitmap.representation(using:.png,properties:[:])).write(to:directory.appendingPathComponent("zoom-\(width)-\(name).png"))

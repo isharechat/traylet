@@ -482,7 +482,7 @@ extension EditingTests {
             let expectedX = max(4,min(canvas.bounds.width-bars.options.width-4,bars.toolbar.minX))
             #expect(bars.options.minX == expectedX, "\(tool): align left unless the right screen edge requires clamping")
             #expect(bars.options.minX >= 0 && bars.options.maxX <= canvas.bounds.maxX, "Options must remain inside the canvas")
-            #expect(bars.toolbar.width > 60 && bars.toolbar.width < 620, "Toolbar frame must fit the tools plus view zoom menu: \(bars.toolbar.width)")
+            #expect(bars.toolbar.width > 60 && bars.toolbar.width < 760, "Toolbar frame must fit the tools plus view zoom menu: \(bars.toolbar.width)")
             #expect(bars.options.height == bars.toolbar.height)
             #expect(bars.options.width > 60 && bars.options.width <= canvas.bounds.width)
             widths.append(bars.options.width)
@@ -506,7 +506,7 @@ extension EditingTests {
 
     @Test func redesignedToolbarFitsAcrossWidthTiersAndWiresActions() async throws {
         _ = NSApplication.shared
-        for width in [CGFloat(900), 420, 180] {
+        for width in [CGFloat(900), 620, 420, 180] {
             let canvasSize = CGSize(width:width,height:480)
             let session = EditingSession(image:try Self.fixture(),canvas:canvasSize,fullScreen:true,writer:EditingFakeOutput())
             let canvas = EditingCanvasView(session:session,selectingForTranslation:false)
@@ -517,7 +517,7 @@ extension EditingTests {
             await Task.yield()
             canvas.needsLayout = true; canvas.layoutSubtreeIfNeeded()
             let toolbar = try #require(canvas.subviews.first as? EditingBarHost<EditingToolbar>)
-            #expect(toolbar.frame.height == 36)
+            #expect(toolbar.frame.height == EditingToolbarMetrics.barHeight)
             #expect(toolbar.intrinsicContentSize.width <= toolbar.frame.width + 1)
             #expect(canvas.bounds.contains(toolbar.frame))
 
@@ -525,7 +525,7 @@ extension EditingTests {
             await Task.yield()
             toolbar.layoutSubtreeIfNeeded()
             canvas.needsLayout = true; canvas.layoutSubtreeIfNeeded()
-            #expect(toolbar.frame.height == 36)
+            #expect(toolbar.frame.height == EditingToolbarMetrics.barHeight)
             #expect(toolbar.intrinsicContentSize.width <= toolbar.frame.width + 1)
             #expect(canvas.bounds.contains(toolbar.frame))
 

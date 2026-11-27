@@ -1,6 +1,12 @@
 import AppKit
 import SwiftUI
 
+enum EditingToolbarMetrics {
+    static let barHeight: CGFloat = 40
+    static let buttonSize: CGFloat = 28
+    static let barGap: CGFloat = 8
+}
+
 struct EditingToolbar: View {
     @ObservedObject var session: EditingSession
     @ObservedObject private var localization = Localization.shared
@@ -36,28 +42,38 @@ struct EditingToolbar: View {
     }
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2.5) {
             dragHandle
             if translationMode {
-                Button(L("翻译所选区域"), action: triggerTranslate)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                EditingIconButton(symbol: "xmark", label: L("关闭"), help: L("关闭 Esc"), subtle: true, action: cancel)
+                EditingPrimaryActionButton(
+                    symbol: "translate",
+                    title: L("翻译所选区域"),
+                    label: L("翻译所选区域"),
+                    help: L("翻译所选区域"),
+                    action: triggerTranslate
+                )
+                EditingIconButton(symbol: "xmark", label: L("关闭"), help: L("关闭 Esc"), subtle: true, destructiveHover: true, action: cancel)
             } else if ocrMode {
-                Button(L("识别所选区域"), action: triggerOCR)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                EditingIconButton(symbol: "xmark", label: L("关闭"), help: L("关闭 Esc"), subtle: true, action: cancel)
-            } else if session.document.canvas.width >= 540 {
-                fullToolbarContent
-            } else if session.document.canvas.width >= 260 {
+                EditingPrimaryActionButton(
+                    symbol: "text.viewfinder",
+                    title: L("识别所选区域"),
+                    label: L("识别所选区域"),
+                    help: L("识别所选区域"),
+                    action: triggerOCR
+                )
+                EditingIconButton(symbol: "xmark", label: L("关闭"), help: L("关闭 Esc"), subtle: true, destructiveHover: true, action: cancel)
+            } else if session.document.canvas.width >= 740 {
+                fullFlatToolbarContent
+            } else if session.document.canvas.width >= 560 {
+                groupedToolbarContent
+            } else if session.document.canvas.width >= 280 {
                 compactToolbarContent
             } else {
                 ultraNarrowToolbarContent
             }
         }
-        .padding(.horizontal, 6)
-        .frame(height: 36)
+        .padding(.horizontal, 8)
+        .frame(height: EditingToolbarMetrics.barHeight)
         .fixedSize(horizontal: true, vertical: false)
         .modifier(EditingSurface())
         .onChange(of: session.tool) { _, newTool in
@@ -69,27 +85,73 @@ struct EditingToolbar: View {
     }
 
     private var dragHandle: some View {
-        Image(systemName: "ellipsis")
-            .rotationEffect(.degrees(90))
-            .foregroundStyle(handleHovering ? .secondary : .tertiary)
-            .frame(width: 14, height: 28)
-            .contentShape(Rectangle())
-            .onHover { handleHovering = $0 }
-            .help(L("拖动移动工具栏，双击复位"))
-            .accessibilityLabel(L("移动工具栏"))
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction(named: L("复位工具栏"), reset)
-            .onTapGesture(count: 2, perform: reset)
-            // Global space is stable while the hosting view moves, so the bar tracks the pointer without feedback.
-            .gesture(
-                DragGesture(minimumDistance: 2, coordinateSpace: .global)
-                    .onChanged { drag($0.translation, false) }
-                    .onEnded { drag($0.translation, true) }
-            )
+        VStack(spacing: 2.5) {
+            ForEach(0..<3, id: \.self) { _ in
+                HStack(spacing: 2.5) {
+                    Circle().frame(width: 2.2, height: 2.2)
+                    Circle().frame(width: 2.2, height: 2.2)
+                }
+            }
+        }
+        .foregroundStyle(Color.primary.opacity(handleHovering ? 0.6 : 0.3))
+        .frame(width: 14, height: EditingToolbarMetrics.buttonSize)
+        .contentShape(Rectangle())
+        .onHover { handleHovering = $0 }
+        .help(L("拖动移动工具栏，双击复位"))
+        .accessibilityLabel(L("移动工具栏"))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: L("复位工具栏"), reset)
+        .onTapGesture(count: 2, perform: reset)
+        // Global space is stable while the hosting view moves, so the bar tracks the pointer without feedback.
+        .gesture(
+            DragGesture(minimumDistance: 2, coordinateSpace: .global)
+                .onChanged { drag($0.translation, false) }
+                .onEnded { drag($0.translation, true) }
+        )
     }
 
-    @ViewBuilder private var fullToolbarContent: some View {
-        // Zone 1: Annotation tools
+    @ViewBuilder private var fullFlatToolbarContent: some View {
+        // Zone 1: All 10 annotation tools flat for 1-click access
+        HStack(spacing: 2) {
+            ForEach(EditingTool.allCases) { tool in
+                EditingIconButton(
+                    symbol: tool.symbol,
+                    glyph: tool == .text ? "T" : nil,
+                    label: tool.title,
+                    help: toolHelp(tool) ?? tool.title,
+                    selected: session.tool == tool
+                ) { select(tool) }
+                    .accessibilityValue(session.tool == tool ? L("已选择") : L("未选择"))
+            }
+        }
+
+        ToolbarDivider()
+
+        // Zone 2: History & View
+        historyAndViewZone
+
+        ToolbarDivider()
+
+        // Zone 3: Secondary outputs
+        secondaryOutputsZone
+
+        ToolbarDivider()
+
+        // Zone 4: Primary confirm & close
+        HStack(spacing: 4) {
+            EditingPrimaryActionButton(
+                symbol: "doc.on.doc",
+                title: L("复制"),
+                label: L("复制"),
+                help: L("复制截图 ⌘C"),
+                action: copy
+            )
+            EditingIconButton(symbol: "xmark", label: L("关闭"), help: L("关闭 Esc"), subtle: true, destructiveHover: true, action: cancel)
+        }
+    }
+
+    @ViewBuilder private var groupedToolbarContent: some View {
+        // Zone 1: Grouped annotation tools
         HStack(spacing: 2) {
             EditingGroupMenuButton(
                 symbol: (activeShape ?? lastShapeTool).symbol,
@@ -134,6 +196,23 @@ struct EditingToolbar: View {
         ToolbarDivider()
 
         // Zone 2: History & View
+        historyAndViewZone
+
+        ToolbarDivider()
+
+        // Zone 3: Secondary outputs
+        secondaryOutputsZone
+
+        ToolbarDivider()
+
+        // Zone 4: Primary confirm & close (compact icon-only Copy to fit 560pt+)
+        HStack(spacing: 4) {
+            EditingIconButton(symbol: "doc.on.doc", label: L("复制"), help: L("复制截图 ⌘C"), prominent: true, action: copy)
+            EditingIconButton(symbol: "xmark", label: L("关闭"), help: L("关闭 Esc"), subtle: true, destructiveHover: true, action: cancel)
+        }
+    }
+
+    @ViewBuilder private var historyAndViewZone: some View {
         HStack(spacing: 2) {
             EditingIconButton(
                 symbol: "arrow.uturn.backward",
@@ -151,44 +230,29 @@ struct EditingToolbar: View {
             )
             zoomOrMoreMenu
         }
+    }
 
-        ToolbarDivider()
-
-        // Zone 3: Secondary outputs
+    @ViewBuilder private var secondaryOutputsZone: some View {
         HStack(spacing: 2) {
             EditingIconButton(symbol: "translate", label: L("翻译"), help: L("翻译截图"), action: triggerTranslate)
             EditingIconButton(symbol: "text.viewfinder", label: L("OCR"), help: L("OCR 识别"), action: triggerOCR)
             EditingIconButton(symbol: "macwindow", label: L("悬浮"), help: L("悬浮到屏幕最上层 ⌘F"), action: float)
             EditingIconButton(symbol: "square.and.arrow.down", label: L("保存"), help: L("保存 PNG ⌘S"), action: save)
         }
-
-        ToolbarDivider()
-
-        // Zone 4: Primary confirm & close
-        HStack(spacing: 4) {
-            EditingIconButton(symbol: "doc.on.doc", label: L("复制"), help: L("复制截图 ⌘C"), prominent: true, action: copy)
-            EditingIconButton(symbol: "xmark", label: L("关闭"), help: L("关闭 Esc"), subtle: true, action: cancel)
-        }
     }
 
     @ViewBuilder private var compactToolbarContent: some View {
-        Menu {
+        EditingMenuPillButton(
+            symbol: session.tool?.symbol ?? "pencil.tip.crop.circle",
+            active: session.tool != nil,
+            help: L("标注工具"),
+            label: L("标注工具"),
+            value: session.tool?.title ?? L("未选择")
+        ) {
             groupedToolMenuItems
             Divider()
             undoRedoMenuItems
-        } label: {
-            Image(systemName: session.tool?.symbol ?? "pencil.tip.crop.circle")
-                .font(.system(size: 13))
-                .frame(width: Design.iconButton, height: Design.iconButton)
-                .foregroundStyle(session.tool == nil ? Color.primary : Color.accentColor)
-                .background(session.tool == nil ? Color.clear : Color.accentColor.opacity(0.2), in: Circle())
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help(L("标注工具"))
-        .accessibilityLabel(L("标注工具"))
-        .accessibilityValue(session.tool?.title ?? L("未选择"))
 
         Menu {
             viewActionsWithStatus
@@ -197,7 +261,7 @@ struct EditingToolbar: View {
             Button { triggerOCR() } label: { Label(L("OCR"), systemImage: "text.viewfinder") }
             Button { float() } label: { Label(L("悬浮"), systemImage: "macwindow") }
         } label: {
-            moreOrZoomLabel
+            MoreOrZoomLabel(isZoomed: isZoomed, zoomStatus: zoomStatus)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -209,8 +273,14 @@ struct EditingToolbar: View {
         ToolbarDivider()
 
         EditingIconButton(symbol: "square.and.arrow.down", label: L("保存"), help: L("保存 PNG ⌘S"), action: save)
-        EditingIconButton(symbol: "doc.on.doc", label: L("复制"), help: L("复制截图 ⌘C"), prominent: true, action: copy)
-        EditingIconButton(symbol: "xmark", label: L("关闭"), help: L("关闭 Esc"), subtle: true, action: cancel)
+        EditingPrimaryActionButton(
+            symbol: "doc.on.doc",
+            title: L("复制"),
+            label: L("复制"),
+            help: L("复制截图 ⌘C"),
+            action: copy
+        )
+        EditingIconButton(symbol: "xmark", label: L("关闭"), help: L("关闭 Esc"), subtle: true, destructiveHover: true, action: cancel)
     }
 
     @ViewBuilder private var ultraNarrowToolbarContent: some View {
@@ -227,18 +297,9 @@ struct EditingToolbar: View {
             Button { cancel() } label: { Label(L("关闭"), systemImage: "xmark") }
         } label: {
             if isZoomed {
-                Text(zoomStatus)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 6)
-                    .frame(height: 24)
-                    .background(Color.accentColor.opacity(0.14), in: Capsule())
+                ZoomPillLabel(zoomStatus: zoomStatus)
             } else {
-                Image(systemName: session.tool?.symbol ?? "pencil.tip.crop.circle")
-                    .font(.system(size: 13))
-                    .frame(width: Design.iconButton, height: Design.iconButton)
-                    .foregroundStyle(session.tool == nil ? Color.primary : Color.accentColor)
-                    .background(session.tool == nil ? Color.clear : Color.accentColor.opacity(0.2), in: Circle())
+                EditingMenuCircleGlyph(symbol: session.tool?.symbol ?? "pencil.tip.crop.circle", active: session.tool != nil)
             }
         }
         .menuStyle(.borderlessButton)
@@ -254,7 +315,7 @@ struct EditingToolbar: View {
 
     private var zoomOrMoreMenu: some View {
         Menu { viewActionsWithStatus } label: {
-            moreOrZoomLabel
+            MoreOrZoomLabel(isZoomed: isZoomed, zoomStatus: zoomStatus)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -262,23 +323,6 @@ struct EditingToolbar: View {
         .help(L("视图缩放") + " · " + L("适配选区") + " ⌘2 · " + L("重置视图") + " ⌘0")
         .accessibilityLabel(isZoomed ? L("视图缩放") : L("更多"))
         .accessibilityValue(zoomStatus)
-    }
-
-    @ViewBuilder private var moreOrZoomLabel: some View {
-        if isZoomed {
-            Text(zoomStatus)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(Color.accentColor)
-                .padding(.horizontal, 6)
-                .frame(height: 24)
-                .background(Color.accentColor.opacity(0.14), in: Capsule())
-        } else {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(.secondary)
-                .frame(width: Design.iconButton, height: Design.iconButton)
-                .contentShape(Circle())
-        }
     }
 
     @ViewBuilder private var groupedToolMenuItems: some View {
@@ -350,13 +394,112 @@ struct EditingToolbar: View {
     private func redo() { guard finishText() else { return }; session.document.redo() }
 }
 
+private struct EditingPressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.93 : 1.0)
+            .opacity(configuration.isPressed ? 0.85 : 1.0)
+            .animation(Design.Animation.snappy, value: configuration.isPressed)
+    }
+}
+
 /// Hairline vertical separator between toolbar zones.
 private struct ToolbarDivider: View {
+    @Environment(\.colorSchemeContrast) private var contrast
+
     var body: some View {
         Rectangle()
-            .fill(Color.primary.opacity(0.14))
-            .frame(width: 1, height: 16)
+            .fill(Color.primary.opacity(contrast == .increased ? 0.35 : 0.14))
+            .frame(width: 1, height: 18)
             .padding(.horizontal, 3)
+    }
+}
+
+private struct EditingMenuCircleGlyph: View {
+    let symbol: String
+    let active: Bool
+    @State private var hovering = false
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 13.5, weight: active ? .semibold : .regular))
+            .frame(width: EditingToolbarMetrics.buttonSize, height: EditingToolbarMetrics.buttonSize)
+            .foregroundStyle(active ? Color.accentColor : Color.primary)
+            .background(
+                active ? Color.accentColor.opacity(0.18) : (hovering ? Color.primary.opacity(0.09) : Color.clear),
+                in: Circle()
+            )
+            .overlay {
+                if active {
+                    Circle().strokeBorder(
+                        Color.accentColor.opacity(contrast == .increased ? 0.85 : 0.45),
+                        lineWidth: contrast == .increased ? 1.5 : 1
+                    )
+                }
+            }
+            .contentShape(Circle())
+            .onHover { hovering = $0 }
+    }
+}
+
+private struct EditingMenuPillButton<MenuContent: View>: View {
+    let symbol: String
+    let active: Bool
+    let help: String
+    let label: String
+    let value: String
+    @ViewBuilder let menuContent: () -> MenuContent
+
+    var body: some View {
+        Menu {
+            menuContent()
+        } label: {
+            EditingMenuCircleGlyph(symbol: symbol, active: active)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(help)
+        .accessibilityLabel(label)
+        .accessibilityValue(value)
+    }
+}
+
+private struct ZoomPillLabel: View {
+    let zoomStatus: String
+    @State private var hovering = false
+
+    var body: some View {
+        Text(zoomStatus)
+            .font(.system(size: 11, weight: .medium, design: .monospaced))
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, 6)
+            .frame(height: 24)
+            .background(Color.accentColor.opacity(hovering ? 0.22 : 0.14), in: Capsule())
+            .onHover { hovering = $0 }
+    }
+}
+
+private struct MoreOrZoomLabel: View {
+    let isZoomed: Bool
+    let zoomStatus: String
+    @State private var hovering = false
+
+    var body: some View {
+        if isZoomed {
+            ZoomPillLabel(zoomStatus: zoomStatus)
+        } else {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 13.5, weight: .regular))
+                .foregroundStyle(hovering ? .primary : .secondary)
+                .frame(width: EditingToolbarMetrics.buttonSize, height: EditingToolbarMetrics.buttonSize)
+                .background(hovering ? Color.primary.opacity(0.09) : Color.clear, in: Circle())
+                .contentShape(Circle())
+                .onHover { hovering = $0 }
+        }
     }
 }
 
@@ -367,6 +510,8 @@ private struct EditingGroupMenuButton<MenuContent: View>: View {
     let label: String
     let help: String
     @ViewBuilder let menuContent: () -> MenuContent
+    @State private var hovering = false
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         Menu {
@@ -374,16 +519,28 @@ private struct EditingGroupMenuButton<MenuContent: View>: View {
         } label: {
             ZStack(alignment: .bottomTrailing) {
                 Image(systemName: symbol)
-                    .font(.system(size: 13, weight: .regular))
-                    .frame(width: Design.iconButton, height: Design.iconButton)
+                    .font(.system(size: 13.5, weight: active ? .semibold : .regular))
+                    .frame(width: EditingToolbarMetrics.buttonSize, height: EditingToolbarMetrics.buttonSize)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 6.5, weight: .bold))
                     .offset(x: -3, y: -3)
             }
             .foregroundStyle(active ? Color.accentColor : Color.primary)
-            .frame(width: Design.iconButton, height: Design.iconButton)
-            .background(active ? Color.accentColor.opacity(0.2) : Color.clear, in: Circle())
+            .frame(width: EditingToolbarMetrics.buttonSize, height: EditingToolbarMetrics.buttonSize)
+            .background(
+                active ? Color.accentColor.opacity(0.18) : (hovering ? Color.primary.opacity(0.09) : Color.clear),
+                in: Circle()
+            )
+            .overlay {
+                if active {
+                    Circle().strokeBorder(
+                        Color.accentColor.opacity(contrast == .increased ? 0.85 : 0.45),
+                        lineWidth: contrast == .increased ? 1.5 : 1
+                    )
+                }
+            }
             .contentShape(Circle())
+            .onHover { hovering = $0 }
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -402,34 +559,88 @@ private struct EditingIconButton: View {
     var selected = false
     var prominent = false
     var subtle = false
+    var destructiveHover = false
     var enabled = true
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    private var foregroundColor: Color {
+        if prominent { return .white }
+        if selected { return .accentColor }
+        if destructiveHover && hovering && enabled { return .red }
+        return subtle ? .secondary : .primary
+    }
+
+    private var backgroundColor: Color {
+        if prominent { return .accentColor }
+        if selected { return Color.accentColor.opacity(0.18) }
+        if hovering && enabled {
+            return destructiveHover ? Color.red.opacity(0.14) : Color.primary.opacity(0.09)
+        }
+        return .clear
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Group {
+                if let glyph {
+                    Text(glyph).font(.system(size: 14.5, weight: selected ? .bold : .semibold))
+                } else {
+                    Image(systemName: symbol).font(.system(size: 13.5, weight: (selected || prominent) ? .semibold : .regular))
+                }
+            }
+            .foregroundStyle(foregroundColor)
+            .frame(width: EditingToolbarMetrics.buttonSize, height: EditingToolbarMetrics.buttonSize)
+            .background(backgroundColor, in: Circle())
+            .overlay {
+                if selected {
+                    Circle().strokeBorder(
+                        Color.accentColor.opacity(contrast == .increased ? 0.85 : 0.45),
+                        lineWidth: contrast == .increased ? 1.5 : 1
+                    )
+                }
+            }
+            .contentShape(Circle())
+        }
+        .buttonStyle(EditingPressStyle())
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.35)
+        .onHover { hovering = $0 }
+        .help(help ?? label)
+        .accessibilityLabel(label)
+    }
+}
+
+/// Prominent capsule CTA used for primary confirmation actions (Copy / Translate / OCR).
+private struct EditingPrimaryActionButton: View {
+    let symbol: String
+    let title: String
+    let label: String
+    var help: String?
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Group {
-                if let glyph { Text(glyph).font(.system(size: 15, weight: .semibold)) }
-                else { Image(systemName: symbol).font(.system(size: 13, weight: .regular)) }
+            HStack(spacing: 4) {
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
             }
-            // Only the main action (copy) is a filled accent circle; a chosen tool is a tinted circle with an accent glyph.
-            .foregroundStyle(
-                prominent ? Color.white :
-                (selected ? Color.accentColor :
-                (subtle ? Color.secondary : Color.primary))
-            )
-            .frame(width: Design.iconButton, height: Design.iconButton)
-            .background(
-                prominent ? Color.accentColor :
-                (selected ? Color.accentColor.opacity(0.2) :
-                (hovering ? Color.primary.opacity(0.1) : .clear)),
-                in: Circle()
-            )
-            .contentShape(Circle())
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 10)
+            .frame(height: EditingToolbarMetrics.buttonSize)
+            .background(Color.accentColor, in: Capsule())
+            .brightness(hovering ? 0.06 : 0)
+            .overlay {
+                Capsule().strokeBorder(Color.white.opacity(hovering ? 0.32 : 0.2), lineWidth: 0.75)
+            }
+            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.35)
+        .buttonStyle(EditingPressStyle())
         .onHover { hovering = $0 }
         .help(help ?? label)
         .accessibilityLabel(label)
@@ -447,9 +658,7 @@ struct EditingOptions: View {
         HStack(spacing: 8) {
             if let tool = session.tool {
                 if tool == .highlight {
-                    Text("35%")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                    StatusPill(text: "35%", tint: .secondary)
                     ToolbarDivider()
                     if isWide { EditingColorSwatches(session: session) }
                     EditingColorWell(session: session, panel: colorPanel)
@@ -503,7 +712,7 @@ struct EditingOptions: View {
         }
         .font(.callout)
         .padding(.horizontal, 10)
-        .frame(height: 36)
+        .frame(height: EditingToolbarMetrics.barHeight)
         .fixedSize(horizontal: true, vertical: false)
         .modifier(EditingSurface())
         .id(session.styleControlID)
@@ -525,21 +734,15 @@ struct EditingOptions: View {
     private var blurSizePresets: some View {
         HStack(spacing: 4) {
             ForEach([(CGFloat(14), CGFloat(6), "小"), (CGFloat(24), CGFloat(9), "中"), (CGFloat(40), CGFloat(13), "大")], id: \.0) { value, dotSize, name in
-                let active = abs(session.style.brushSize - value) < 3
-                Button {
+                EditingDotPresetButton(
+                    dotSize: dotSize,
+                    active: abs(session.style.brushSize - value) < 3,
+                    help: "\(L(name)) · \(Int(value))pt",
+                    label: "\(L("模糊画笔直径")) \(L(name))",
+                    value: "\(Int(value))pt"
+                ) {
                     session.style.brushSize = value
-                } label: {
-                    Circle()
-                        .fill(active ? Color.accentColor : Color.primary.opacity(0.65))
-                        .frame(width: dotSize, height: dotSize)
-                        .frame(width: 24, height: 24)
-                        .background(active ? Color.accentColor.opacity(0.18) : Color.clear, in: Circle())
-                        .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
-                .help("\(L(name)) · \(Int(value))pt")
-                .accessibilityLabel("\(L("模糊画笔直径")) \(L(name))")
-                .accessibilityValue("\(Int(value))pt")
             }
         }
     }
@@ -548,21 +751,15 @@ struct EditingOptions: View {
         HStack(spacing: 4) {
             let current = session.effectiveStyle.width
             ForEach([(CGFloat(2), CGFloat(4), "细"), (CGFloat(4), CGFloat(7), "中"), (CGFloat(8), CGFloat(10), "粗")], id: \.0) { value, dotSize, name in
-                let active = abs(current - value) < 0.8
-                Button {
+                EditingDotPresetButton(
+                    dotSize: dotSize,
+                    active: abs(current - value) < 0.8,
+                    help: "\(L(name)) · \(Int(value))pt",
+                    label: "\(L("线条粗细")) \(L(name))",
+                    value: "\(Int(value))pt"
+                ) {
                     setStyle(\.width, value: value)
-                } label: {
-                    Circle()
-                        .fill(active ? Color.accentColor : Color.primary.opacity(0.7))
-                        .frame(width: dotSize, height: dotSize)
-                        .frame(width: 24, height: 24)
-                        .background(active ? Color.accentColor.opacity(0.18) : Color.clear, in: Circle())
-                        .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
-                .help("\(L(name)) · \(Int(value))pt")
-                .accessibilityLabel("\(L("线条粗细")) \(L(name))")
-                .accessibilityValue("\(Int(value))pt")
             }
         }
     }
@@ -571,20 +768,12 @@ struct EditingOptions: View {
         HStack(spacing: 2) {
             let current = session.effectiveStyle.fontSize
             ForEach([CGFloat(16), CGFloat(24), CGFloat(36)], id: \.self) { size in
-                let active = abs(current - size) < 1
-                Button {
+                EditingFontSizePresetButton(
+                    size: size,
+                    active: abs(current - size) < 1
+                ) {
                     setStyle(\.fontSize, value: size)
-                } label: {
-                    Text("\(Int(size))")
-                        .font(.system(size: 11, weight: active ? .semibold : .regular, design: .monospaced))
-                        .foregroundStyle(active ? Color.accentColor : Color.primary)
-                        .frame(width: 24, height: 22)
-                        .background(active ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .help("\(L("字号")) \(Int(size))")
-                .accessibilityLabel("\(L("字号")) \(Int(size))")
             }
         }
     }
@@ -597,6 +786,70 @@ struct EditingOptions: View {
     }
 }
 
+private struct EditingDotPresetButton: View {
+    let dotSize: CGFloat
+    let active: Bool
+    let help: String
+    let label: String
+    let value: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Circle()
+                .fill(active ? Color.accentColor : Color.primary.opacity(hovering ? 0.9 : 0.7))
+                .frame(width: dotSize, height: dotSize)
+                .frame(width: 26, height: 26)
+                .background(
+                    active ? Color.accentColor.opacity(0.18) : (hovering ? Color.primary.opacity(0.08) : Color.clear),
+                    in: Circle()
+                )
+                .overlay {
+                    if active {
+                        Circle().strokeBorder(Color.accentColor.opacity(0.45), lineWidth: 1)
+                    }
+                }
+                .contentShape(Circle())
+        }
+        .buttonStyle(EditingPressStyle())
+        .onHover { hovering = $0 }
+        .help(help)
+        .accessibilityLabel(label)
+        .accessibilityValue(value)
+    }
+}
+
+private struct EditingFontSizePresetButton: View {
+    let size: CGFloat
+    let active: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text("\(Int(size))")
+                .font(.system(size: 11, weight: active ? .semibold : .regular, design: .monospaced))
+                .foregroundStyle(active ? Color.accentColor : Color.primary)
+                .frame(width: 26, height: 24)
+                .background(
+                    active ? Color.accentColor.opacity(0.18) : (hovering ? Color.primary.opacity(0.08) : Color.clear),
+                    in: RoundedRectangle(cornerRadius: 6)
+                )
+                .overlay {
+                    if active {
+                        RoundedRectangle(cornerRadius: 6).strokeBorder(Color.accentColor.opacity(0.45), lineWidth: 1)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(EditingPressStyle())
+        .onHover { hovering = $0 }
+        .help("\(L("字号")) \(Int(size))")
+        .accessibilityLabel("\(L("字号")) \(Int(size))")
+    }
+}
+
 private struct EditingColorSwatches: View {
     @ObservedObject var session: EditingSession
 
@@ -606,39 +859,20 @@ private struct EditingColorSwatches: View {
         (.systemYellow, "黄色"),
         (.systemGreen, "绿色"),
         (.systemBlue, "蓝色"),
+        (.white, "白色"),
         (.black, "黑色")
     ]
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2.5) {
             ForEach(Self.presets, id: \.1) { color, name in
                 let selected = colorsMatch(session.effectiveStyle.color, color)
-                Button {
+                EditingColorSwatchButton(color: color, name: name, selected: selected) {
                     let context = session.captureStyleContext()
                     var next = session.effectiveStyle
                     next.color = color
                     _ = session.setEffectiveStyle(next, context: context)
-                } label: {
-                    Circle()
-                        .fill(Color(nsColor: color))
-                        .frame(width: 16, height: 16)
-                        .overlay {
-                            Circle().strokeBorder(Color.white.opacity(selected ? 0.95 : 0.35), lineWidth: selected ? 1.5 : 0.5)
-                        }
-                        .overlay {
-                            if selected {
-                                Circle()
-                                    .stroke(Color.accentColor, lineWidth: 1.5)
-                                    .frame(width: 20, height: 20)
-                            }
-                        }
-                        .frame(width: 20, height: 20)
-                        .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
-                .help(L(name))
-                .accessibilityLabel(L(name))
-                .accessibilityValue(selected ? L("已选择") : L("未选择"))
             }
         }
     }
@@ -653,26 +887,74 @@ private struct EditingColorSwatches: View {
     }
 }
 
+private struct EditingColorSwatchButton: View {
+    let color: NSColor
+    let name: String
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button(action: action) {
+            Circle()
+                .fill(Color(nsColor: color))
+                .frame(width: 16, height: 16)
+                .overlay {
+                    Circle().strokeBorder(
+                        selected ? Color.white.opacity(0.95) : Color.primary.opacity(0.22),
+                        lineWidth: selected ? 1.5 : 0.75
+                    )
+                }
+                .overlay {
+                    if selected {
+                        Circle()
+                            .stroke(Color.accentColor, lineWidth: 1.5)
+                            .frame(width: 20, height: 20)
+                    }
+                }
+                .scaleEffect(hovering && !reduceMotion ? 1.12 : 1.0)
+                .frame(width: 20, height: 20)
+                .contentShape(Circle())
+                .animation(Design.Animation.snappy, value: hovering)
+        }
+        .buttonStyle(EditingPressStyle())
+        .onHover { hovering = $0 }
+        .help(L(name))
+        .accessibilityLabel(L(name))
+        .accessibilityValue(selected ? L("已选择") : L("未选择"))
+    }
+}
+
 private struct EditingFillToggle: View {
     @Binding var filled: Bool
     let isEllipse: Bool
     @State private var hovering = false
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         Button {
             filled.toggle()
         } label: {
             Image(systemName: isEllipse ? (filled ? "circle.fill" : "circle") : (filled ? "square.fill" : "square"))
-                .font(.system(size: 13, weight: .regular))
+                .font(.system(size: 13.5, weight: filled ? .semibold : .regular))
                 .foregroundStyle(filled ? Color.accentColor : Color.primary)
-                .frame(width: Design.iconButton, height: Design.iconButton)
+                .frame(width: EditingToolbarMetrics.buttonSize, height: EditingToolbarMetrics.buttonSize)
                 .background(
-                    filled ? Color.accentColor.opacity(0.2) : (hovering ? Color.primary.opacity(0.1) : .clear),
+                    filled ? Color.accentColor.opacity(0.18) : (hovering ? Color.primary.opacity(0.09) : .clear),
                     in: Circle()
                 )
+                .overlay {
+                    if filled {
+                        Circle().strokeBorder(
+                            Color.accentColor.opacity(contrast == .increased ? 0.85 : 0.45),
+                            lineWidth: contrast == .increased ? 1.5 : 1
+                        )
+                    }
+                }
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EditingPressStyle())
         .onHover { hovering = $0 }
         .help(L("填充"))
         .accessibilityLabel(L("填充"))

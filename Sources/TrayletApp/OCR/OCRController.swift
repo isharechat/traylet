@@ -146,7 +146,7 @@ import TrayletCore
                 self.operationID = nil
                 self.recognitionTask = nil
                 if shouldAutoCopy, !self.text.isEmpty {
-                    self.copyText()
+                    self.copyText(silent: true)
                 }
             } catch {
                 guard !Task.isCancelled, let self, self.operationID == id else { return }
@@ -163,7 +163,18 @@ import TrayletCore
     func selectEngine(_ engine: OCREngineChoice) {
         let changed = selectedEngine != engine
         selectedEngine = engine
-        if image != nil && (changed || phase != .recognizing) {
+        if changed {
+            cancelRecognition()
+            stopSpeaking()
+            text = ""
+            rawText = ""
+            notice = ""
+            if image != nil {
+                recognize(engine: engine)
+            } else {
+                phase = .idle
+            }
+        } else if image != nil && phase != .recognizing {
             recognize(engine: engine)
         }
     }
@@ -182,9 +193,11 @@ import TrayletCore
         notice = "已合并换行。"
     }
 
-    func copyText() {
+    func copyText(silent: Bool = false) {
         guard !text.isEmpty else { return }
-        switch writer.copyText(text) {
+        let outcome = writer.copyText(text)
+        guard !silent else { return }
+        switch outcome {
         case .copied: notice = "已复制。"
         case .changed: notice = "剪贴板在复制时发生变化，请重试。"
         case .failed: notice = "复制失败，请重试；系统剪贴板可能已经清空。"

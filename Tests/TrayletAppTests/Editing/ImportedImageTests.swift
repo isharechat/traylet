@@ -224,7 +224,7 @@ import TrayletCore
                 await Task.yield()
                 canvas.needsLayout = true; canvas.layoutSubtreeIfNeeded()
                 let toolbar = try #require(canvas.subviews.first)
-                #expect(canvas.bounds.contains(toolbar.frame) && toolbar.frame.height == 36)
+                #expect(canvas.bounds.contains(toolbar.frame) && toolbar.frame.height == EditingToolbarMetrics.barHeight)
                 #expect(toolbar.intrinsicContentSize.width <= toolbar.frame.width + 1)
                 let nativeFrame = window.contentView?.superview ?? canvas
                 nativeFrame.layoutSubtreeIfNeeded()
