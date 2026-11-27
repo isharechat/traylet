@@ -104,10 +104,10 @@ import TrayletCore
         if image == nil, !text.isEmpty { flow.input = text; flow.clearOutput() }
         if panel == nil {
             let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 600, height: 630), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-            panel.title = windowTitle; panel.isReleasedWhenClosed = false
+            panel.title = windowTitle; panel.isReleasedWhenClosed = false; panel.hidesOnDeactivate = false
             backing = GlassWindowBacking(window: panel, content: NSHostingView(rootView: TranslationWorkspaceView(controller: self, flow: flow, configuration: configuration)))
             panel.delegate = self; panel.center(); self.panel = panel; updateMinimumSize()
-            dismissal = FloatingWindow.hideOnResignKey(panel) { [weak self] in self?.close() }
+            dismissal = FloatingWindow.hideOnResignKey(panel, canHide: { [weak self] in self?.preparingResources != true }) { [weak self] in self?.close() }
         }
         updateMinimumSize()
         if let panel { presentWindow(panel) }
@@ -247,6 +247,8 @@ import TrayletCore
             return "系统不支持当前语言对，请更换原文或译文语言。"
         case .unableToIdentifyLanguage:
             return "无法识别原文语言，请选择明确的原文语言后重试。"
+        case .cancelled:
+            return "已取消。"
         case .unavailable:
             return "系统翻译未完成。请检查语言资源后重试，或更换语言。"
         }

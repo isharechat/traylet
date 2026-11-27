@@ -12,11 +12,11 @@ import AppKit
         return key.parent === window || window.childWindows?.contains(key) == true
             || (NSApp.isActive && String(describing: type(of: key)).contains("Popover"))
     }
-    static func hideOnResignKey(_ window: NSWindow, hide: @escaping @MainActor () -> Void) -> NSObjectProtocol {
+    static func hideOnResignKey(_ window: NSWindow, canHide: @escaping @MainActor () -> Bool = { true }, hide: @escaping @MainActor () -> Void) -> NSObjectProtocol {
         NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak window] _ in
             // Let focus settle: a sheet or alert opened by the window attaches right after the resign.
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { if let window, shouldHide(window) { hide() } }
+                MainActor.assumeIsolated { if let window, canHide(), shouldHide(window) { hide() } }
             }
         }
     }

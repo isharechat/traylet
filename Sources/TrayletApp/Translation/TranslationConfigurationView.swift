@@ -58,7 +58,15 @@ struct TranslationConfigurationView: View {
             }
         }
         .formStyle(.grouped)
-        .onDisappear { flushDrafts(); configuration.cancel() }
+        .background {
+            if let request = languagePacks.request {
+                TranslationLanguagePackHost(request: request) { outcome in
+                    _ = languagePacks.completeDownload(request.id, outcome: outcome)
+                }
+                .id(request.id)
+            }
+        }
+        .onDisappear { flushDrafts(); configuration.cancel(); languagePacks.cancel() }
         .onChange(of: configuration.endpoint) { _, value in if endpointDraft != value { endpointDraft = value } }
         .onChange(of: configuration.model) { _, value in if modelDraft != value { modelDraft = value } }
         .onChange(of: configuration.credential) { _, value in if credentialDraft != value { credentialDraft = value } }

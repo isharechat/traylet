@@ -44,6 +44,10 @@ struct TranslationLanguagePackPair: Equatable, Sendable {
         self.availability = availability
     }
 
+    var isDownloading: Bool {
+        request != nil || state == .preparing
+    }
+
     var canDownload: Bool {
         source != target && state != .checking && state != .preparing && state != .installed && state != .unsupported
     }
@@ -100,7 +104,7 @@ struct TranslationLanguagePackPair: Equatable, Sendable {
         guard request?.id == id else { return nil }
         request = nil
         switch outcome {
-        case .success:
+        case .success, .failure(.cancelled):
             return check()
         case .failure(let reason):
             state = .failed(Self.failureMessage(reason))
@@ -116,6 +120,8 @@ struct TranslationLanguagePackPair: Equatable, Sendable {
             return "系统不支持当前语言对，请更换原文或译文语言。"
         case .unableToIdentifyLanguage:
             return "无法识别原文语言，请选择明确的原文语言后重试。"
+        case .cancelled:
+            return "已取消。"
         case .unavailable:
             return "语言包下载未完成。请检查网络或系统设置后重试。"
         }
@@ -167,15 +173,6 @@ struct TranslationLanguagePackSettings: View {
                 .font(.caption).foregroundStyle(.secondary)
                 .help(L("语言包由 macOS 按系统批准流程下载并安装到本机；不会上传原文、截图或剪贴板。"))
         }
-        .background {
-            if let request = controller.request {
-                TranslationLanguagePackHost(request: request) { outcome in
-                    _ = controller.completeDownload(request.id, outcome: outcome)
-                }
-                .id(request.id)
-            }
-        }
-        .onDisappear { controller.cancel() }
     }
 
     private var languages: [(String, String)] {
@@ -209,12 +206,18 @@ struct TranslationLanguagePackSettings: View {
 struct TranslationLanguagePackHost: View {
     let request: TranslationLanguagePackRequest
     let finished: @MainActor (TranslationLanguagePackDownloadOutcome) -> Void
+    @State private var configuration: TranslationSession.Configuration
+
+    init(request: TranslationLanguagePackRequest, finished: @escaping @MainActor (TranslationLanguagePackDownloadOutcome) -> Void) {
+        self.request = request
+        self.finished = finished
+        _configuration = State(initialValue: .init(source: Locale.Language(identifier: request.source), target: Locale.Language(identifier: request.target)))
+    }
 
     var body: some View {
-        Color.clear.frame(width: 0, height: 0)
-            .translationTask(.init(source: Locale.Language(identifier: request.source),
-                                   target: Locale.Language(identifier: request.target)),
-                             action: Self.action(finished: finished))
+        Color.clear
+            .allowsHitTesting(false)
+            .translationTask(configuration, action: Self.action(finished: finished))
     }
 
     private nonisolated static func action(finished: @escaping @MainActor (TranslationLanguagePackDownloadOutcome) -> Void) -> (TranslationSession) async -> Void {

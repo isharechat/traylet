@@ -209,6 +209,44 @@ import Testing
         await client.releaseResponse()
         await clipboard.shutdownAndWait()
     }
+    @Test func resignKeyDoesNotHideOrCancelWhileLanguagePackIsDownloading() async throws {
+        _ = NSApplication.shared
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-v2-settings-pack-download-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clipboard = ClipboardFeature(directory: directory, source: SettingsTestClipboardSource(), writer: SettingsTestClipboardWriter())
+        let store = PreferencesStore(), manager = ShortcutManager(preferences: store, driver: SettingsTestShortcutDriver())
+        let controller = SettingsController(preferences: store, shortcuts: manager, translation: TranslationConfiguration(), clipboard: clipboard, presentWindow: { _ in })
+
+        let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 100, height: 100), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.orderBack(nil)
+        var hideCount = 0
+        let observer = FloatingWindow.hideOnResignKey(window, canHide: { !controller.languagePacks.isDownloading }) {
+            hideCount += 1
+        }
+        defer {
+            NotificationCenter.default.removeObserver(observer)
+            window.close()
+        }
+
+        controller.languagePacks.download()
+        let request = try #require(controller.languagePacks.request)
+        #expect(controller.languagePacks.isDownloading)
+
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(hideCount == 0)
+        #expect(controller.languagePacks.isDownloading)
+
+        _ = controller.languagePacks.completeDownload(request.id, outcome: .failure(.unavailable))
+        #expect(!controller.languagePacks.isDownloading)
+
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(hideCount == 1)
+
+        await clipboard.shutdownAndWait()
+    }
 }
 @MainActor private final class SettingsTestClipboardSource: ClipboardSource {
     var generation = 0

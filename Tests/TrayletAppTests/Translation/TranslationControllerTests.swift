@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import TrayletApp
@@ -176,6 +177,23 @@ struct TranslationControllerTests {
         #expect(first.id != next.id)
         controller.finishSystem(next, text: "你好")
         #expect(controller.flow.output == "你好")
+    }
+    @Test func presentedPanelDoesNotHideOnDeactivateAndCancellationClearsPreparing() async throws {
+        _ = NSApplication.shared
+        var capturedPanel: NSPanel?
+        let controller = TranslationController(writer: TranslationFakeWriter(), availability: TranslationDownloadableResources(), speech: TranslationFakeSpeech(), presentWindow: { capturedPanel = $0 })
+        controller.present(text: "Hello")
+        let panel = try #require(capturedPanel)
+        #expect(!panel.hidesOnDeactivate)
+        controller.flow.source = "en"
+        await controller.submit()
+        controller.prepareLanguages()
+        let work = try #require(controller.systemWork)
+        #expect(controller.preparingResources)
+        controller.failSystem(work, reason: .cancelled)
+        #expect(!controller.preparingResources)
+        #expect(controller.flow.phase == .failed("已取消。"))
+        controller.close()
     }
 }
 private struct EngineSwitchOfflineAI: TranslationAIClient {

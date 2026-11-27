@@ -18,9 +18,16 @@ enum TranslationSystemSessionFailure: Equatable, Sendable {
     case notInstalled
     case unsupportedPairing
     case unableToIdentifyLanguage
+    case cancelled
     case unavailable
 
     static func classify(_ error: Error) -> TranslationSystemSessionFailure {
+        if error is CancellationError { return .cancelled }
+        if (error as? CocoaError)?.code == .userCancelled { return .cancelled }
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain && nsError.code == NSUserCancelledError {
+            return .cancelled
+        }
         switch error {
         case TranslationError.unsupportedLanguagePairing,
              TranslationError.unsupportedSourceLanguage,
@@ -228,9 +235,20 @@ struct TranslationSystemTaskHost: View {
     let prepare: Bool
     let completed: @MainActor (TranslationWork, String) -> Void
     let failed: @MainActor (TranslationWork, TranslationSystemSessionFailure) -> Void
+    @State private var configuration: TranslationSession.Configuration
+
+    init(work: TranslationWork, prepare: Bool, completed: @escaping @MainActor (TranslationWork, String) -> Void, failed: @escaping @MainActor (TranslationWork, TranslationSystemSessionFailure) -> Void) {
+        self.work = work
+        self.prepare = prepare
+        self.completed = completed
+        self.failed = failed
+        _configuration = State(initialValue: .init(source: work.resolvedSource.map(Locale.Language.init(identifier:)), target: Locale.Language(identifier: work.target)))
+    }
+
     var body: some View {
-        Color.clear.frame(width: 0, height: 0)
-            .translationTask(.init(source: work.resolvedSource.map(Locale.Language.init(identifier:)), target: Locale.Language(identifier: work.target)), action: Self.action(work: work, prepare: prepare, completed: completed, failed: failed))
+        Color.clear
+            .allowsHitTesting(false)
+            .translationTask(configuration, action: Self.action(work: work, prepare: prepare, completed: completed, failed: failed))
     }
     private nonisolated static func action(work: TranslationWork, prepare: Bool, completed: @escaping @MainActor (TranslationWork, String) -> Void, failed: @escaping @MainActor (TranslationWork, TranslationSystemSessionFailure) -> Void) -> (TranslationSession) async -> Void {
         { session in

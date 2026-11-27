@@ -82,6 +82,40 @@ struct TranslationLanguagePackTests {
         controller.download()
         #expect(controller.request == nil)
     }
+
+    @Test func isDownloadingTracksActiveRequestAndCancellationRechecksAvailability() async throws {
+        let availability = TranslationPackAvailability([
+            .success(.downloadable),
+            .success(.downloadable),
+        ])
+        let controller = TranslationLanguagePackController(availability: availability)
+        #expect(!controller.isDownloading)
+
+        await controller.check().value
+        #expect(!controller.isDownloading)
+
+        controller.download()
+        let request = try #require(controller.request)
+        #expect(controller.isDownloading)
+
+        let recheck = try #require(controller.completeDownload(request.id, outcome: .failure(.cancelled)))
+        await recheck.value
+        #expect(!controller.isDownloading)
+        #expect(controller.request == nil)
+        #expect(controller.state == .downloadable)
+
+        controller.download()
+        #expect(controller.isDownloading)
+        controller.cancel()
+        #expect(!controller.isDownloading)
+        #expect(controller.request == nil)
+    }
+
+    @Test func systemCancellationErrorsClassifyAsCancelled() {
+        #expect(TranslationSystemSessionFailure.classify(CancellationError()) == .cancelled)
+        #expect(TranslationSystemSessionFailure.classify(CocoaError(.userCancelled)) == .cancelled)
+        #expect(TranslationSystemSessionFailure.classify(NSError(domain: NSCocoaErrorDomain, code: NSUserCancelledError)) == .cancelled)
+    }
 }
 
 private enum TranslationPackAvailabilityError: Error, Sendable { case unavailable }

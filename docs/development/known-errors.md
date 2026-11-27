@@ -57,6 +57,14 @@
 - 验证：新增 `detailPopupIsPrebuiltAndReRendersForEachSelection` 覆盖面板预构建与选择切换不残留旧内容；`ClipboardTests`、`ClipboardKeyboardTests` 通过。
 - 边界：合成测试验证状态与时序，不证明真实鼠标点击下的窗口合成与首帧延迟，仍需系统验收。
 
+### 下载系统翻译语言包时弹出 loading 弹窗后失败并自动隐藏
+
+- 现象：在未安装对应系统语言包的机器上点击“下载语言包”或“直接准备并翻译”时，系统弹出下载/loading 弹窗，随后下载失败且设置/翻译窗口自动隐藏。
+- 原因：四个问题叠加。其一，macOS `TranslationSession.prepareTranslation()` 弹出系统级 `TranslationUIServices` 弹窗时，宿主窗口会收到 `NSWindow.didResignKeyNotification`，而此时 `attachedSheet` 与 `NSApp.modalWindow` 均为 `nil`；`FloatingWindow.hideOnResignKey` 误判窗口失焦，直接执行 `orderOut` 并调用 `languagePacks.cancel()` / `translation.close()` 撕毁进行中的 `.translationTask`。其二，翻译窗口 `NSPanel` 默认 `hidesOnDeactivate = true`，外部系统弹窗激活时面板自动隐藏。其三，`TranslationLanguagePackHost` 与 `.onDisappear { controller.cancel() }` 挂在 `Form(.grouped)` 的 `Section` 上，且每次渲染新建 `TranslationSession.Configuration`，容易触发布局/重绘导致的意外取消。其四，系统取消错误（`CancellationError` / `CocoaError.userCancelled`）未单独识别，被归类为通用失败。
+- 修复：`FloatingWindow.hideOnResignKey` 增加 `canHide` 守卫，在语言包下载或资源准备期间不自动隐藏和取消；`SettingsController` 窗口与 `TranslationController` 面板均设置 `hidesOnDeactivate = false`；`TranslationLanguagePackHost` 移至 `TranslationConfigurationView` 的 `Form` 外层，并在 `TranslationLanguagePackHost` / `TranslationSystemTaskHost` 中用 `@State` 稳定持有 `TranslationSession.Configuration`；`TranslationSystemSessionFailure` 新增 `.cancelled`，取消下载后自动重新检查语言包可用性。
+- 验证：`TranslationLanguagePackTests`、`SettingsLifecycleTests`、`TranslationControllerTests` 新增回归测试覆盖 `isDownloading`、取消错误分类、`hidesOnDeactivate = false` 与失焦保护。
+- 边界：合成测试不替代未安装语言包的真实 macOS 机器上的系统下载弹窗与安装流程验收。
+
 ## 实现防线
 
 - `TranslationSession` 只在当前 SwiftUI `translationTask` 宿主生命周期使用；宿主关闭或配置变化后新建工作，不缓存旧 session。

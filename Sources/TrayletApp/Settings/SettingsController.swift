@@ -52,12 +52,12 @@ import Combine
         if window == nil {
             let created = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 650), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
             created.title = windowTitle; created.minSize = NSSize(width: 560, height: 420)
-            created.isReleasedWhenClosed = false; created.delegate = self
+            created.isReleasedWhenClosed = false; created.hidesOnDeactivate = false; created.delegate = self
             let hosting = NSHostingView(rootView: SettingsWorkspaceView(preferences: preferences, shortcuts: shortcuts, translation: translation, languagePacks: languagePacks, clipboard: clipboard, navigation: navigation, actions: actions, updater: updater, onRequestQuitForUpdate: onRequestQuitForUpdate, localization: localization))
             created.appearance = Self.appearance(preferences.value.appearance)
             backing = GlassWindowBacking(window: created, content: hosting)
             created.center(); window = created
-            dismissal = FloatingWindow.hideOnResignKey(created) { [weak self] in
+            dismissal = FloatingWindow.hideOnResignKey(created, canHide: { [weak self] in self?.languagePacks.isDownloading != true }) { [weak self] in
                 self?.shortcuts.cancel(); self?.translation.cancel(); self?.languagePacks.cancel(); self?.window?.orderOut(nil)
             }
         }
