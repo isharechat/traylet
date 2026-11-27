@@ -6,9 +6,10 @@ import AppKit
         let menu = NSMenu(title: "Traylet")
         let rows: [(Action, String, String)] = [(.regionCapture, "crop", "Region Capture"), (.screenCapture, "display", "Screen Capture"),
             (.inputTranslation, "character.bubble", "Translate Text"), (.captureTranslation, "viewfinder", "Translate Screenshot"),
+            (.ocr, "text.viewfinder", "OCR"),
             (.clipboard, "doc.on.clipboard", "Clipboard")]
         for (index, row) in rows.enumerated() {
-            if index == 2 || index == 4 { menu.addItem(.separator()) }
+            if index == 2 || index == 5 { menu.addItem(.separator()) }
             let item = NSMenuItem(title: english ? row.2 : row.0.title, action: action, keyEquivalent: "")
             item.target = target; item.representedObject = row.0.rawValue
             item.image = NSImage(systemSymbolName: row.1, accessibilityDescription: item.title)

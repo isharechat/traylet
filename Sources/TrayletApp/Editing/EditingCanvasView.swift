@@ -6,9 +6,11 @@ import SwiftUI
     let session: EditingSession
     let colorPanel = EditingColorPanel()
     let selectingForTranslation: Bool
+    let selectingForOCR: Bool
     var onCancel: (() -> Void)?
     var onSave: (() -> Void)?
     var onTranslate: (() -> Void)?
+    var onOCR: (() -> Void)?
     var onFloat: (() -> Void)?
     private var observation: AnyCancellable?
     private var languageObservation: AnyCancellable?
@@ -43,12 +45,12 @@ import SwiftUI
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
-    init(session:EditingSession,selectingForTranslation:Bool) {
-        self.session = session; self.selectingForTranslation = selectingForTranslation
+    init(session:EditingSession,selectingForTranslation:Bool,selectingForOCR:Bool = false) {
+        self.session = session; self.selectingForTranslation = selectingForTranslation; self.selectingForOCR = selectingForOCR
         // Decode the screenshot once; drawing must never re-decode PNG data.
         backdrop = session.sourceImage.map { NSImage(cgImage:$0,size:session.document.canvas) } ?? NSImage(size:session.document.canvas)
         super.init(frame:CGRect(origin:.zero,size:session.document.canvas))
-        toolbar = EditingBarHost(rootView:EditingToolbar(session:session,translationMode:selectingForTranslation,copy:{ [weak self] in self?.copyAndClose() },save:{ [weak self] in self?.onSave?() },translate:{ [weak self] in self?.onTranslate?() },float:{ [weak self] in self?.onFloat?() },cancel:{ [weak self] in self?.onCancel?() },drag:{ [weak self] total,ended in self?.dragToolbar(total,ended:ended) },reset:{ [weak self] in self?.resetToolbar() },finishText:{ [weak self] in self?.finishText() ?? false },fitView:{ [weak self] in self?.fitSelection() },resetView:{ [weak self] in self?.resetView() }))
+        toolbar = EditingBarHost(rootView:EditingToolbar(session:session,translationMode:selectingForTranslation,ocrMode:selectingForOCR,copy:{ [weak self] in self?.copyAndClose() },save:{ [weak self] in self?.onSave?() },translate:{ [weak self] in self?.onTranslate?() },ocr:{ [weak self] in self?.onOCR?() },float:{ [weak self] in self?.onFloat?() },cancel:{ [weak self] in self?.onCancel?() },drag:{ [weak self] total,ended in self?.dragToolbar(total,ended:ended) },reset:{ [weak self] in self?.resetToolbar() },finishText:{ [weak self] in self?.finishText() ?? false },fitView:{ [weak self] in self?.fitSelection() },resetView:{ [weak self] in self?.resetView() }))
         toolbar.sizingOptions = [.intrinsicContentSize]
         options = EditingBarHost(rootView:EditingOptions(session:session,colorPanel:colorPanel))
         options.sizingOptions = [.intrinsicContentSize]

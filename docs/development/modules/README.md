@@ -1,6 +1,7 @@
 # 模块文档
 
 - [截图编辑](editing.md)
+- [OCR](ocr.md)
 - [翻译](translation.md)
 - [剪贴板](clipboard.md)
 - [设置](settings.md)

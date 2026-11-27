@@ -5,9 +5,11 @@ struct EditingToolbar: View {
     @ObservedObject var session: EditingSession
     @ObservedObject private var localization = Localization.shared
     let translationMode: Bool
+    let ocrMode: Bool
     let copy: () -> Void
     let save: () -> Void
     let translate: () -> Void
+    let ocr: () -> Void
     let float: () -> Void
     let cancel: () -> Void
     let drag: (CGSize, Bool) -> Void
@@ -38,6 +40,11 @@ struct EditingToolbar: View {
             dragHandle
             if translationMode {
                 Button(L("翻译所选区域"), action: triggerTranslate)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                EditingIconButton(symbol: "xmark", label: L("关闭"), help: L("关闭 Esc"), subtle: true, action: cancel)
+            } else if ocrMode {
+                Button(L("识别所选区域"), action: triggerOCR)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                 EditingIconButton(symbol: "xmark", label: L("关闭"), help: L("关闭 Esc"), subtle: true, action: cancel)
@@ -150,6 +157,7 @@ struct EditingToolbar: View {
         // Zone 3: Secondary outputs
         HStack(spacing: 2) {
             EditingIconButton(symbol: "translate", label: L("翻译"), help: L("翻译截图"), action: triggerTranslate)
+            EditingIconButton(symbol: "text.viewfinder", label: L("OCR"), help: L("OCR 识别"), action: triggerOCR)
             EditingIconButton(symbol: "macwindow", label: L("悬浮"), help: L("悬浮到屏幕最上层 ⌘F"), action: float)
             EditingIconButton(symbol: "square.and.arrow.down", label: L("保存"), help: L("保存 PNG ⌘S"), action: save)
         }
@@ -186,6 +194,7 @@ struct EditingToolbar: View {
             viewActionsWithStatus
             Divider()
             Button { triggerTranslate() } label: { Label(L("翻译"), systemImage: "translate") }
+            Button { triggerOCR() } label: { Label(L("OCR"), systemImage: "text.viewfinder") }
             Button { float() } label: { Label(L("悬浮"), systemImage: "macwindow") }
         } label: {
             moreOrZoomLabel
@@ -213,6 +222,7 @@ struct EditingToolbar: View {
             viewActionsWithStatus
             Divider()
             Button { triggerTranslate() } label: { Label(L("翻译"), systemImage: "translate") }
+            Button { triggerOCR() } label: { Label(L("OCR"), systemImage: "text.viewfinder") }
             Button { float() } label: { Label(L("悬浮"), systemImage: "macwindow") }
             Button { cancel() } label: { Label(L("关闭"), systemImage: "xmark") }
         } label: {
@@ -329,6 +339,11 @@ struct EditingToolbar: View {
     private func triggerTranslate() {
         guard finishText() else { return }
         translate()
+    }
+
+    private func triggerOCR() {
+        guard finishText() else { return }
+        ocr()
     }
 
     private func undo() { guard finishText() else { return }; session.document.undo() }

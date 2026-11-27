@@ -3,7 +3,7 @@ import Combine
 import TrayletCore
 
 enum Action: String, Codable, CaseIterable, Identifiable, Sendable {
-    case regionCapture, screenCapture, inputTranslation, captureTranslation, clipboard
+    case regionCapture, screenCapture, inputTranslation, captureTranslation, ocr, clipboard
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -11,6 +11,7 @@ enum Action: String, Codable, CaseIterable, Identifiable, Sendable {
         case .screenCapture: "屏幕截图"
         case .inputTranslation: "输入翻译"
         case .captureTranslation: "截图翻译"
+        case .ocr: "OCR 识别"
         case .clipboard: "剪贴板"
         }
     }
@@ -48,6 +49,7 @@ struct ShortcutAssignment: Codable, Equatable, Sendable {
         return [.init(action: .regionCapture, chord: .init(keyCode: 18, modifiers: modifiers)),
             .init(action: .screenCapture), .init(action: .inputTranslation, chord: .init(keyCode: 17, modifiers: modifiers)),
             .init(action: .captureTranslation, chord: .init(keyCode: 21, modifiers: modifiers)),
+            .init(action: .ocr, chord: .init(keyCode: 31, modifiers: modifiers)),
             .init(action: .clipboard, chord: .init(keyCode: 9, modifiers: modifiers))]
     }
     static func valid(_ values: [Self]) -> Bool {

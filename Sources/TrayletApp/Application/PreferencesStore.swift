@@ -45,10 +45,23 @@ struct UserPreferences: Codable, Equatable, Sendable {
         language = try container.decodeIfPresent(Language.self, forKey: .language) ?? .system
         glassEnabled = try container.decodeIfPresent(Bool.self, forKey: .glassEnabled) ?? true
         hasCompletedWelcome = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedWelcome) ?? false
-        shortcuts = try container.decodeIfPresent([ShortcutAssignment].self, forKey: .shortcuts) ?? ShortcutAssignment.defaults
+        let decodedShortcuts = try container.decodeIfPresent([ShortcutAssignment].self, forKey: .shortcuts) ?? ShortcutAssignment.defaults
+        shortcuts = Self.mergeMissingShortcuts(decodedShortcuts)
         autoCheckUpdates = try container.decodeIfPresent(Bool.self, forKey: .autoCheckUpdates) ?? true
         includePreviewUpdates = try container.decodeIfPresent(Bool.self, forKey: .includePreviewUpdates) ?? true
         skippedUpdateTag = try container.decodeIfPresent(String.self, forKey: .skippedUpdateTag)
+    }
+
+    private static func mergeMissingShortcuts(_ existing: [ShortcutAssignment]) -> [ShortcutAssignment] {
+        var merged = existing
+        var usedChords = Set(existing.compactMap(\.chord))
+        for action in Action.allCases where !merged.contains(where: { $0.action == action }) {
+            let defaultChord = ShortcutAssignment.defaults.first(where: { $0.action == action })?.chord
+            let assignedChord = defaultChord.flatMap { usedChords.contains($0) ? nil : $0 }
+            if let assignedChord { usedChords.insert(assignedChord) }
+            merged.append(.init(action: action, chord: assignedChord))
+        }
+        return merged
     }
 }
 

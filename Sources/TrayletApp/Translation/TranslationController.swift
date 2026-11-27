@@ -7,7 +7,11 @@ import TrayletCore
     let configuration: TranslationConfiguration
     let flow = TranslationFlow()
     var onOpenSettings: ((TranslationLanguagePackPair?) -> Void)?
+    var onOpenOCR: ((RasterImage?) -> Void)?
+    var onCaptureOCR: (() -> Void)?
+    var onOpenImageDataInOCR: ((Data) -> Void)?
     var windowTitle: String { L("翻译") }
+    @Published private(set) var lastSourceImage: RasterImage?
     @Published private(set) var systemWork: TranslationWork?
     @Published private(set) var preparingResources = false
     @Published private(set) var notice = ""
@@ -80,7 +84,7 @@ import TrayletCore
         let count = max(1, configuration.visibleEngines.count)
         let engines = CGFloat(count) * Design.iconButton + CGFloat(count - 1) * 6 + 8
         let labels = languageWidth(flow.source) + languageWidth(flow.target) + textWidth("翻译") + 28
-        let controls = Design.iconButton * 2 + engines + 40 + 4
+        let controls = Design.iconButton * 3 + engines + 46 + 4
         let width = ceil(max(CGFloat(442 + 34 * count), labels + controls + Design.Space.m * 2 + 8))
         panel.minSize = NSSize(width: width, height: 440)
         if panel.contentLayoutRect.width < width { panel.setContentSize(NSSize(width: width, height: panel.contentLayoutRect.height)) }
@@ -99,8 +103,11 @@ import TrayletCore
             startSubmission()
         }
     }
-    func present(text: String = "", image: RasterImage? = nil, decoded: CGImage? = nil) {
+    func present(text: String = "", image: RasterImage? = nil, decoded: CGImage? = nil, sourceImage: RasterImage? = nil, autoSubmit: Bool = false) {
         cancel(); notice = ""; accessibilityNotice = false; selectedEngine = configuration.engine
+        if let image { lastSourceImage = image }
+        else if let sourceImage { lastSourceImage = sourceImage }
+        else if !text.isEmpty { lastSourceImage = nil }
         if image == nil, !text.isEmpty { flow.input = text; flow.clearOutput() }
         if panel == nil {
             let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 600, height: 630), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
@@ -112,11 +119,27 @@ import TrayletCore
         updateMinimumSize()
         if let panel { presentWindow(panel) }
         if let image { beginImageInput(image, decoded: decoded) }
+        else if autoSubmit, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { startSubmission() }
+    }
+    func openOCR() {
+        if let lastSourceImage {
+            onOpenOCR?(lastSourceImage)
+        } else {
+            onCaptureOCR?()
+        }
+    }
+    func handleDroppedImage(from url: URL) {
+        guard let data = try? Data(contentsOf: url) else { return }
+        onOpenImageDataInOCR?(data)
+    }
+    func handleDroppedImageData(_ data: Data) {
+        onOpenImageDataInOCR?(data)
     }
     func showAccessibilityNotice() { accessibilityNotice = true }
     func openAccessibilitySettings() { AccessibilitySelectedText.openSettings() }
     @discardableResult func beginImageInput(_ image: RasterImage, decoded: CGImage? = nil) -> Task<Void, Never> {
         cancel(); notice = ""
+        lastSourceImage = image
         let id = flow.beginRecognition()
         let task = Task { [weak self, recognizer] in
             guard !Task.isCancelled else { return }

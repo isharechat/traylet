@@ -29,4 +29,19 @@ import Testing
         #expect(throws: (any Error).self) { try store.save(store.value) }
         #expect(try Data(contentsOf: file) == original)
     }
+
+    @Test func legacyFiveActionPreferencesBackfillOCRActionSafely() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-v2-legacy-shortcuts-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let legacyShortcuts = ShortcutAssignment.defaults.filter { $0.action != .ocr }
+        let payload: [String: Any] = [
+            "schemaVersion": 2,
+            "shortcuts": try JSONSerialization.jsonObject(with: JSONEncoder().encode(legacyShortcuts))
+        ]
+        try JSONSerialization.data(withJSONObject: payload).write(to: file)
+        let store = PreferencesStore(file: file)
+        #expect(store.failure == nil)
+        #expect(ShortcutAssignment.valid(store.value.shortcuts))
+        #expect(store.value.shortcuts.contains(where: { $0.action == .ocr }))
+    }
 }

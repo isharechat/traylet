@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import TrayletCore
 
 struct TranslationWorkspaceView: View {
@@ -40,6 +41,15 @@ struct TranslationWorkspaceView: View {
             }.buttonStyle(.plain).keyboardShortcut(.return, modifiers: .command).disabled(unavailable).opacity(unavailable ? 0.4 : 1)
             Spacer(minLength: 4)
             engineIcons
+            Button { controller.openOCR() } label: {
+                Image(systemName: "text.viewfinder")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: Design.iconButton, height: Design.iconButton)
+                    .contentShape(Circle())
+                    .v2GlassBackground(in: Circle(), interactive: true)
+            }.buttonStyle(.plain)
+                .help(L(controller.lastSourceImage != nil ? "在 OCR 窗口查看原图" : "截图 OCR 识别"))
+                .accessibilityLabel(L(controller.lastSourceImage != nil ? "在 OCR 窗口查看原图" : "截图 OCR 识别"))
             Button { controller.openLanguageSettings() } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 13, weight: .medium))
@@ -81,6 +91,26 @@ struct TranslationWorkspaceView: View {
                 TextEditor(text: $flow.input).font(.body).scrollContentBackground(.hidden).focused($inputFocused).accessibilityLabel(L("原文输入"))
                     // TextEditor insets its text by 5pt; pull it back so it lines up with the caption above.
                     .padding(.horizontal, -5).padding(.bottom, 34)
+                    .onDrop(of: [.fileURL, .image, .png], isTargeted: nil) { providers in
+                        for provider in providers {
+                            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                                    guard let data = item as? Data,
+                                          let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+                                    Task { @MainActor in controller.handleDroppedImage(from: url) }
+                                }
+                                return true
+                            }
+                            if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+                                provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
+                                    guard let data else { return }
+                                    Task { @MainActor in controller.handleDroppedImageData(data) }
+                                }
+                                return true
+                            }
+                        }
+                        return false
+                    }
             } else {
                 ScrollView { VStack(alignment: .leading, spacing: 12) { status; if !controller.notice.isEmpty { Text(L(controller.notice)).font(.caption).textSelection(.enabled) }; Text(flow.output).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) } }
                     .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, 34)

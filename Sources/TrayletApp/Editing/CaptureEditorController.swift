@@ -10,6 +10,7 @@ import UniformTypeIdentifiers
     private let presentPanel: (NSPanel, NSView) -> Void
     private let chooseSaveDestination: (NSPanel, @escaping (URL?) -> Void) -> Void
     var onTranslate: ((RasterImage) -> Void)?
+    var onOCR: ((RasterImage, Bool) -> Void)?
     var onComplete: (() -> Void)?
     var isOpen: Bool { panel != nil }
     var windowLevel: NSWindow.Level? { panel?.level }
@@ -58,28 +59,28 @@ import UniformTypeIdentifiers
     }
 
     /// `decoded` is the capture's own pixels for `image`, which saves decoding the PNG again.
-    func present(image:RasterImage,decoded:CGImage? = nil,screen:NSScreen,initiallyFullScreen:Bool,selectingForTranslation:Bool = false) {
-        present(image:image,decoded:decoded,screenFrame:screen.frame,initiallyFullScreen:initiallyFullScreen,selectingForTranslation:selectingForTranslation)
+    func present(image:RasterImage,decoded:CGImage? = nil,screen:NSScreen,initiallyFullScreen:Bool,selectingForTranslation:Bool = false,selectingForOCR:Bool = false) {
+        present(image:image,decoded:decoded,screenFrame:screen.frame,initiallyFullScreen:initiallyFullScreen,selectingForTranslation:selectingForTranslation,selectingForOCR:selectingForOCR)
     }
 
-    func present(pixels:CGImage,screen:NSScreen,initiallyFullScreen:Bool,selectingForTranslation:Bool = false) {
-        present(pixels:pixels,screenFrame:screen.frame,initiallyFullScreen:initiallyFullScreen,selectingForTranslation:selectingForTranslation)
+    func present(pixels:CGImage,screen:NSScreen,initiallyFullScreen:Bool,selectingForTranslation:Bool = false,selectingForOCR:Bool = false) {
+        present(pixels:pixels,screenFrame:screen.frame,initiallyFullScreen:initiallyFullScreen,selectingForTranslation:selectingForTranslation,selectingForOCR:selectingForOCR)
     }
 
-    func present(pixels:CGImage,screenFrame:CGRect,initiallyFullScreen:Bool,selectingForTranslation:Bool = false) {
+    func present(pixels:CGImage,screenFrame:CGRect,initiallyFullScreen:Bool,selectingForTranslation:Bool = false,selectingForOCR:Bool = false) {
         cancel()
         let session = EditingSession(pixels:pixels,canvas:screenFrame.size,fullScreen:initiallyFullScreen,writer:writer)
-        presentSession(session,screenFrame:screenFrame,selectingForTranslation:selectingForTranslation)
+        presentSession(session,screenFrame:screenFrame,selectingForTranslation:selectingForTranslation,selectingForOCR:selectingForOCR)
     }
 
-    func present(image:RasterImage,decoded:CGImage? = nil,screenFrame:CGRect,initiallyFullScreen:Bool,selectingForTranslation:Bool = false) {
+    func present(image:RasterImage,decoded:CGImage? = nil,screenFrame:CGRect,initiallyFullScreen:Bool,selectingForTranslation:Bool = false,selectingForOCR:Bool = false) {
         cancel()
         let session = EditingSession(image:image,decoded:decoded,canvas:screenFrame.size,fullScreen:initiallyFullScreen,writer:writer)
-        presentSession(session,screenFrame:screenFrame,selectingForTranslation:selectingForTranslation)
+        presentSession(session,screenFrame:screenFrame,selectingForTranslation:selectingForTranslation,selectingForOCR:selectingForOCR)
     }
 
-    private func presentSession(_ session:EditingSession,screenFrame:CGRect,selectingForTranslation:Bool) {
-        let view = EditingCanvasView(session:session,selectingForTranslation:selectingForTranslation)
+    private func presentSession(_ session:EditingSession,screenFrame:CGRect,selectingForTranslation:Bool,selectingForOCR:Bool = false) {
+        let view = EditingCanvasView(session:session,selectingForTranslation:selectingForTranslation,selectingForOCR:selectingForOCR)
         let window = EditingPanel(contentRect:screenFrame,styleMask:.borderless,backing:.buffered,defer:false)
         window.isReleasedWhenClosed = false
         window.level = .screenSaver
@@ -105,6 +106,16 @@ import UniformTypeIdentifiers
             // Translation takes focus itself; restoring the previous app here would steal it back and hide the new window.
             do { let result = try view.session.composite(); self.cancel(restoreFocus:false); self.onTranslate?(result) }
             catch { view.session.message = "无法合成截图；请重新框选。" }
+        }
+        view.onOCR = { [weak self,weak view] in
+            guard let self, let view, self.canvas === view else { return }
+            guard view.finishText(), view.session.prepareOutput() else { return }
+            do {
+                let result = try view.session.composite()
+                let keepEditorOpen = !view.selectingForOCR
+                if !keepEditorOpen { self.cancel(restoreFocus:false) }
+                self.onOCR?(result, keepEditorOpen)
+            } catch { view.session.message = "无法合成截图；请重新框选。" }
         }
         view.onFloat = { [weak self,weak view] in
             guard let self, let view, self.canvas === view else { return }

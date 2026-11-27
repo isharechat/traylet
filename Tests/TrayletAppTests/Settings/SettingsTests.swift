@@ -7,7 +7,7 @@ import Testing
         let navigation = SettingsNavigation()
         #expect(navigation.current == .general)
         // One click is enough, in any order, including repeats and jumps to the last pane.
-        for section in [SettingsSection.translation, .about, .about, .general, .clipboard, .shortcuts] {
+        for section in [SettingsSection.ocr, .translation, .about, .about, .general, .clipboard, .shortcuts] {
             navigation.navigate(to: section)
             #expect(navigation.current == section)
         }

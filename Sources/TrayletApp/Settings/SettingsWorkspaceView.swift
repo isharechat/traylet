@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor struct SettingsWorkspaceView: View {
     @ObservedObject var preferences: PreferencesStore
     @ObservedObject var shortcuts: ShortcutManager
+    @ObservedObject var ocr: OCRConfiguration
     @ObservedObject var translation: TranslationConfiguration
     let languagePacks: TranslationLanguagePackController
     let clipboard: ClipboardFeature
@@ -16,6 +17,7 @@ import SwiftUI
     init(
         preferences: PreferencesStore,
         shortcuts: ShortcutManager,
+        ocr: OCRConfiguration = OCRConfiguration(),
         translation: TranslationConfiguration,
         languagePacks: TranslationLanguagePackController,
         clipboard: ClipboardFeature,
@@ -27,6 +29,7 @@ import SwiftUI
     ) {
         self.preferences = preferences
         self.shortcuts = shortcuts
+        self.ocr = ocr
         self.translation = translation
         self.languagePacks = languagePacks
         self.clipboard = clipboard
@@ -113,6 +116,7 @@ import SwiftUI
                 switch navigation.current {
                 case .general: general
                 case .shortcuts: shortcutSettings
+                case .ocr: OCRConfigurationView(configuration: ocr)
                 case .translation: TranslationConfigurationView(configuration: translation, languagePacks: languagePacks)
                 case .clipboard: ClipboardFeatureSettingsView(feature: clipboard)
                 case .permissions: PermissionsSettingsView(status: permissionStatus, actions: actions)
@@ -202,7 +206,7 @@ import SwiftUI
     }
     private func actionTitle(_ action: Action) -> String {
         guard english else { return action.title }
-        switch action { case .regionCapture: return "Region capture"; case .screenCapture: return "Screen capture"; case .inputTranslation: return "Input translation"; case .captureTranslation: return "Capture translation"; case .clipboard: return "Clipboard" }
+        switch action { case .regionCapture: return "Region capture"; case .screenCapture: return "Screen capture"; case .inputTranslation: return "Input translation"; case .captureTranslation: return "Capture translation"; case .ocr: return "OCR"; case .clipboard: return "Clipboard" }
     }
     private var about: some View {
         Form {

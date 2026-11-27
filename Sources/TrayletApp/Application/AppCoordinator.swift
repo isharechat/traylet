@@ -7,6 +7,7 @@ import TrayletCore
     let preferences: PreferencesStore
     let shortcuts: ShortcutManager
     let translation: TranslationController
+    let ocr: OCRController
     let clipboard: ClipboardFeature
     let editor: CaptureEditorController
     let capture: CaptureSession
@@ -58,6 +59,13 @@ import TrayletCore
         ])
         let translation = TranslationController(configuration: configuration)
         self.translation = translation
+        let ocrConfiguration = OCRConfiguration(
+            storageURL: directory.appendingPathComponent("ocr.json"),
+            credentialStore: KeychainOCRCredentialStore(),
+            translationConfiguration: configuration
+        )
+        let ocr = OCRController(configuration: ocrConfiguration)
+        self.ocr = ocr
         let editor = CaptureEditorController(), capture = CaptureSession()
         self.editor = editor; self.capture = capture
         clipboardEditing = ClipboardEditorBridge(clipboard: clipboard, editor: editor, canPresent: {
@@ -72,6 +80,7 @@ import TrayletCore
         settings = SettingsController(
             preferences: preferences,
             shortcuts: shortcuts,
+            ocr: ocrConfiguration,
             translation: configuration,
             clipboard: clipboard,
             actions: settingsActions,
@@ -94,6 +103,32 @@ import TrayletCore
         editor.onTranslate = { [weak self] image in
             self?.clipboardEditing.abandon()
             self?.previousApp = nil; self?.previousWindow = nil; self?.translation.present(image: image)
+        }
+        editor.onOCR = { [weak self] image, keepEditorOpen in
+            if !keepEditorOpen {
+                self?.clipboardEditing.abandon()
+                self?.previousApp = nil; self?.previousWindow = nil
+            }
+            self?.ocr.present(image: image, autoRecognize: true, elevatedAboveEditor: keepEditorOpen)
+        }
+        ocr.onTranslate = { [weak self] text, image in
+            self?.translation.present(text: text, sourceImage: image, autoSubmit: true)
+        }
+        ocr.onRecapture = { [weak self] in
+            self?.invoke(.ocr)
+        }
+        ocr.onOpenSettings = { [weak self] in
+            self?.settings.present(section: .ocr)
+        }
+        translation.onOpenOCR = { [weak self] image in
+            self?.ocr.present(image: image, autoRecognize: image != nil)
+        }
+        translation.onCaptureOCR = { [weak self] in
+            self?.invoke(.ocr)
+        }
+        translation.onOpenImageDataInOCR = { [weak self] data in
+            self?.ocr.present(autoRecognize: false)
+            self?.ocr.importImageData(data)
         }
         preferences.$value.sink { [weak self] value in
             AppearanceState.shared.glassEnabled = value.glassEnabled
@@ -176,7 +211,7 @@ import TrayletCore
                 isTerminated: { [weak self] in self?.terminating ?? true }
             )
         case .clipboard: clipboard.present()
-        case .regionCapture, .screenCapture, .captureTranslation: startCapture(action)
+        case .regionCapture, .screenCapture, .captureTranslation, .ocr: startCapture(action)
         }
     }
     private func startCapture(_ action: Action) {
@@ -199,10 +234,10 @@ import TrayletCore
                 }
                 if let image = capture.image {
                     self.editor.present(image: image, decoded: capture.pixels, screen: screen, initiallyFullScreen: action == .screenCapture,
-                        selectingForTranslation: action == .captureTranslation)
+                        selectingForTranslation: action == .captureTranslation, selectingForOCR: action == .ocr)
                 } else if let pixels = capture.pixels {
                     self.editor.present(pixels: pixels, screen: screen, initiallyFullScreen: action == .screenCapture,
-                        selectingForTranslation: action == .captureTranslation)
+                        selectingForTranslation: action == .captureTranslation, selectingForOCR: action == .ocr)
                 } else {
                     self.showProblem("无法截图，请检查屏幕录制权限并重试。")
                 }
@@ -343,7 +378,7 @@ import TrayletCore
         clipboardEditing.abandon(); capture.cancel()
         editor.cancel(restoreFocus: false); editor.closeFloatingPanels()
         updater.stopAutomaticChecks()
-        shortcuts.stop(); translation.close(); settings.close()
+        shortcuts.stop(); ocr.close(); translation.close(); settings.close()
         startTerminationShutdown()
         return .terminateLater
     }
