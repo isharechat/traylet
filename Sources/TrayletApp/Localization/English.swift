@@ -497,5 +497,6 @@ enum English {
         "新版本 OCR 设置无法读取；当前使用默认值，原文件保留。": "This version's OCR settings could not be read. Using defaults while preserving the original file.",
         "OCR 设置保存失败；当前更改仅保留在内存。": "OCR settings could not be saved. Changes are kept in memory only.",
         "留空使用默认提示词；支持 {source} 与 {target} 占位符": "Leave blank for default prompt; supports {source} and {target} placeholders",
+        "OCR 引擎": "OCR Engines",
     ]
 }
