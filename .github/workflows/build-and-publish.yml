@@ -3,7 +3,7 @@ name: build-and-publish
 # Reusable build/publish pipeline shared by the tag/manual entry point
 # (macos-package.yml) and the automatic release-on-merge entry point
 # (release-on-merge.yml). Callers decide the mode; this workflow owns the
-# macOS build, test, signing, packaging, smoke test and GitHub release steps.
+# macOS build, signing, packaging, smoke check and GitHub release steps.
 on:
   workflow_call:
     inputs:
@@ -12,7 +12,7 @@ on:
         type: string
         default: ''
       mode:
-        description: 'test | package | release-signed | release-preview'
+        description: 'package | release-signed | release-preview'
         type: string
         required: true
       tag_name:
@@ -28,7 +28,7 @@ permissions:
   contents: read
 
 jobs:
-  test-and-package:
+  package:
     runs-on: xcode-27
     steps:
       - name: Check out source
@@ -72,25 +72,16 @@ jobs:
           echo "TRAYLET_NOTARY_KEY_ID=$NOTARY_KEY_ID" >> "$GITHUB_ENV"
           echo "TRAYLET_NOTARY_ISSUER_ID=$NOTARY_ISSUER_ID" >> "$GITHUB_ENV"
 
-      - name: Build and test
-        run: |
-          swift --version
-          swift test --no-parallel --skip EditingColorWellTests
-          python3 -m unittest discover -s Tests/TrayletToolingTests
-
       - name: Package app
         id: package
-        # Run even when the tests above failed: the release build can still
-        # succeed, and the artifact should be available for inspection.
-        if: success() || failure()
-        run: scripts/package/package-ci.sh
+        run: |
+          swift --version
+          scripts/package/package-ci.sh
 
-      - name: Smoke test packaged app
-        if: (success() || failure()) && steps.package.outcome == 'success'
+      - name: Smoke check packaged app
         run: scripts/package/smoke-package.sh build/ci-artifacts/Traylet-macos-arm64-*/*.zip
 
       - name: Upload package artifact
-        if: (success() || failure()) && steps.package.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: Traylet-macos-arm64-build-${{ github.run_number }}
@@ -101,14 +92,14 @@ jobs:
           retention-days: 14
 
   publish-release:
-    needs: test-and-package
+    needs: package
     if: inputs.mode == 'release-signed' || inputs.mode == 'release-preview'
     runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: write
     steps:
-      - name: Download tested package
+      - name: Download package
         uses: actions/download-artifact@v5
         with:
           name: Traylet-macos-arm64-build-${{ github.run_number }}

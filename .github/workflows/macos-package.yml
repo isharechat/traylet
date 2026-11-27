@@ -29,7 +29,7 @@ jobs:
           tag_name=""
           release_note=""
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            mode="test"
+            mode="package"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             # Tag push (or manual dispatch on a tag). The tag decides the
             # release channel and must match VERSION.

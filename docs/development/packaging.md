@@ -58,9 +58,9 @@ Developer ID 证书和 App Store Connect key 的创建方式见 [Apple Developer
 
 ## GitHub Actions
 
-`.github/workflows/build-and-publish.yml` 是可复用流水线，承载 macOS 构建、测试、签名、打包、冒烟测试与 Release 发布步骤；`.github/workflows/macos-package.yml` 与 `.github/workflows/release-on-merge.yml` 是两个入口，前者覆盖 PR / 手动触发 / tag 推送，后者覆盖「合并到 main 后自动发布」。三者都运行在 GitHub 托管的 Xcode 27 arm64 runner（公开预览）上，以匹配工程使用的 macOS 26 SDK，并避开 Xcode 26.6 / Swift 6.3.3 的已知编译器崩溃。
+`.github/workflows/build-and-publish.yml` 是可复用流水线，承载 macOS 构建、签名、打包、冒烟检查与 Release 发布步骤；`.github/workflows/macos-package.yml` 与 `.github/workflows/release-on-merge.yml` 是两个入口，前者覆盖 PR / 手动触发 / tag 推送，后者覆盖「合并到 main 后自动发布」。三者都运行在 GitHub 托管的 Xcode 27 arm64 runner（公开预览）上，以匹配工程使用的 macOS 26 SDK，并避开 Xcode 26.6 / Swift 6.3.3 的已知编译器崩溃。
 
-- **PR / 手动触发**：跑 Swift 与 Python 测试，打包并上传保留 14 天的 ad-hoc 签名检查包（仅供开发检查），不发布。
+- **PR / 手动触发**：直接构建并打包，上传保留 14 天的 ad-hoc 签名检查包（仅供开发检查），不发布。
 - **tag 推送**：推送与 `VERSION` 完全匹配的 `v0.1.0-beta.1` tag 时走正式通道，要求完整 Developer ID 与公证 secrets，通过签名、公证、票据固定、严格验签和 Gatekeeper 评估后才创建 GitHub prerelease；凭据缺失时工作流失败关闭。推送 `v0.1.0-beta.1-preview` tag 则走预览通道，跳过签名与公证。
 - **合并到 main**：`release-on-merge.yml` 使用 `pull_request_target` 在 PR 合并后递增 `VERSION` 的 beta 序号与 `BUILD_NUMBER`，将递增提交回 `main` 并推送对应版本 tag，再调用可复用流水线构建与发布。该工作流只检出一致的 `refs/heads/main`、只读取合并状态，从不运行 PR 内的未审代码。配置了完整 Developer ID 凭据时发布正式签名版；未配置时自动回退为预览版（ad-hoc 签名、未公证）。
 
