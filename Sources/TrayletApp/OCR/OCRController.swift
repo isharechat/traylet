@@ -36,6 +36,7 @@ import TrayletCore
     private var dismissal: NSObjectProtocol?
     private var recognitionTask: Task<Void, Never>?
     private var operationID: UUID?
+    private var decodedImage: CGImage?
     private var observers: Set<AnyCancellable> = []
 
     init(
@@ -101,8 +102,10 @@ import TrayletCore
     func setImage(_ image: RasterImage, decoded: CGImage? = nil) {
         self.image = image
         if let decoded, decoded.width == image.width, decoded.height == image.height {
+            self.decodedImage = decoded
             self.previewImage = NSImage(cgImage: decoded, size: NSSize(width: image.width, height: image.height))
         } else {
+            self.decodedImage = nil
             self.previewImage = NSImage(data: image.pngData)
         }
         self.zoomScale = 1.0
@@ -127,6 +130,7 @@ import TrayletCore
         let prompt = configuration.effectivePrompt(for: usedPreset)
         let shouldMerge = configuration.mergeLineBreaks
         let shouldAutoCopy = configuration.autoCopy
+        let decoded = decodedImage
 
         let task = Task { [weak self, visionRecognizer, aiRecognizer] in
             guard !Task.isCancelled else { return }
@@ -134,7 +138,11 @@ import TrayletCore
                 let result: String
                 switch usedEngine {
                 case .vision:
-                    result = try await visionRecognizer.recognize(image)
+                    if let decoded {
+                        result = try await visionRecognizer.recognize(image, decoded: decoded)
+                    } else {
+                        result = try await visionRecognizer.recognize(image)
+                    }
                 case .ai:
                     let request = OCRAIRequest(settings: aiSettings, imageData: image.pngData, prompt: prompt)
                     result = try await aiRecognizer.recognize(request)
@@ -248,8 +256,21 @@ import TrayletCore
         onOpenSettings?()
     }
 
+    static func readBoundedImageFile(from url: URL, maxBytes: Int = 128 * 1_024 * 1_024) -> Data? {
+        guard url.isFileURL else { return nil }
+        let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values?.isRegularFile != false else { return nil }
+        if let fileSize = values?.fileSize, fileSize > maxBytes { return nil }
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: maxBytes + 1),
+              !data.isEmpty,
+              data.count <= maxBytes else { return nil }
+        return data
+    }
+
     func importImage(from url: URL) {
-        guard let data = try? Data(contentsOf: url) else {
+        guard let data = Self.readBoundedImageFile(from: url) else {
             phase = .failed("无法读取所选图片文件。")
             return
         }
@@ -257,13 +278,28 @@ import TrayletCore
     }
 
     func importImageData(_ data: Data) {
+        guard !data.isEmpty, data.count <= 128 * 1_024 * 1_024 else {
+            phase = .failed("图片尺寸超出安全限制。")
+            return
+        }
         if let direct = try? RasterImage(pngData: data) {
             setImage(direct)
             recognize()
             return
         }
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              CGImageSourceGetCount(source) >= 1 else {
+            phase = .failed("不支持的图片格式或文件已损坏。")
+            return
+        }
+        guard let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = props[kCGImagePropertyPixelWidth] as? Int,
+              let height = props[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0, width <= 64_000_000 / height else {
+            phase = .failed("图片尺寸超出安全限制。")
+            return
+        }
+        guard let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             phase = .failed("不支持的图片格式或文件已损坏。")
             return
         }

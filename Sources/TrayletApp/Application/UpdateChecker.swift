@@ -114,11 +114,21 @@ struct UpdateRelease: Equatable, Sendable {
         }
     }
 
+    static func isAllowedURL(_ url: URL) -> Bool {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
+              components.scheme?.lowercased() == "https",
+              let host = components.host, !host.isEmpty,
+              components.user == nil, components.password == nil else {
+            return false
+        }
+        return true
+    }
+
     static func parseReleases(from data: Data, includePreview: Bool) throws -> [UpdateRelease] {
         let decoded = try JSONDecoder().decode([GitHubReleaseDTO].self, from: data)
         var results: [UpdateRelease] = []
         for dto in decoded where !dto.draft {
-            guard var version = AppVersion(string: dto.tagName) else { continue }
+            guard isAllowedURL(dto.htmlURL), var version = AppVersion(string: dto.tagName) else { continue }
             let prerelease = dto.prerelease || version.beta != nil || version.isPreview
             if !includePreview && prerelease { continue }
 
@@ -136,14 +146,16 @@ struct UpdateRelease: Equatable, Sendable {
                 shaAsset = nil
             }
 
+            let safeDownloadURL = zipAsset.flatMap { isAllowedURL($0.browserDownloadURL) ? $0.browserDownloadURL : nil }
+            let safeSHAURL = shaAsset.flatMap { isAllowedURL($0.browserDownloadURL) ? $0.browserDownloadURL : nil }
             let display = dto.tagName.hasPrefix("v") ? String(dto.tagName.dropFirst()) : dto.tagName
             results.append(UpdateRelease(
                 tagName: dto.tagName,
                 version: version,
                 displayVersion: display,
                 htmlURL: dto.htmlURL,
-                downloadURL: zipAsset?.browserDownloadURL,
-                sha256URL: shaAsset?.browserDownloadURL,
+                downloadURL: safeDownloadURL,
+                sha256URL: safeSHAURL,
                 releaseNotes: dto.body ?? "",
                 isPrerelease: prerelease,
                 publishedAt: dto.publishedAt
@@ -165,7 +177,7 @@ struct UpdateRelease: Equatable, Sendable {
         let entries = try AtomReleaseParser().parse(data: data)
         var results: [UpdateRelease] = []
         for entry in entries {
-            guard let htmlURL = entry.htmlURL else { continue }
+            guard let htmlURL = entry.htmlURL, isAllowedURL(htmlURL) else { continue }
             let tagName = htmlURL.lastPathComponent
             guard !tagName.isEmpty, let version = AppVersion(string: tagName) else { continue }
             let prerelease = version.beta != nil || version.isPreview
@@ -195,7 +207,7 @@ struct UpdateRelease: Equatable, Sendable {
         for match in regex.matches(in: html, range: range) {
             guard let hrefRange = Range(match.range(at: 1), in: html) else { continue }
             let href = String(html[hrefRange])
-            if let url = URL(string: href, relativeTo: baseURL)?.absoluteURL {
+            if let url = URL(string: href, relativeTo: baseURL)?.absoluteURL, isAllowedURL(url) {
                 urls.append(url)
             }
         }
@@ -310,9 +322,16 @@ protocol UpdateTransport: Sendable {
 
 struct URLSessionUpdateTransport: UpdateTransport {
     private let userAgent: String
+    private let session: URLSession
 
     init(userAgent: String = URLSessionUpdateTransport.defaultUserAgent()) {
         self.userAgent = userAgent
+        let config = URLSessionConfiguration.ephemeral
+        config.urlCache = nil
+        config.httpCookieStorage = nil
+        config.urlCredentialStorage = nil
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        self.session = URLSession(configuration: config)
     }
 
     private static func defaultUserAgent() -> String {
@@ -323,25 +342,34 @@ struct URLSessionUpdateTransport: UpdateTransport {
     }
 
     func fetchData(from url: URL) async throws -> Data {
+        guard UpdateRelease.isAllowedURL(url) else {
+            throw FeatureIssue.unavailable("更新地址无效。")
+        }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
         if url.host == "api.github.com" {
             request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         }
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             if http.statusCode == 429 || (http.statusCode == 403 && http.value(forHTTPHeaderField: "X-RateLimit-Remaining") == "0") {
                 throw UpdateHTTPError.rateLimited(statusCode: http.statusCode)
             }
             throw UpdateHTTPError.httpStatus(http.statusCode)
         }
+        guard data.count <= 4 * 1024 * 1024 else {
+            throw FeatureIssue.unavailable("更新元数据过大。")
+        }
         return data
     }
 
     func downloadFile(from url: URL, to destination: URL) async throws {
+        guard UpdateRelease.isAllowedURL(url) else {
+            throw FeatureIssue.unavailable("更新地址无效。")
+        }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 120)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-        let (tempURL, response) = try await URLSession.shared.download(for: request)
+        let (tempURL, response) = try await session.download(for: request)
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             throw FeatureIssue.unavailable("下载更新包失败（状态码 \(http.statusCode)）。")
         }
@@ -389,6 +417,13 @@ struct SystemUpdateInstaller: UpdateInstalling {
             appURL = found
         }
 
+        let isSymlink = (try? appURL.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
+        let resolvedStaging = stagingDirectory.resolvingSymlinksInPath().path
+        let resolvedApp = appURL.resolvingSymlinksInPath().path
+        guard !isSymlink, resolvedApp.hasPrefix(resolvedStaging + "/") else {
+            throw FeatureIssue.unavailable("更新包包含无效路径。")
+        }
+
         let infoURL = appURL.appendingPathComponent("Contents/Info.plist")
         guard let infoData = try? Data(contentsOf: infoURL),
               let plist = try? PropertyListSerialization.propertyList(from: infoData, format: nil) as? [String: Any],
@@ -416,7 +451,10 @@ struct SystemUpdateInstaller: UpdateInstalling {
         staged="$2"
         target="$3"
         backup="$4"
+        i=0
         while /bin/kill -0 "$pid" 2>/dev/null; do
+          i=$((i + 1))
+          [ "$i" -ge 300 ] && exit 1
           /bin/sleep 0.2
         done
         if [ -d "$target" ]; then
@@ -466,12 +504,13 @@ struct SystemUpdateInstaller: UpdateInstalling {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
         let stderr = Pipe()
         process.standardError = stderr
         try process.run()
+        let errData = stderr.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
-            let errData = stderr.fileHandleForReading.readDataToEndOfFile()
             let errText = String(data: errData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             throw FeatureIssue.unavailable(errText.isEmpty ? "校验或解包失败。" : errText)
         }
@@ -673,7 +712,10 @@ struct SystemUpdateInstaller: UpdateInstalling {
             try await transport.downloadFile(from: downloadURL, to: zipURL)
 
             let unpackDir = workDir.appendingPathComponent("unpacked", isDirectory: true)
-            let stagedApp = try installer.verifyAndUnpack(zipURL: zipURL, expectedSHA256: expectedSHA, into: unpackDir)
+            let installer = self.installer
+            let stagedApp = try await Task.detached(priority: .userInitiated) {
+                try installer.verifyAndUnpack(zipURL: zipURL, expectedSHA256: expectedSHA, into: unpackDir)
+            }.value
             let canReplace = installer.canReplaceRunningApp(currentAppURL: currentBundleURL())
             state = .readyToInstall(release, stagedAppURL: stagedApp, canReplaceInPlace: canReplace)
         } catch {
@@ -702,6 +744,7 @@ struct SystemUpdateInstaller: UpdateInstalling {
     }
 
     func openReleasePage(_ release: UpdateRelease) {
+        guard UpdateRelease.isAllowedURL(release.htmlURL) else { return }
         installer.openURL(release.htmlURL)
     }
 

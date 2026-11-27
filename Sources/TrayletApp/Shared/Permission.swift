@@ -180,7 +180,7 @@ struct LoginItemRow: View {
                 }
             }
             Spacer(minLength: Design.Space.s)
-            Toggle(title, isOn: Binding(get: { enabled }, set: setEnabled))
+            Toggle(title, isOn: Binding(get: { enabled }, set: { setEnabled($0) }))
                 .labelsHidden()
                 .toggleStyle(.switch)
         }

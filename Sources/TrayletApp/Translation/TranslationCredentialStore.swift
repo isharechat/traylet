@@ -14,16 +14,11 @@ enum TranslationCredential: String, Sendable {
     func remove(_ account: TranslationCredential)
 }
 
-/// macOS Keychain backing. Generic-password items are readable by the user's login keychain only.
-final class KeychainTranslationCredentialStore: TranslationCredentialStoring {
-    private let service: String
+struct KeychainGenericPassword: Sendable {
+    let service: String
 
-    init(service: String = "local.traylet.app.translation") {
-        self.service = service
-    }
-
-    func read(_ account: TranslationCredential) -> String? {
-        var query = baseQuery(account)
+    func read(account: String) -> String? {
+        var query = baseQuery(account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
@@ -34,29 +29,50 @@ final class KeychainTranslationCredentialStore: TranslationCredentialStoring {
         return value
     }
 
-    func write(_ value: String, for account: TranslationCredential) {
-        guard !value.isEmpty else { remove(account); return }
+    func write(_ value: String, account: String) {
+        guard !value.isEmpty else { remove(account: account); return }
         guard let data = value.data(using: .utf8) else { return }
         let attributes: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
-        let status = SecItemUpdate(baseQuery(account) as CFDictionary, attributes as CFDictionary)
+        let status = SecItemUpdate(baseQuery(account: account) as CFDictionary, attributes as CFDictionary)
         guard status == errSecItemNotFound else { return }
-        var item = baseQuery(account)
+        var item = baseQuery(account: account)
         item.merge(attributes) { _, new in new }
         SecItemAdd(item as CFDictionary, nil)
     }
 
-    func remove(_ account: TranslationCredential) {
-        SecItemDelete(baseQuery(account) as CFDictionary)
+    func remove(account: String) {
+        SecItemDelete(baseQuery(account: account) as CFDictionary)
     }
 
-    private func baseQuery(_ account: TranslationCredential) -> [String: Any] {
+    private func baseQuery(account: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account.rawValue
+            kSecAttrAccount as String: account
         ]
+    }
+}
+
+/// macOS Keychain backing. Generic-password items are readable by the user's login keychain only.
+final class KeychainTranslationCredentialStore: TranslationCredentialStoring {
+    private let storage: KeychainGenericPassword
+
+    init(service: String = "local.traylet.app.translation") {
+        self.storage = KeychainGenericPassword(service: service)
+    }
+
+    func read(_ account: TranslationCredential) -> String? {
+        storage.read(account: account.rawValue)
+    }
+
+    func write(_ value: String, for account: TranslationCredential) {
+        storage.write(value, account: account.rawValue)
+    }
+
+    func remove(_ account: TranslationCredential) {
+        storage.remove(account: account.rawValue)
     }
 }

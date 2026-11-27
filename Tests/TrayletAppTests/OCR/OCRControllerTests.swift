@@ -117,6 +117,30 @@ import TrayletCore
         #expect(openedImage == image)
     }
 
+    @Test func importImageRejectsEmptyAndMissingFilesCleanly() {
+        let controller = OCRController(
+            configuration: OCRConfiguration(),
+            visionRecognizer: FakeVisionRecognizer(result: "ok"),
+            aiRecognizer: FakeAIRecognizer(result: "ok"),
+            writer: FakeOCRWriter(),
+            speech: FakeOCRSpeech(),
+            presentWindow: { _ in }
+        )
+
+        controller.importImageData(Data())
+        if case .failed = controller.phase {
+        } else {
+            Issue.record("Expected .failed for empty image data")
+        }
+
+        let missingURL = FileManager.default.temporaryDirectory.appendingPathComponent("missing-\(UUID()).png")
+        controller.importImage(from: missingURL)
+        if case .failed = controller.phase {
+        } else {
+            Issue.record("Expected .failed for missing image file")
+        }
+    }
+
     private func makeSampleRasterImage() throws -> RasterImage {
         let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil,

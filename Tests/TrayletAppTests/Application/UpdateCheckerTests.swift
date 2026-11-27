@@ -293,6 +293,60 @@ struct UpdateCheckerTests {
         #expect(release.sha256URL?.absoluteString == "https://github.com/isharechat/traylet/releases/download/v0.1.0-beta.4-preview/Traylet-macos-arm64-v0.1.0-beta.4-build4.zip.sha256")
         #expect(release.releaseNotes == "Shamrock logo")
     }
+
+    @Test func rejectsNonHTTPSReleaseAndAssetURLs() throws {
+        let json = """
+        [
+          {
+            "tag_name": "v0.2.0",
+            "draft": false,
+            "prerelease": false,
+            "html_url": "http://github.com/isharechat/traylet/releases/tag/v0.2.0",
+            "assets": []
+          },
+          {
+            "tag_name": "v0.1.5",
+            "draft": false,
+            "prerelease": false,
+            "html_url": "https://github.com/isharechat/traylet/releases/tag/v0.1.5",
+            "assets": [
+              {
+                "name": "Traylet-macos-arm64-v0.1.5-build15.zip",
+                "browser_download_url": "file:///tmp/evil.zip"
+              },
+              {
+                "name": "Traylet-macos-arm64-v0.1.5-build15.zip.sha256",
+                "browser_download_url": "http://example.com/evil.sha256"
+              }
+            ]
+          }
+        ]
+        """
+        let releases = try UpdateRelease.parseReleases(from: Data(json.utf8), includePreview: true)
+        #expect(releases.count == 1)
+        #expect(releases.first?.tagName == "v0.1.5")
+        #expect(releases.first?.downloadURL == nil)
+        #expect(releases.first?.sha256URL == nil)
+
+        let atomXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <entry>
+            <updated>2026-11-27T12:00:00Z</updated>
+            <link rel="alternate" type="text/html" href="javascript:alert(1)"/>
+          </entry>
+        </feed>
+        """
+        let atomReleases = try UpdateRelease.parseAtomReleases(from: Data(atomXML.utf8), includePreview: true)
+        #expect(atomReleases.isEmpty)
+
+        let html = """
+        <a href="http://github.com/isharechat/traylet/releases/download/v0.1.5/Traylet-macos-arm64-v0.1.5-build15.zip">zip</a>
+        """
+        let expanded = UpdateRelease.parseExpandedAssets(from: html)
+        #expect(expanded.downloadURL == nil)
+        #expect(expanded.sha256URL == nil)
+    }
 }
 
 private final class MockUpdateTransport: UpdateTransport, @unchecked Sendable {

@@ -4,6 +4,7 @@ import Darwin
 /// Non-secret v2 preferences, accessed relative to a directory descriptor. Never follows links.
 struct TranslationConfigurationStore {
     let url: URL
+    var maxBytes: Int = 64 * 1024
     private enum StorageFailure: Error { case unsafePath, io }
 
     func read() throws -> Data? {
@@ -15,13 +16,13 @@ struct TranslationConfigurationStore {
         let handle = FileHandle(fileDescriptor: file, closeOnDealloc: true)
         defer { try? handle.close() }
         var info = stat()
-        guard fstat(file, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_uid == getuid(), info.st_nlink == 1, info.st_size <= 64 * 1024 else { throw StorageFailure.io }
-        let data = try handle.read(upToCount: 64 * 1024 + 1) ?? Data()
-        guard data.count <= 64 * 1024 else { throw StorageFailure.io }
+        guard fstat(file, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_uid == getuid(), info.st_nlink == 1, info.st_size <= maxBytes else { throw StorageFailure.io }
+        let data = try handle.read(upToCount: maxBytes + 1) ?? Data()
+        guard data.count <= maxBytes else { throw StorageFailure.io }
         return data
     }
 
-    @discardableResult func write(_ data: Data, preservingOriginal: Bool = false) throws -> URL? {
+    @discardableResult func write(_ data: Data, preservingOriginal: Bool = false, backupName: String? = nil) throws -> URL? {
         guard let directory = try directory(create: true) else { throw StorageFailure.io }
         defer { Darwin.close(directory) }
         _ = try hasRegularFile(directory, name: url.lastPathComponent)
@@ -42,7 +43,7 @@ struct TranslationConfigurationStore {
         let exists = try hasRegularFile(directory, name: url.lastPathComponent)
         var backup: String?
         if preservingOriginal && exists {
-            let name = "translation-\(UUID().uuidString).backup"
+            let name = backupName ?? "translation-\(UUID().uuidString).backup"
             let original = openat(directory, url.lastPathComponent, O_RDONLY | O_NOFOLLOW)
             guard original >= 0 else { throw StorageFailure.io }
             let restricted = fchmod(original, 0o600) == 0

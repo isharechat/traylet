@@ -73,14 +73,10 @@ struct UserPreferences: Codable, Equatable, Sendable {
 
     init(file: URL? = nil) {
         self.file = file
-        guard let file, FileManager.default.fileExists(atPath: file.path) else { return }
+        guard let file else { return }
         do {
-            try rejectSymbolicLink(file)
-            let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
-            guard let bytes = attributes[.size] as? NSNumber, bytes.intValue <= 65_536 else {
-                throw FeatureIssue.storage("偏好文件过大。")
-            }
-            let decoded = try JSONDecoder().decode(UserPreferences.self, from: Data(contentsOf: file))
+            guard let data = try TranslationConfigurationStore(url: file, maxBytes: 65_536).read() else { return }
+            let decoded = try JSONDecoder().decode(UserPreferences.self, from: data)
             guard decoded.schemaVersion == 2, ShortcutAssignment.valid(decoded.shortcuts) else { throw FeatureIssue.storage("偏好版本或快捷键无效。") }
             value = decoded
         } catch { failure = "新版本偏好无法读取；原文件已保留。" }
@@ -96,30 +92,19 @@ struct UserPreferences: Codable, Equatable, Sendable {
 
     /// Called only after a user confirms recovery; preserve the damaged new file as a backup.
     func resetPreservingDamagedFile() throws {
-        if let file, FileManager.default.fileExists(atPath: file.path) {
-            try rejectSymbolicLink(file)
-            let backup = file.appendingPathExtension("recovery-\(UUID().uuidString)")
-            try FileManager.default.copyItem(at: file, to: backup)
-        }
         let defaults = UserPreferences()
-        try persist(defaults)
+        if let file {
+            let data = try JSONEncoder().encode(defaults)
+            let backup = "\(file.lastPathComponent).recovery-\(UUID().uuidString)"
+            try TranslationConfigurationStore(url: file, maxBytes: 65_536).write(data, preservingOriginal: true, backupName: backup)
+        }
         value = defaults
         failure = nil
     }
 
     private func persist(_ proposed: UserPreferences) throws {
         guard let file else { return }
-        try rejectSymbolicLink(file)
-        try rejectSymbolicLink(file.deletingLastPathComponent())
         let data = try JSONEncoder().encode(proposed)
-        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700])
-        try data.write(to: file, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
-    }
-
-    private func rejectSymbolicLink(_ url: URL) throws {
-        let values = try? url.resourceValues(forKeys: [.isSymbolicLinkKey])
-        guard values?.isSymbolicLink != true else { throw FeatureIssue.storage("偏好路径不能是符号链接。") }
+        try TranslationConfigurationStore(url: file, maxBytes: 65_536).write(data)
     }
 }

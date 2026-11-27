@@ -27,7 +27,7 @@ struct TranslationAISettings: Equatable, Sendable {
     func url(for action: TranslationAIAction) throws -> URL {
         guard var parts = URLComponents(string: endpoint), let host = parts.host, !host.isEmpty,
               parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil,
-              parts.scheme == "https" || (parts.scheme == "http" && ["localhost", "127.0.0.1", "[::1]", "::1"].contains(host.lowercased())) else {
+              parts.scheme?.lowercased() == "https" || (parts.scheme?.lowercased() == "http" && ["localhost", "127.0.0.1", "[::1]", "::1"].contains(host.lowercased())) else {
             throw TranslationAIFailure.invalidEndpoint
         }
         guard !credential.contains("\r"), !credential.contains("\n"), credential.utf8.count <= 8192 else { throw TranslationAIFailure.invalidCredential }
@@ -467,9 +467,16 @@ enum TranslationFreeLanguages {
             if line.utf8.count > maxBytes {
                 flush()
                 var piece = ""
+                var pieceBytes = 0
                 for character in line {
-                    if piece.utf8.count + String(character).utf8.count > maxBytes { result.append(piece); piece = "" }
+                    let charBytes = character.utf8.count
+                    if pieceBytes > 0 && pieceBytes + charBytes > maxBytes {
+                        result.append(piece)
+                        piece = ""
+                        pieceBytes = 0
+                    }
                     piece.append(character)
+                    pieceBytes += charBytes
                 }
                 current = piece
                 continue

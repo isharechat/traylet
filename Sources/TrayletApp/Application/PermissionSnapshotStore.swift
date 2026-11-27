@@ -21,12 +21,10 @@ struct PermissionSnapshot: Codable, Equatable, Sendable {
     }
 
     func load() -> PermissionSnapshot? {
-        guard let file, FileManager.default.fileExists(atPath: file.path) else { return nil }
+        guard let file else { return nil }
         do {
-            try Self.rejectSymbolicLink(file)
-            let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
-            guard let bytes = attributes[.size] as? NSNumber, bytes.intValue <= Self.maximumBytes else { return nil }
-            let decoded = try JSONDecoder().decode(PermissionSnapshot.self, from: Data(contentsOf: file))
+            guard let data = try TranslationConfigurationStore(url: file, maxBytes: Self.maximumBytes).read() else { return nil }
+            let decoded = try JSONDecoder().decode(PermissionSnapshot.self, from: data)
             guard decoded.schemaVersion == 1 else { return nil }
             return decoded
         } catch { return nil }
@@ -34,17 +32,7 @@ struct PermissionSnapshot: Codable, Equatable, Sendable {
 
     func save(_ snapshot: PermissionSnapshot) throws {
         guard let file else { return }
-        try Self.rejectSymbolicLink(file)
-        try Self.rejectSymbolicLink(file.deletingLastPathComponent())
         let data = try JSONEncoder().encode(snapshot)
-        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700])
-        try data.write(to: file, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
-    }
-
-    private static func rejectSymbolicLink(_ url: URL) throws {
-        let values = try? url.resourceValues(forKeys: [.isSymbolicLinkKey])
-        guard values?.isSymbolicLink != true else { throw FeatureIssue.storage("权限快照路径不能是符号链接。") }
+        try TranslationConfigurationStore(url: file, maxBytes: Self.maximumBytes).write(data)
     }
 }

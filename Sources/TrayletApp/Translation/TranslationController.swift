@@ -129,7 +129,7 @@ import TrayletCore
         }
     }
     func handleDroppedImage(from url: URL) {
-        guard let data = try? Data(contentsOf: url) else { return }
+        guard let data = OCRController.readBoundedImageFile(from: url) else { return }
         onOpenImageDataInOCR?(data)
     }
     func handleDroppedImageData(_ data: Data) {
