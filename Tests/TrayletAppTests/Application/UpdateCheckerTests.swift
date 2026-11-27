@@ -246,6 +246,53 @@ struct UpdateCheckerTests {
         #expect(decoded.includePreviewUpdates == true)
         #expect(decoded.skippedUpdateTag == nil)
     }
+
+    @Test func fallsBackToAtomFeedWhenGitHubAPIReturns403() async {
+        let atomXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <entry>
+            <id>tag:github.com,2008:Repository/1/v0.1.0-beta.4-preview</id>
+            <updated>2026-11-27T12:00:00Z</updated>
+            <link rel="alternate" type="text/html" href="https://github.com/isharechat/traylet/releases/tag/v0.1.0-beta.4-preview"/>
+            <title>Traylet v0.1.0-beta.4-preview</title>
+            <content type="html">&lt;p&gt;Shamrock logo&lt;/p&gt;</content>
+          </entry>
+        </feed>
+        """
+        let assetsHTML = """
+        <a href="/isharechat/traylet/releases/download/v0.1.0-beta.4-preview/Traylet-macos-arm64-v0.1.0-beta.4-build4.zip">zip</a>
+        <a href="/isharechat/traylet/releases/download/v0.1.0-beta.4-preview/Traylet-macos-arm64-v0.1.0-beta.4-build4.zip.sha256">sha</a>
+        """
+        let transport = MockUpdateTransport(
+            feedError: UpdateHTTPError.rateLimited(statusCode: 403),
+            responsesByHostOrPath: [
+                "releases.atom": Data(atomXML.utf8),
+                "expanded_assets/v0.1.0-beta.4-preview": Data(assetsHTML.utf8),
+            ]
+        )
+        let store = PreferencesStore()
+        let actions = SettingsActions(preferences: store, login: StubLogin())
+        let controller = UpdateController(
+            preferences: store,
+            actions: actions,
+            transport: transport,
+            installer: MockUpdateInstaller(),
+            feedURL: UpdateController.defaultFeedURL,
+            currentVersion: AppVersion(string: "0.1.0-beta.3", build: 3)!
+        )
+
+        await controller.checkForUpdates(manual: true)
+        guard case .available(let release) = controller.state else {
+            Issue.record("Expected .available state via Atom fallback, got \(controller.state)")
+            return
+        }
+        #expect(release.tagName == "v0.1.0-beta.4-preview")
+        #expect(release.version.build == 4)
+        #expect(release.downloadURL?.absoluteString == "https://github.com/isharechat/traylet/releases/download/v0.1.0-beta.4-preview/Traylet-macos-arm64-v0.1.0-beta.4-build4.zip")
+        #expect(release.sha256URL?.absoluteString == "https://github.com/isharechat/traylet/releases/download/v0.1.0-beta.4-preview/Traylet-macos-arm64-v0.1.0-beta.4-build4.zip.sha256")
+        #expect(release.releaseNotes == "Shamrock logo")
+    }
 }
 
 private final class MockUpdateTransport: UpdateTransport, @unchecked Sendable {
@@ -253,15 +300,26 @@ private final class MockUpdateTransport: UpdateTransport, @unchecked Sendable {
     let feedError: Error?
     let sha256Text: String
     let zipData: Data
+    let responsesByHostOrPath: [String: Data]
 
-    init(feedData: Data = Data(), feedError: Error? = nil, sha256Text: String = "", zipData: Data = Data()) {
+    init(
+        feedData: Data = Data(),
+        feedError: Error? = nil,
+        sha256Text: String = "",
+        zipData: Data = Data(),
+        responsesByHostOrPath: [String: Data] = [:]
+    ) {
         self.feedData = feedData
         self.feedError = feedError
         self.sha256Text = sha256Text
         self.zipData = zipData
+        self.responsesByHostOrPath = responsesByHostOrPath
     }
 
     func fetchData(from url: URL) async throws -> Data {
+        for (key, value) in responsesByHostOrPath where url.absoluteString.contains(key) {
+            return value
+        }
         if url.absoluteString.hasSuffix(".sha256") {
             return Data(sha256Text.utf8)
         }

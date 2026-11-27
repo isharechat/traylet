@@ -160,6 +160,114 @@ struct UpdateRelease: Equatable, Sendable {
         let digits = matched.dropFirst("-build".count).dropLast(".zip".count)
         return Int(digits)
     }
+
+    static func parseAtomReleases(from data: Data, includePreview: Bool) throws -> [UpdateRelease] {
+        let entries = try AtomReleaseParser().parse(data: data)
+        var results: [UpdateRelease] = []
+        for entry in entries {
+            guard let htmlURL = entry.htmlURL else { continue }
+            let tagName = htmlURL.lastPathComponent
+            guard !tagName.isEmpty, let version = AppVersion(string: tagName) else { continue }
+            let prerelease = version.beta != nil || version.isPreview
+            if !includePreview && prerelease { continue }
+            let display = tagName.hasPrefix("v") ? String(tagName.dropFirst()) : tagName
+            results.append(UpdateRelease(
+                tagName: tagName,
+                version: version,
+                displayVersion: display,
+                htmlURL: htmlURL,
+                downloadURL: nil,
+                sha256URL: nil,
+                releaseNotes: entry.content,
+                isPrerelease: prerelease,
+                publishedAt: entry.updated
+            ))
+        }
+        return results.sorted { $0.version > $1.version }
+    }
+
+    static func parseExpandedAssets(from html: String, baseURL: URL = URL(string: "https://github.com")!) -> (downloadURL: URL?, sha256URL: URL?, buildNumber: Int?) {
+        guard let regex = try? NSRegularExpression(pattern: #"href="([^"]*releases/download/[^"]+)""#) else {
+            return (nil, nil, nil)
+        }
+        let range = NSRange(html.startIndex..<html.endIndex, in: html)
+        var urls: [URL] = []
+        for match in regex.matches(in: html, range: range) {
+            guard let hrefRange = Range(match.range(at: 1), in: html) else { continue }
+            let href = String(html[hrefRange])
+            if let url = URL(string: href, relativeTo: baseURL)?.absoluteURL {
+                urls.append(url)
+            }
+        }
+        let zipURL = urls.first {
+            let name = $0.lastPathComponent
+            return name.hasPrefix("Traylet-macos-arm64-") && name.hasSuffix(".zip")
+        }
+        let shaURL: URL?
+        if let zipURL {
+            let zipName = zipURL.lastPathComponent
+            shaURL = urls.first { $0.lastPathComponent == "\(zipName).sha256" }
+                ?? urls.first {
+                    let name = $0.lastPathComponent
+                    return name.hasPrefix("Traylet-macos-arm64-") && name.hasSuffix(".zip.sha256")
+                }
+            return (zipURL, shaURL, extractBuildNumber(from: zipName))
+        }
+        return (nil, nil, nil)
+    }
+}
+
+private final class AtomReleaseParser: NSObject, XMLParserDelegate {
+    struct Entry {
+        var htmlURL: URL?
+        var updated: String?
+        var content: String = ""
+    }
+
+    private var entries: [Entry] = []
+    private var currentEntry: Entry?
+    private var currentElement = ""
+    private var buffer = ""
+
+    func parse(data: Data) throws -> [Entry] {
+        let parser = XMLParser(data: data)
+        parser.delegate = self
+        guard parser.parse() else {
+            throw parser.parserError ?? FeatureIssue.unavailable("无法解析更新订阅源。")
+        }
+        return entries
+    }
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
+        currentElement = elementName
+        buffer = ""
+        if elementName == "entry" {
+            currentEntry = Entry()
+        } else if elementName == "link", currentEntry != nil,
+                  attributeDict["rel"] == "alternate" || attributeDict["rel"] == nil,
+                  let href = attributeDict["href"], let url = URL(string: href) {
+            currentEntry?.htmlURL = url
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        buffer += string
+    }
+
+    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+        let trimmed = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        if elementName == "updated", currentEntry != nil, !trimmed.isEmpty {
+            currentEntry?.updated = trimmed
+        } else if elementName == "content", currentEntry != nil {
+            currentEntry?.content = trimmed.replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if elementName == "entry", let entry = currentEntry {
+            entries.append(entry)
+            currentEntry = nil
+        }
+        currentElement = ""
+        buffer = ""
+    }
 }
 
 enum UpdateState: Equatable, Sendable {
@@ -170,6 +278,29 @@ enum UpdateState: Equatable, Sendable {
     case downloading(UpdateRelease)
     case readyToInstall(UpdateRelease, stagedAppURL: URL, canReplaceInPlace: Bool)
     case failed(String)
+}
+
+enum UpdateHTTPError: LocalizedError, Equatable {
+    case rateLimited(statusCode: Int)
+    case httpStatus(Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .rateLimited(let code):
+            return "GitHub 更新接口触发速率限制（\(code)），请稍后再试或前往 Releases 页面下载。"
+        case .httpStatus(let code):
+            return "更新服务返回状态码 \(code)。"
+        }
+    }
+
+    var isRateLimitOrForbidden: Bool {
+        switch self {
+        case .rateLimited:
+            return true
+        case .httpStatus(let code):
+            return code == 403 || code == 429
+        }
+    }
 }
 
 protocol UpdateTransport: Sendable {
@@ -193,11 +324,16 @@ struct URLSessionUpdateTransport: UpdateTransport {
 
     func fetchData(from url: URL) async throws -> Data {
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        if url.host == "api.github.com" {
+            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        }
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            throw FeatureIssue.unavailable("更新服务返回状态码 \(http.statusCode)。")
+            if http.statusCode == 429 || (http.statusCode == 403 && http.value(forHTTPHeaderField: "X-RateLimit-Remaining") == "0") {
+                throw UpdateHTTPError.rateLimited(statusCode: http.statusCode)
+            }
+            throw UpdateHTTPError.httpStatus(http.statusCode)
         }
         return data
     }
@@ -436,8 +572,7 @@ struct SystemUpdateInstaller: UpdateInstalling {
         }
         state = .checking
         do {
-            let data = try await transport.fetchData(from: feedURL)
-            let releases = try UpdateRelease.parseReleases(from: data, includePreview: preferences.value.includePreviewUpdates)
+            let releases = try await fetchReleases(includePreview: preferences.value.includePreviewUpdates)
             let now = Date()
             lastCheckedAt = now
             if let newest = releases.first, newest.version > currentVersion {
@@ -457,6 +592,61 @@ struct SystemUpdateInstaller: UpdateInstalling {
                 state = .idle
             }
         }
+    }
+
+    private func fetchReleases(includePreview: Bool) async throws -> [UpdateRelease] {
+        do {
+            let data = try await transport.fetchData(from: feedURL)
+            return try UpdateRelease.parseReleases(from: data, includePreview: includePreview)
+        } catch let httpError as UpdateHTTPError where httpError.isRateLimitOrForbidden {
+            guard let fallback = Self.githubWebFallbackURLs(from: feedURL) else {
+                throw httpError
+            }
+            let atomData = try await transport.fetchData(from: fallback.atomURL)
+            var releases = try UpdateRelease.parseAtomReleases(from: atomData, includePreview: includePreview)
+            if var newest = releases.first, newest.version > currentVersion {
+                let assetsURL = fallback.repoReleasesURL
+                    .appendingPathComponent("expanded_assets")
+                    .appendingPathComponent(newest.tagName)
+                if let htmlData = try? await transport.fetchData(from: assetsURL),
+                   let html = String(data: htmlData, encoding: .utf8) {
+                    let parsed = UpdateRelease.parseExpandedAssets(from: html)
+                    var updatedVersion = newest.version
+                    if let build = parsed.buildNumber {
+                        updatedVersion.build = build
+                    }
+                    newest = UpdateRelease(
+                        tagName: newest.tagName,
+                        version: updatedVersion,
+                        displayVersion: newest.displayVersion,
+                        htmlURL: newest.htmlURL,
+                        downloadURL: parsed.downloadURL,
+                        sha256URL: parsed.sha256URL,
+                        releaseNotes: newest.releaseNotes,
+                        isPrerelease: newest.isPrerelease,
+                        publishedAt: newest.publishedAt
+                    )
+                    releases[0] = newest
+                }
+            }
+            return releases
+        }
+    }
+
+    static func githubWebFallbackURLs(from apiFeedURL: URL) -> (atomURL: URL, repoReleasesURL: URL)? {
+        guard apiFeedURL.host == "api.github.com" else { return nil }
+        let components = apiFeedURL.pathComponents
+        // Expected: ["/", "repos", "<owner>", "<repo>", "releases"]
+        guard components.count >= 5, components[1] == "repos", components[4] == "releases" else {
+            return nil
+        }
+        let owner = components[2]
+        let repo = components[3]
+        guard let repoReleasesURL = URL(string: "https://github.com/\(owner)/\(repo)/releases"),
+              let atomURL = URL(string: "https://github.com/\(owner)/\(repo)/releases.atom") else {
+            return nil
+        }
+        return (atomURL, repoReleasesURL)
     }
 
     func downloadUpdate() async {
