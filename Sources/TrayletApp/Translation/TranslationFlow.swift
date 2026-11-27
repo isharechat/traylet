@@ -18,7 +18,7 @@ struct TranslationWork: Equatable, Sendable, Identifiable {
     }
 }
 
-enum TranslationFlowPhase: Equatable { case idle, recognizing, awaitingConfirmation, translating, resourceRequired, failed(String) }
+enum TranslationFlowPhase: Equatable { case idle, recognizing, translating, resourceRequired, failed(String) }
 
 /// The input revision is the ownership of every asynchronous result, including OCR.
 @MainActor final class TranslationFlow: ObservableObject {
@@ -48,8 +48,7 @@ enum TranslationFlowPhase: Equatable { case idle, recognizing, awaitingConfirmat
         guard source != target else { phase = .failed("请选择不同的源语言和目标语言。"); return nil }
         let work = TranslationWork(id: UUID(), text: input, source: source, target: target, engine: engine)
         active = work
-        // Every engine that sends text off the Mac waits for an explicit send confirmation.
-        phase = engine != .system ? .awaitingConfirmation : .translating
+        phase = .translating
         return work
     }
     /// A newly recognized language that equals the target switches the target: Chinese text goes to English, English to Chinese.

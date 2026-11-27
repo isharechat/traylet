@@ -104,8 +104,6 @@ import TrayletCore
                 records.append(try await render(NSHostingView(rootView: TranslationConfigurationView(configuration: configuration, expanded: [.ai]).padding(24).background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, scheme)), size: CGSize(width: 660, height: 1000), name: "ai-configuration-models-\(label(scheme))", in: directory, scheme: scheme))
                 records.append(try await render(TranslationModelPicker(models: configuration.models, selection: .constant(configuration.model), isPresented: .constant(true)).padding(12).background(Color(nsColor: .windowBackgroundColor)), size: CGSize(width: 384, height: 230), name: "translation-model-picker-\(label(scheme))", in: directory, scheme: scheme))
             }
-            let request = try configuration.makeRequest(.translate, content: "Synthetic text preview. 此正文不会发出。", source: "en", target: "zh-Hans")
-            records.append(try await render(TranslationSendPreview(request: request, cancel: {}, send: {}), size: CGSize(width: 540, height: 420), name: "translation-ai-send-preview", in: directory))
             controller.cancel()
 
             // Recording is on by default; the collector starts (baseline after current content) but has captured nothing yet.

@@ -33,7 +33,6 @@ import TrayletCore
         let controller = TranslationController(configuration: config, writer: TranslationFakeWriter(), availability: TranslationFakeAvailability(), speech: TranslationFakeSpeech())
         controller.flow.input = "Retry this synthetic sentence."; controller.flow.source = "en"
         await controller.submit()
-        await controller.sendConfirmed(try #require(controller.preview))
         #expect(controller.canRetrySubmission)
         controller.retrySubmission()
         let retry = try #require(controller.submissionTask)
@@ -76,7 +75,6 @@ import TrayletCore
         let controller = TranslationController(configuration: configuration, writer: TranslationFakeWriter(), availability: TranslationFakeAvailability(), speech: TranslationFakeSpeech())
         controller.flow.input = "This retry will be withdrawn"; controller.flow.source = "en"
         await controller.submit()
-        await controller.sendConfirmed(try #require(controller.preview))
         try #require(controller.canRetrySubmission)
         controller.retrySubmission()
         let queued = try #require(controller.submissionTask)
@@ -92,7 +90,7 @@ import TrayletCore
         await queued.value
         #expect(await client.requests.count == 1)
         #expect(controller.flow.phase == .idle && controller.flow.active == nil)
-        #expect(controller.preview == nil && controller.systemWork == nil && !controller.canRetrySubmission)
+        #expect(controller.systemWork == nil && !controller.canRetrySubmission)
         controller.cancel()
     }
     @Test func cancellationRejectsALateResultFromRetriedOnlineWork() async throws {
@@ -104,7 +102,6 @@ import TrayletCore
         let prior = try #require(controller.flow.begin(engine: .ai))
         controller.flow.complete(prior, text: "保留之前的成功结果")
         await controller.submit()
-        await controller.sendConfirmed(try #require(controller.preview))
         #expect(controller.canRetrySubmission)
         controller.retrySubmission()
         let retry = try #require(controller.submissionTask)
@@ -126,7 +123,7 @@ import TrayletCore
         let controller = TranslationController(configuration: configuration, writer: TranslationFakeWriter(), availability: TranslationFakeAvailability(), speech: TranslationFakeSpeech())
         controller.flow.input = "Synthetic configuration failure"
         await controller.submit()
-        #expect(!controller.canRetrySubmission && controller.preview == nil)
+        #expect(!controller.canRetrySubmission)
         controller.retrySubmission()
         #expect(controller.submissionTask == nil && controller.systemWork == nil)
         #expect(await client.requests.isEmpty)

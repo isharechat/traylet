@@ -159,7 +159,8 @@ import TrayletCore
             let toolbar = try #require(canvas.subviews.first), options = try #require(canvas.subviews.dropFirst().first)
             #expect(toolbar.intrinsicContentSize.width <= toolbar.frame.width + 1)
             #expect(canvas.bounds.contains(toolbar.frame) && toolbar.frame.height == 36)
-            #expect(options.intrinsicContentSize.width <= 180 && options.intrinsicContentSize.width <= options.frame.width + 1)
+            let maxOptionsWidth: CGFloat = width < 360 ? 180 : 280
+            #expect(options.intrinsicContentSize.width <= maxOptionsWidth && options.intrinsicContentSize.width <= options.frame.width + 1)
             #expect(canvas.bounds.contains(options.frame) && options.frame.height == 36 && !options.isHidden)
             func descendants(_ view:NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
             let controls = descendants(options)

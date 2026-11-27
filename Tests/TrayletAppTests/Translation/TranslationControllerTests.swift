@@ -17,7 +17,6 @@ struct TranslationControllerTests {
         #expect(controller.selectedEngine == .google && controller.flow.output.isEmpty)
         #expect(!controller.flow.outputIsCurrent, "The old engine's result must be cleared before the replacement task runs")
         await controller.submissionTask?.value
-        #expect(controller.preview == nil, "Switching engines must send without a confirmation sheet")
         if case .failed = controller.flow.phase {} else { Issue.record("The synthetic offline engine should fail") }
         #expect(controller.flow.output.isEmpty && !controller.flow.outputIsCurrent)
         controller.cancel()
@@ -34,7 +33,6 @@ struct TranslationControllerTests {
         controller.finishSystem(obsolete, text: "obsolete system response")
         #expect(controller.flow.output.isEmpty && controller.systemWork == nil)
         await controller.submissionTask?.value
-        #expect(controller.preview == nil, "Switching engines must send without a confirmation sheet")
         #expect(controller.flow.output == "你好。")
         controller.cancel()
     }
@@ -66,9 +64,7 @@ struct TranslationControllerTests {
         config.engine = .ai; config.model = "chosen"
         let controller = TranslationController(configuration: config, writer: TranslationFakeWriter(), availability: TranslationFakeAvailability(), speech: TranslationFakeSpeech())
         controller.flow.input = "First"
-        await controller.submit()
-        let preview = try #require(controller.preview)
-        let task = Task { await controller.sendConfirmed(preview) }
+        let task = Task { await controller.submit() }
         await client.waitUntilStarted()
         controller.flow.input = "Second"
         await client.resolve(.text("obsolete"))
@@ -153,18 +149,19 @@ struct TranslationControllerTests {
         controller.present()
         #expect(!controller.accessibilityNotice)
     }
-    @Test func configurationChangeRejectsPreviewBeforeAnyRequest() async throws {
-        let client = RecordingTranslationAI()
+    @Test func configurationChangeRejectsInFlightAIResult() async throws {
+        let client = TranslationSuspendedAI()
         let config = TranslationConfiguration(client: client)
         config.engine = .ai; config.model = "first"
         let controller = TranslationController(configuration: config, writer: TranslationFakeWriter(), availability: TranslationFakeAvailability(), speech: TranslationFakeSpeech())
         controller.flow.input = "Hello"
-        await controller.submit()
-        let preview = try #require(controller.preview)
+        let task = Task { await controller.submit() }
+        await client.waitUntilStarted()
         config.model = "second"
-        await controller.sendConfirmed(preview)
-        #expect(await client.calls == 0)
-        #expect(controller.preview == nil)
+        await client.resolve(.text("obsolete"))
+        await task.value
+        #expect(controller.flow.output.isEmpty)
+        #expect(controller.flow.phase == .idle)
     }
     @Test func closingHostRejectsCompletionAndReopenUsesNewIdentity() async throws {
         let controller = TranslationController(configuration: TranslationConfiguration(client: RecordingTranslationAI()), writer: TranslationFakeWriter(), availability: TranslationFakeAvailability(), speech: TranslationFakeSpeech())

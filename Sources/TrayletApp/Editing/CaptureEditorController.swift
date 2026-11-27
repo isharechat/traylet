@@ -101,6 +101,7 @@ import UniformTypeIdentifiers
         }
         view.onTranslate = { [weak self,weak view] in
             guard let self, let view, self.canvas === view else { return }
+            guard view.finishText(), view.session.prepareOutput() else { return }
             // Translation takes focus itself; restoring the previous app here would steal it back and hide the new window.
             do { let result = try view.session.composite(); self.cancel(restoreFocus:false); self.onTranslate?(result) }
             catch { view.session.message = "无法合成截图；请重新框选。" }

@@ -42,8 +42,7 @@ struct TranslationLocalizationTests {
         return try await TranslationNativeLanguageProbe.prepare()
     }))
     func nativePreviewExposesEnglishActionsWhenAXTreeIsAvailable() {
-        #expect(TranslationNativeLanguageProbe.labels.contains("Send"))
-        #expect(TranslationNativeLanguageProbe.labels.contains("Cancel"))
+        #expect(TranslationNativeLanguageProbe.labels.contains("Translate"))
     }
 }
 
@@ -55,9 +54,9 @@ struct TranslationLocalizationTests {
         Localization.shared.languageCode = "en"
         let configuration = TranslationConfiguration(client: LocalizationLiteralAI())
         configuration.model = "模型-发送"
-        let preview = try configuration.makeRequest(.translate, content: "发送")
+        let controller = TranslationController(configuration: configuration, writer: TranslationFakeWriter(), availability: TranslationFakeAvailability(), speech: TranslationFakeSpeech())
         _ = NSApplication.shared
-        let host = NSHostingView(rootView: TranslationSendPreview(request: preview, cancel: {}, send: {}))
+        let host = NSHostingView(rootView: TranslationWorkspaceView(controller: controller, flow: controller.flow, configuration: configuration))
         host.frame = NSRect(x: 0, y: 0, width: 540, height: 420)
         let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = host

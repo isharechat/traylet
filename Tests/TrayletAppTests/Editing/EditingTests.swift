@@ -503,4 +503,38 @@ extension EditingTests {
         let color = try #require(rep.colorAt(x:60,y:80)?.usingColorSpace(.deviceRGB))
         #expect(color.redComponent > 0.9 && color.greenComponent < 0.25 && color.blueComponent < 0.25, "stroke stays pure red under a blur: \(color)")
     }
+
+    @Test func redesignedToolbarFitsAcrossWidthTiersAndWiresActions() async throws {
+        _ = NSApplication.shared
+        for width in [CGFloat(900), 420, 180] {
+            let canvasSize = CGSize(width:width,height:480)
+            let session = EditingSession(image:try Self.fixture(),canvas:canvasSize,fullScreen:true,writer:EditingFakeOutput())
+            let canvas = EditingCanvasView(session:session,selectingForTranslation:false)
+            let window = NSWindow(contentRect:CGRect(origin:.zero,size:canvasSize),styleMask:.borderless,backing:.buffered,defer:false)
+            window.isReleasedWhenClosed = false; window.contentView = canvas
+            defer { window.contentView = nil; window.close() }
+
+            await Task.yield()
+            canvas.needsLayout = true; canvas.layoutSubtreeIfNeeded()
+            let toolbar = try #require(canvas.subviews.first as? EditingBarHost<EditingToolbar>)
+            #expect(toolbar.frame.height == 36)
+            #expect(toolbar.intrinsicContentSize.width <= toolbar.frame.width + 1)
+            #expect(canvas.bounds.contains(toolbar.frame))
+
+            session.viewport.fit(CGRect(x:0,y:0,width:width/2,height:240),in:CGRect(x:10,y:10,width:width-20,height:360),canvas:canvasSize)
+            await Task.yield()
+            toolbar.layoutSubtreeIfNeeded()
+            canvas.needsLayout = true; canvas.layoutSubtreeIfNeeded()
+            #expect(toolbar.frame.height == 36)
+            #expect(toolbar.intrinsicContentSize.width <= toolbar.frame.width + 1)
+            #expect(canvas.bounds.contains(toolbar.frame))
+
+            var cancelled = 0, translated = 0
+            canvas.onCancel = { cancelled += 1 }
+            canvas.onTranslate = { translated += 1 }
+            toolbar.rootView.cancel()
+            toolbar.rootView.translate()
+            #expect(cancelled == 1 && translated == 1)
+        }
+    }
 }

@@ -48,7 +48,7 @@ import SwiftUI
         // Decode the screenshot once; drawing must never re-decode PNG data.
         backdrop = session.sourceImage.map { NSImage(cgImage:$0,size:session.document.canvas) } ?? NSImage(size:session.document.canvas)
         super.init(frame:CGRect(origin:.zero,size:session.document.canvas))
-        toolbar = EditingBarHost(rootView:EditingToolbar(session:session,translationMode:selectingForTranslation,copy:{ [weak self] in self?.copyAndClose() },save:{ [weak self] in self?.onSave?() },translate:{ [weak self] in self?.onTranslate?() },float:{ [weak self] in self?.onFloat?() },drag:{ [weak self] total,ended in self?.dragToolbar(total,ended:ended) },reset:{ [weak self] in self?.resetToolbar() },finishText:{ [weak self] in self?.finishText() ?? false },fitView:{ [weak self] in self?.fitSelection() },resetView:{ [weak self] in self?.resetView() }))
+        toolbar = EditingBarHost(rootView:EditingToolbar(session:session,translationMode:selectingForTranslation,copy:{ [weak self] in self?.copyAndClose() },save:{ [weak self] in self?.onSave?() },translate:{ [weak self] in self?.onTranslate?() },float:{ [weak self] in self?.onFloat?() },cancel:{ [weak self] in self?.onCancel?() },drag:{ [weak self] total,ended in self?.dragToolbar(total,ended:ended) },reset:{ [weak self] in self?.resetToolbar() },finishText:{ [weak self] in self?.finishText() ?? false },fitView:{ [weak self] in self?.fitSelection() },resetView:{ [weak self] in self?.resetView() }))
         toolbar.sizingOptions = [.intrinsicContentSize]
         options = EditingBarHost(rootView:EditingOptions(session:session,colorPanel:colorPanel))
         options.sizingOptions = [.intrinsicContentSize]

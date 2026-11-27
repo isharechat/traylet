@@ -20,7 +20,7 @@ struct NativeEvidenceTests {
             #expect(json[key] as? Int == 0)
         }
         let images = try #require(json["images"] as? [[String: Any]])
-        #expect(images.count == 50)
+        #expect(images.count == 49)
         #expect(Set(images.compactMap { $0["name"] as? String }).count == images.count)
         for record in images {
             let name = try #require(record["name"] as? String)

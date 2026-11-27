@@ -15,14 +15,10 @@ import TrayletCore
         await fixture.recognizer.waitForCalls(1)
         await fixture.recognizer.resolve(0, .success("Recognized synthetic text"))
         try await eventually { fixture.translation.flow.input == "Recognized synthetic text" }
-        #expect(fixture.translation.preview == nil && fixture.translation.systemWork == nil)
+        #expect(fixture.translation.systemWork == nil)
         #expect(await fixture.client.requests.isEmpty)
         fixture.translation.flow.input = "Corrected synthetic text"
         await fixture.translation.submit()
-        let preview = try #require(fixture.translation.preview)
-        #expect(preview.content == "Corrected synthetic text")
-        #expect(await fixture.client.requests.isEmpty)
-        await fixture.translation.sendConfirmed(preview)
         #expect(await fixture.client.requests.map(\.content) == ["Corrected synthetic text"])
         #expect(fixture.translation.flow.output == "合成翻译结果")
         #expect(fixture.feature.controller.entries == [original] && fixture.writer.writes.isEmpty)
@@ -61,22 +57,20 @@ import TrayletCore
         let keptOriginal = controller.flow.input == "Previous source"
         #expect(keptOriginal && controller.flow.output == "保留的译文" && controller.flow.outputIsCurrent)
         #expect(controller.flow.phase == .failed("识别文字过长，请缩小图片区域或直接输入。"))
-        #expect(controller.preview == nil && controller.systemWork == nil)
+        #expect(controller.systemWork == nil)
     }
-    @Test func nativeTitlebarCloseRevokesThePreviousWindowsSendConfirmation() async throws {
+    @Test func nativeTitlebarCloseCancelsAndReopeningSendsNewSourceDirectly() async throws {
         let fixture = try await HistoryOCRFixture()
         defer { fixture.close() }
         fixture.translation.present(text: "First synthetic source")
         await fixture.translation.submit()
-        await fixture.translation.sendConfirmed(try #require(fixture.translation.preview))
         let panel = try #require(fixture.presentation.panel)
         let sentBeforeClose = await fixture.client.requests.count
         #expect(!panel.isVisible && sentBeforeClose == 1)
         panel.close() // Real delegate notification on our own hidden window.
         fixture.translation.present(text: "New synthetic source")
         await fixture.translation.submit()
-        #expect(fixture.translation.preview?.content == "New synthetic source")
-        #expect(await fixture.client.requests.count == 1)
+        #expect(await fixture.client.requests.map(\.content) == ["First synthetic source", "New synthetic source"])
     }
     @Test(arguments: ["query", "dismiss", "delete", "shutdown", "selection", "busy"])
     func preparationWithdrawnOrTargetBusyCannotOpenOCR(_ change: String) async throws {
@@ -120,7 +114,7 @@ import TrayletCore
         await fixture.recognizer.resolve(0, .success("Obsolete text")); await reading.value
         #expect(fixture.translation.flow.input == (change == "input" ? "Manual correction" : "Previous source"))
         #expect(fixture.translation.flow.output == "之前的译文" && fixture.translation.flow.phase == .idle)
-        #expect(fixture.translation.preview == nil && fixture.translation.systemWork == nil && fixture.writer.writes.isEmpty)
+        #expect(fixture.translation.systemWork == nil && fixture.writer.writes.isEmpty)
         #expect(await fixture.client.requests.isEmpty)
     }
     @Test func aFailedImageCanBeChosenAgainWithoutLosingItsOriginal() async throws {
@@ -172,7 +166,7 @@ import TrayletCore
         await fixture.translation.submissionTask?.value
         await fixture.translation.submit()
         #expect(fixture.translation.flow.phase == .recognizing)
-        #expect(fixture.translation.preview == nil && fixture.translation.systemWork == nil)
+        #expect(fixture.translation.systemWork == nil)
         #expect(fixture.translation.selectedEngine == .ai)
         await fixture.recognizer.resolve(0, .success("Current image source")); await reading.value
         #expect(fixture.translation.flow.input == "Current image source")
@@ -200,7 +194,7 @@ import TrayletCore
         try await Task.sleep(for: .milliseconds(30))
         #expect(panel.minSize.width >= twoEngines + 100)
         #expect(panel.contentLayoutRect.width >= panel.minSize.width)
-        #expect(fixture.translation.preview == nil && fixture.translation.systemWork == nil)
+        #expect(fixture.translation.systemWork == nil)
         #expect(await fixture.client.requests.isEmpty)
     }
     @Test(.enabled(if: ProcessInfo.processInfo.environment["TRAYLET_HISTORY_OCR_EVIDENCE_DIR"] != nil))
@@ -242,7 +236,7 @@ import TrayletCore
             await fixture.recognizer.waitForCalls(2)
             await fixture.recognizer.resolve(1, .failure(FeatureIssue.invalidInput("识别文字过长。"))); await failed.value
             try await snapshot(panel, to: output.appendingPathComponent("history-ocr-error-\(suffix).png"))
-            #expect(fixture.translation.preview == nil && fixture.translation.systemWork == nil)
+            #expect(fixture.translation.systemWork == nil)
             #expect(await fixture.client.requests.isEmpty)
             await fixture.feature.shutdownAndWait()
         }

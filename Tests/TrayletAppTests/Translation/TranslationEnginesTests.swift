@@ -147,11 +147,9 @@ struct TranslationEnginesTests {
         controller.select(.system)
         controller.select(.google)
         await controller.submissionTask?.value
-        #expect(controller.preview == nil, "Switching engines must not open a confirmation sheet")
         #expect(controller.flow.output == "你好。")
         controller.flow.input = "Hello again"
         await controller.submit()
-        #expect(controller.preview == nil, "Later sends use the engine directly")
         #expect(controller.flow.phase == .idle && controller.flow.output == "你好。" && controller.flow.outputIsCurrent)
     }
 }

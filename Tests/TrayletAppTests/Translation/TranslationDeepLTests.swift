@@ -71,15 +71,14 @@ struct TranslationDeepLTests {
         #expect(legacy.storageIssue == nil && legacy.engine == .system && !legacy.deeplEnabled)
     }
 
-    @Test func deepLTranslationWaitsForConfirmationAndSendsOnlyThroughTheConfirmedRequest() async throws {
+    @Test func deepLTranslationSendsDirectlyThroughTheSelectedEngine() async throws {
         let client = RecordingTranslationAI()
         let config = TranslationConfiguration(client: client)
         config.deeplKey = "k:fx"; config.engine = .deepl
         let controller = TranslationController(configuration: config, writer: TranslationFakeWriter(), availability: TranslationFakeAvailability(), speech: TranslationFakeSpeech())
         controller.flow.input = "Hello"
         await controller.submit()
-        let preview = try #require(controller.preview)
-        #expect(preview.action == .deeplTranslate && preview.destination == "https://api-free.deepl.com/v2/translate")
-        #expect(controller.flow.phase == .awaitingConfirmation)
+        #expect(await client.calls == 1)
+        #expect(controller.flow.phase == .idle && controller.flow.output == "你好。")
     }
 }

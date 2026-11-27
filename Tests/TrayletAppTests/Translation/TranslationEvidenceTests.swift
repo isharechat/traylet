@@ -40,8 +40,6 @@ struct TranslationEvidenceTests {
         let emptyPicker = TranslationModelPicker(models: [], selection: .constant(""), isPresented: .constant(true))
             .padding(12).background(Color(nsColor: .windowBackgroundColor))
         try render(emptyPicker, size: NSSize(width: 384, height: 230), to: directory.appendingPathComponent("translation-model-picker-empty.png"))
-        let preview = try config.makeRequest(.translate, content: "Synthetic text approved only inside a fake test.", source: "en", target: "zh-Hans")
-        try render(TranslationSendPreview(request: preview, cancel: {}, send: {}), size: NSSize(width: 540, height: 420), to: directory.appendingPathComponent("translation-send-preview.png"))
     }
     private func render<V: View>(_ view: V, size: NSSize, to url: URL, scheme: ColorScheme = .light) throws {
         let host = NSHostingView(rootView: view.frame(width: size.width, height: size.height, alignment: .topLeading).background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, scheme))

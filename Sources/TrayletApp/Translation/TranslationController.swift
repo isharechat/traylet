@@ -10,7 +10,6 @@ import TrayletCore
     var windowTitle: String { L("翻译") }
     @Published private(set) var systemWork: TranslationWork?
     @Published private(set) var preparingResources = false
-    @Published private(set) var preview: TranslationAIRequest?
     @Published private(set) var notice = ""
     /// The last selected-text read was blocked because macOS Accessibility trust is missing.
     @Published private(set) var accessibilityNotice = false
@@ -18,8 +17,6 @@ import TrayletCore
     @Published private(set) var speakingSource: Bool?
     /// The engine the Translate button and the icon row currently use; it starts as the default engine.
     @Published private(set) var selectedEngine: TranslationEngineChoice
-    /// Engines whose first send of this window session was already confirmed; later sends to them go out directly.
-    private var confirmedEngines: Set<TranslationEngineChoice> = []
     private var lastDefault: TranslationEngineChoice
     private let writer: any TextOutputWriting
     private let availability: any TranslationResourceChecking
@@ -45,7 +42,7 @@ import TrayletCore
         self.speech.onFinish = { [weak self] in self?.speakingSource = nil }
         configuration.$revision.dropFirst().sink { [weak self] _ in
             guard let self else { return }
-            cancel(); flow.markOutputStale(); confirmedEngines = []
+            cancel(); flow.markOutputStale()
             // Choosing another default in Settings makes it the window's engine too.
             if configuration.engine != lastDefault || !configuration.availableEngines.contains(selectedEngine) { selectedEngine = configuration.engine }
             lastDefault = configuration.engine
@@ -98,9 +95,8 @@ import TrayletCore
             cancel(); flow.clearOutput()
         }
         selectedEngine = engine
-        // Picking an engine is already an explicit choice; send without another confirmation sheet.
         if !flow.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, changed || flow.phase != .translating {
-            startSubmission(skipPreview: changed)
+            startSubmission()
         }
     }
     func present(text: String = "", image: RasterImage? = nil, decoded: CGImage? = nil) {
@@ -142,7 +138,7 @@ import TrayletCore
         recognitionTask = task
         return task
     }
-    func close() { cancel(); confirmedEngines = []; panel?.orderOut(nil) }
+    func close() { cancel(); panel?.orderOut(nil) }
     var isPresented: Bool { panel?.isVisible == true }
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow, window === panel else { return }
@@ -158,7 +154,6 @@ import TrayletCore
         requestTask?.cancel(); requestTask = nil; recognitionTask?.cancel(); recognitionTask = nil
         // Runs per keystroke; unchanged values are not reassigned so the window is not redrawn for nothing.
         if systemWork != nil { systemWork = nil }
-        if preview != nil { preview = nil }
         if preparingResources { preparingResources = false }
         speech.stop()
         if speakingSource != nil { speakingSource = nil }
@@ -187,29 +182,24 @@ import TrayletCore
         retryContext = RetryContext(work: work, configurationRevision: configuration.revision)
         flow.fail(work, message: message)
     }
-    func startSubmission(skipPreview: Bool = false) {
+    func startSubmission() {
         guard flow.phase != .recognizing else { return }
         requestTask?.cancel()
         requestTask = Task { [weak self] in
             guard !Task.isCancelled else { return }
-            await self?.submit(skipPreview: skipPreview)
+            await self?.submit()
         }
     }
-    func submit(skipPreview: Bool = false) async {
+    func submit() async {
         guard !Task.isCancelled, flow.phase != .recognizing else { return }
         if retryContext != nil { retryContext = nil }
-        systemWork = nil; preview = nil; preparingResources = false; notice = ""
+        systemWork = nil; preparingResources = false; notice = ""
         guard let work = flow.begin(engine: selectedEngine) else { return }
         if work.engine != .system {
             do {
                 guard let action = work.engine.translateAction else { return }
                 let request = try configuration.makeRequest(action, content: work.text, source: work.source, target: work.target)
-                // The Translate button confirms the first send to an engine; engine-icon switches send directly.
-                if skipPreview || confirmedEngines.contains(work.engine) {
-                    await performConfirmedSend(request, work: work)
-                } else {
-                    preview = request
-                }
+                await performSend(request, work: work)
             } catch {
                 // A local endpoint/model/credential validation error requires configuration changes,
                 // rather than replaying the unchanged request from the error row.
@@ -261,28 +251,15 @@ import TrayletCore
             return "系统翻译未完成。请检查语言资源后重试，或更换语言。"
         }
     }
-    func sendConfirmed(_ request: TranslationAIRequest) async {
-        guard preview == request, let work = flow.active else { return }
-        preview = nil
-        await performConfirmedSend(request, work: work)
-    }
-    private func performConfirmedSend(_ request: TranslationAIRequest, work: TranslationWork) async {
+    private func performSend(_ request: TranslationAIRequest, work: TranslationWork) async {
         guard !Task.isCancelled, work.engine != .system,
               request.settings == configuration.settings(for: work.engine), work.text == request.content else { return }
-        confirmedEngines.insert(work.engine); flow.startConfirmed(work)
         do {
             let result = try await configuration.client.perform(request)
             guard !Task.isCancelled, request.settings == configuration.settings(for: work.engine), flow.isCurrent(work) else { return }
             guard case .text(let text) = result else { throw TranslationAIFailure.malformed }
             flow.complete(work, text: text)
         } catch { failSubmission(work, message: TranslationAIFailure.safeMessage(error)) }
-    }
-    func startConfirmed(_ request: TranslationAIRequest) {
-        requestTask?.cancel()
-        requestTask = Task { [weak self] in
-            guard !Task.isCancelled else { return }
-            await self?.sendConfirmed(request)
-        }
     }
     func clearOutput() { cancel(); flow.clearOutput() }
     func copy(_ text: String) {

@@ -22,7 +22,6 @@ struct TranslationImageInputTests {
         #expect(!controller.flow.outputIsCurrent)
         #expect(controller.flow.active == nil)
         #expect(controller.systemWork == nil)
-        #expect(controller.preview == nil)
         #expect(controller.flow.phase == .idle)
     }
     @Test func recognitionFailurePreservesBothTextsAndExplainsFailure() async throws {

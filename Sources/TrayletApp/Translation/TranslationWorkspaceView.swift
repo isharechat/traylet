@@ -16,9 +16,6 @@ struct TranslationWorkspaceView: View {
         }
         .padding(.horizontal, Design.Space.m).padding(.top, Design.Space.m).padding(.bottom, Design.Space.s)
         .background { if let work = controller.systemWork { TranslationSystemTaskHost(work: work, prepare: controller.preparingResources, completed: controller.finishSystem, failed: controller.failSystem).id(work.id) } }
-        .sheet(item: Binding(get: { controller.preview }, set: { if $0 == nil, controller.flow.phase == .awaitingConfirmation { controller.cancel() } })) { request in
-            TranslationSendPreview(request: request, cancel: controller.cancel) { controller.startConfirmed(request) }
-        }
         .onDisappear { controller.cancel() }
     }
     /// One row of same-height glass controls: languages and Translate on the left, engines and settings on the right.
@@ -175,7 +172,6 @@ struct TranslationWorkspaceView: View {
         switch flow.phase {
         case .idle: EmptyView()
         case .recognizing: EmptyView()
-        case .awaitingConfirmation: Label(L("等待确认发送正文。"), systemImage: "checkmark.shield")
         case .translating: HStack { ProgressView().controlSize(.small); Text(L(controller.preparingResources ? "正在准备语言资源并翻译…" : "正在翻译…")) }
         case .resourceRequired:
             VStack(alignment: .leading, spacing: 6) {
@@ -202,57 +198,5 @@ struct TranslationWorkspaceView: View {
     }
     private func icon(_ name: String, _ label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) { Image(systemName: name).font(.system(size: 13, weight: .regular)).frame(width: Design.iconButton, height: Design.iconButton).contentShape(Circle()) }.buttonStyle(.plain).help(L(label)).accessibilityLabel(L(label))
-    }
-}
-
-struct TranslationSendPreview: View {
-    @ObservedObject private var localization = Localization.shared
-    let request: TranslationAIRequest
-    let cancel: () -> Void
-    let send: () -> Void
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
-                Image(systemName: "paperplane.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(Color.accentColor)
-                    .accessibilityHidden(true)
-                Text(L(request.action != .models && request.action != .connection ? "确认发送翻译正文" : "确认访问 AI 服务"))
-                    .font(.headline)
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                Text(String(format: L("目标：%@"), request.destination)).textSelection(.enabled)
-                if request.action == .models || request.action == .connection {
-                    Text(L("GET 请求获取模型列表；不包含原文、截图或剪贴板。")).font(.callout).foregroundStyle(.secondary)
-                } else if request.action == .deeplTranslate || request.action == .googleTranslate || request.action == .myMemoryTranslate {
-                    Text(String(format: L("方向：%@ → %@"), request.source, request.target)).font(.callout)
-                    Text(L(request.action == .deeplTranslate ? "服务：DeepL 官方 API，仅发送下列文本与语言代码，并携带内存中的 API Key（隐藏）。" : "服务：免费翻译服务，仅发送下列文本与语言代码；不携带账号或密钥。本窗口内再次使用该引擎将直接发送，关闭窗口后重新确认。"))
-                        .font(.caption).foregroundStyle(.secondary)
-                } else {
-                    Text(String(format: L("模型：%@"), request.settings.model)).font(.callout)
-                    Text(String(format: L("方向：%@ → %@"), request.source, request.target)).font(.callout)
-                    Text(String(format: L("系统指令：%@"), request.instruction)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                }
-                Text(L(request.settings.credential.isEmpty ? "不携带 API Key。" : "将向此目标携带当前内存中的 API Key（隐藏）。"))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .v2GlassBackground(in: RoundedRectangle(cornerRadius: Design.Radius.card))
-
-            if request.action != .models && request.action != .connection {
-                ScrollView {
-                    Text(request.content).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
-                }
-                .padding(12)
-                .frame(minHeight: 100, maxHeight: 240)
-                .v2GlassBackground(in: RoundedRectangle(cornerRadius: Design.Radius.card))
-            }
-            HStack {
-                Spacer()
-                Button(L("取消"), action: cancel).keyboardShortcut(.cancelAction)
-                Button(L("发送"), action: send).buttonStyle(.borderedProminent)
-            }
-        }.padding(20).frame(width: 500)
     }
 }
