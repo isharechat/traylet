@@ -13,7 +13,6 @@ import Testing
         config.defaultEngine = .ai
         config.autoCopy = true
         config.mergeLineBreaks = true
-        config.reuseTranslationAI = false
         config.model = "qwen-vl-plus"
         config.credential = "secret-ocr-key"
         config.preset = .formula
@@ -26,28 +25,24 @@ import Testing
         #expect(reloaded.defaultEngine == .ai)
         #expect(reloaded.autoCopy)
         #expect(reloaded.mergeLineBreaks)
-        #expect(!reloaded.reuseTranslationAI)
         #expect(reloaded.model == "qwen-vl-plus")
         #expect(reloaded.credential == "secret-ocr-key")
         #expect(reloaded.preset == .formula)
     }
 
-    @Test func reusesTranslationEndpointAndCredentialWithOptionalModelOverride() {
-        let translation = TranslationConfiguration()
-        translation.provider = .compatible
-        translation.endpoint = "https://example.com/v1"
-        translation.model = "gpt-4o-mini"
-        translation.credential = "tr-key"
-
-        let ocr = OCRConfiguration(translationConfiguration: translation)
-        ocr.reuseTranslationAI = true
-        ocr.model = ""
-        #expect(ocr.effectiveSettings.endpoint == "https://example.com/v1")
-        #expect(ocr.effectiveSettings.credential == "tr-key")
-        #expect(ocr.effectiveSettings.model == "gpt-4o-mini")
-
+    @Test func usesIndependentEndpointModelAndCredentialFromTranslation() {
+        let ocr = OCRConfiguration()
+        ocr.provider = .compatible
+        ocr.endpoint = "https://ocr.example.com/v1"
         ocr.model = "gpt-4o"
+        ocr.credential = "ocr-key"
+
+        #expect(ocr.effectiveSettings.endpoint == "https://ocr.example.com/v1")
         #expect(ocr.effectiveSettings.model == "gpt-4o")
+        #expect(ocr.effectiveSettings.credential == "ocr-key")
+
+        ocr.provider = .openAI
+        #expect(ocr.effectiveSettings.endpoint == "https://api.openai.com/v1")
     }
 
     @Test func damagedFilePreservesBackupOnRecovery() throws {

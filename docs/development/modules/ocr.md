@@ -31,7 +31,7 @@
 
 - 配置文件：`~/Library/Application Support/Traylet/v2/ocr.json`（原子写入，`0o600` 权限，拒绝符号链接，支持损坏备份恢复）。
 - 凭据存储：独立 API Key 存入 macOS 钥匙串（`local.traylet.app.ocr` / `ocr-ai-api-key`），不写入明文 JSON。
-- **复用翻译 AI 配置**：默认开启「复用翻译的 AI 接口与凭据」，直接读取 `TranslationConfiguration` 的 Endpoint 与 Keychain 凭据，并允许在 OCR 设置中单独覆盖视觉模型名称或 Prompt。
+- **独立 AI 配置**：AI OCR 的服务商、接口地址、API Key、视觉模型名称与识别 Prompt 完全独立于翻译模块配置与存储。
 
 ## 边界
 

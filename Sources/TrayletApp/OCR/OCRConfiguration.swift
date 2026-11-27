@@ -7,7 +7,6 @@ import TrayletCore
     @Published var autoCopy = false { didSet { if autoCopy != oldValue { changed(clearModels: false) } } }
     @Published var mergeLineBreaks = false { didSet { if mergeLineBreaks != oldValue { changed(clearModels: false) } } }
     @Published var visionAccurate = true { didSet { if visionAccurate != oldValue { changed(clearModels: false) } } }
-    @Published var reuseTranslationAI = true { didSet { if reuseTranslationAI != oldValue { changed() } } }
     @Published var provider: TranslationAIProvider = .compatible {
         didSet {
             guard provider != oldValue else { return }
@@ -30,7 +29,6 @@ import TrayletCore
     @Published private(set) var storageRecoveryNotice: String?
 
     let client: any TranslationAIClient
-    weak var translationConfiguration: TranslationConfiguration?
     private let storageURL: URL?
     private let credentialStore: (any OCRCredentialStoring)?
     private var lastPersistedCredential = ""
@@ -46,7 +44,6 @@ import TrayletCore
         var autoCopy: Bool
         var mergeLineBreaks: Bool
         var visionAccurate: Bool
-        var reuseTranslationAI: Bool
         var provider: TranslationAIProvider
         var endpoint: String
         var model: String
@@ -57,13 +54,11 @@ import TrayletCore
     init(
         storageURL: URL? = nil,
         client: any TranslationAIClient = TranslationOpenAIClient(),
-        credentialStore: (any OCRCredentialStoring)? = nil,
-        translationConfiguration: TranslationConfiguration? = nil
+        credentialStore: (any OCRCredentialStoring)? = nil
     ) {
         self.storageURL = storageURL
         self.client = client
         self.credentialStore = credentialStore
-        self.translationConfiguration = translationConfiguration
         if let storageURL {
             do {
                 if let data = try TranslationConfigurationStore(url: storageURL).read() {
@@ -73,7 +68,6 @@ import TrayletCore
                     autoCopy = saved.autoCopy
                     mergeLineBreaks = saved.mergeLineBreaks
                     visionAccurate = saved.visionAccurate
-                    reuseTranslationAI = saved.reuseTranslationAI
                     provider = saved.provider
                     endpoint = saved.endpoint
                     model = saved.model
@@ -101,16 +95,7 @@ import TrayletCore
     }
 
     var effectiveSettings: TranslationAISettings {
-        if reuseTranslationAI, let translation = translationConfiguration {
-            let base = translation.settings
-            let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-            return TranslationAISettings(
-                endpoint: base.endpoint,
-                model: trimmedModel.isEmpty ? base.model : model,
-                credential: base.credential
-            )
-        }
-        return ownAISettings
+        ownAISettings
     }
 
     func effectivePrompt(for preset: OCRAIPreset) -> String {
@@ -204,7 +189,6 @@ import TrayletCore
                 autoCopy: false,
                 mergeLineBreaks: false,
                 visionAccurate: true,
-                reuseTranslationAI: true,
                 provider: .compatible,
                 endpoint: "http://127.0.0.1:1234/v1",
                 model: "",
@@ -217,7 +201,6 @@ import TrayletCore
             autoCopy = defaults.autoCopy
             mergeLineBreaks = defaults.mergeLineBreaks
             visionAccurate = defaults.visionAccurate
-            reuseTranslationAI = defaults.reuseTranslationAI
             provider = defaults.provider
             endpoint = defaults.endpoint
             model = defaults.model
@@ -243,9 +226,7 @@ import TrayletCore
         cancel()
         if clearModels { models = [] }
         guard let storageURL, storageIssue == nil else { return }
-        if !reuseTranslationAI {
-            guard (try? ownAISettings.url(for: .models)) != nil else { return }
-        }
+        guard (try? ownAISettings.url(for: .models)) != nil else { return }
         do {
             let value = Saved(
                 version: 1,
@@ -253,7 +234,6 @@ import TrayletCore
                 autoCopy: autoCopy,
                 mergeLineBreaks: mergeLineBreaks,
                 visionAccurate: visionAccurate,
-                reuseTranslationAI: reuseTranslationAI,
                 provider: provider,
                 endpoint: endpoint,
                 model: model,

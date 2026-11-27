@@ -20,6 +20,16 @@ struct TranslationAITests {
         #expect(messages.count == 2)
         #expect(messages[1] == ["role": "user", "content": "Hello"])
         #expect(messages[0]["content"] == request.instruction)
+
+        let customRequest = TranslationAIRequest(
+            id: UUID(),
+            action: .translate,
+            settings: .init(endpoint: "https://example.invalid/v1/", model: "chosen", credential: "unit-secret", customPrompt: "Translate {source} to {target} concisely."),
+            content: "Hello",
+            source: "en",
+            target: "ja"
+        )
+        #expect(customRequest.instruction == "Translate en to ja concisely.")
     }
     @Test func metadataGetHasNoBodyAndNormalizesModelList() async throws {
         let transport = TranslationStubHTTP(status: 200, body: #"{"data":[{"id":"z"},{"id":"a"},{"id":"z"},{"id":""}]}"#)

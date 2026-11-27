@@ -58,6 +58,7 @@ enum TranslationActionFeedback: Equatable, Sendable {
     @Published var endpoint = "http://127.0.0.1:1234/v1" { didSet { if endpoint != oldValue { changed() } } }
     @Published var model = "" { didSet { if model != oldValue { changed(clearModels: false) } } }
     @Published var credential = "" { didSet { if credential != oldValue { changed() } } }
+    @Published var customPrompt = "" { didSet { if customPrompt != oldValue { changed(clearModels: false) } } }
     @Published private(set) var revision = UUID()
     @Published private(set) var models: [String] = []
     @Published private(set) var isBusy = false
@@ -81,6 +82,7 @@ enum TranslationActionFeedback: Equatable, Sendable {
         // Added with multi-engine support; files written before it decode with these absent.
         var aiEnabled: Bool? = nil; var deeplEnabled: Bool? = nil
         var enabled: [TranslationEngineChoice]? = nil; var order: [TranslationEngineChoice]? = nil; var maxVisible: Int? = nil
+        var customPrompt: String? = nil
     }
     init(storageURL: URL? = nil, client: any TranslationAIClient = TranslationOpenAIClient(), credentialStore: (any TranslationCredentialStoring)? = nil) {
         self.storageURL = storageURL; self.client = client; self.credentialStore = credentialStore
@@ -100,6 +102,7 @@ enum TranslationActionFeedback: Equatable, Sendable {
                     engine = saved.engine
                     if let saved = saved.order { order = saved + Self.defaultOrder.filter { !saved.contains($0) } }
                     maxVisible = saved.maxVisible ?? maxVisible
+                    customPrompt = saved.customPrompt ?? ""
                 }
             } catch { storageIssue = "新版本翻译设置无法读取；当前使用默认值，原文件保留。" }
         }
@@ -112,7 +115,7 @@ enum TranslationActionFeedback: Equatable, Sendable {
         }
         loading = false
     }
-    var settings: TranslationAISettings { .init(endpoint: provider == .openAI ? "https://api.openai.com/v1" : endpoint, model: model, credential: credential) }
+    var settings: TranslationAISettings { .init(endpoint: provider == .openAI ? "https://api.openai.com/v1" : endpoint, model: model, credential: credential, customPrompt: customPrompt) }
     var deeplSettings: TranslationAISettings { .init(endpoint: TranslationDeepLLanguages.endpoint(forKey: deeplKey), model: "", credential: deeplKey) }
     func settings(for engine: TranslationEngineChoice) -> TranslationAISettings {
         switch engine {
@@ -199,7 +202,7 @@ enum TranslationActionFeedback: Equatable, Sendable {
             let backup = try TranslationConfigurationStore(url: storageURL).write(JSONEncoder().encode(defaults), preservingOriginal: true)
             loading = true
             engine = defaults.engine; provider = defaults.provider; endpoint = defaults.endpoint; model = defaults.model
-            enabled = [.system]; order = Self.defaultOrder; maxVisible = 4
+            enabled = [.system]; order = Self.defaultOrder; maxVisible = 4; customPrompt = ""
             loading = false
             storageIssue = nil
             recoveryBackupPath = backup?.path
@@ -219,7 +222,7 @@ enum TranslationActionFeedback: Equatable, Sendable {
         // Malformed URLs can contain credentials; never store those as a preference.
         guard (try? settings.url(for: .models)) != nil else { return }
         do {
-            let value = Saved(version: 2, engine: engine, provider: provider, endpoint: endpoint, model: model, enabled: Array(enabled), order: order, maxVisible: maxVisible)
+            let value = Saved(version: 2, engine: engine, provider: provider, endpoint: endpoint, model: model, enabled: Array(enabled), order: order, maxVisible: maxVisible, customPrompt: customPrompt)
             let data = try JSONEncoder().encode(value)
             // Typing an API Key changes nothing on disk; skip the synced write instead of repeating it per keystroke.
             guard data != lastSaved else { return }

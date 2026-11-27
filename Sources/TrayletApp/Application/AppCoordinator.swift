@@ -61,8 +61,7 @@ import TrayletCore
         self.translation = translation
         let ocrConfiguration = OCRConfiguration(
             storageURL: directory.appendingPathComponent("ocr.json"),
-            credentialStore: KeychainOCRCredentialStore(),
-            translationConfiguration: configuration
+            credentialStore: KeychainOCRCredentialStore()
         )
         let ocr = OCRController(configuration: ocrConfiguration)
         self.ocr = ocr

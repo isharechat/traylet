@@ -480,9 +480,7 @@ enum English {
         "识别后自动复制到剪贴板": "Copy to clipboard automatically after OCR",
         "默认合并换行": "Merge line breaks by default",
         "本机 Vision 高精度识别": "High-accuracy on-device Vision",
-        "复用翻译的 AI 接口与凭据": "Reuse Translation AI endpoint & key",
         "视觉模型": "Vision Model",
-        "留空则复用翻译模型": "Leave blank to reuse translation model",
         "如 gpt-4o / qwen-vl-plus": "e.g. gpt-4o / qwen-vl-plus",
         "AI OCR 服务": "AI OCR Service",
         "AI OCR 使用支持图像输入的视觉模型；仅在主动切换 AI 识别或点击重试时发送当前图片。": "AI OCR uses a vision-capable model. The current image is sent only when you switch to AI OCR or click Retry.",
@@ -498,5 +496,6 @@ enum English {
         "图片尺寸超出安全限制。": "The image dimensions exceed the safety limit.",
         "新版本 OCR 设置无法读取；当前使用默认值，原文件保留。": "This version's OCR settings could not be read. Using defaults while preserving the original file.",
         "OCR 设置保存失败；当前更改仅保留在内存。": "OCR settings could not be saved. Changes are kept in memory only.",
+        "留空使用默认提示词；支持 {source} 与 {target} 占位符": "Leave blank for default prompt; supports {source} and {target} placeholders",
     ]
 }

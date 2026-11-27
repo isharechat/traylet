@@ -37,33 +37,27 @@ struct OCRConfigurationView: View {
             .toggleStyle(.switch)
 
             Section {
-                Toggle(L("复用翻译的 AI 接口与凭据"), isOn: $configuration.reuseTranslationAI)
-                if !configuration.reuseTranslationAI {
-                    Picker(L("服务商"), selection: $configuration.provider) {
-                        ForEach(TranslationAIProvider.allCases) { item in
-                            Text(L(item.title)).tag(item)
-                        }
+                Picker(L("服务商"), selection: $configuration.provider) {
+                    ForEach(TranslationAIProvider.allCases) { item in
+                        Text(L(item.title)).tag(item)
                     }
-                    if configuration.provider == .compatible {
-                        LabeledContent(L("接口地址")) {
-                            TextField("http://127.0.0.1:1234/v1", text: $endpointDraft)
-                                .textFieldStyle(.roundedBorder)
-                                .onChange(of: endpointDraft) { _, value in scheduleSave { configuration.endpoint = value } }
-                        }
-                    }
-                    LabeledContent("API Key") {
-                        SecureField(L("留空表示本机无需密钥"), text: $credentialDraft)
+                }
+                if configuration.provider == .compatible {
+                    LabeledContent(L("接口地址")) {
+                        TextField("http://127.0.0.1:1234/v1", text: $endpointDraft)
                             .textFieldStyle(.roundedBorder)
-                            .onChange(of: credentialDraft) { _, value in scheduleSave { configuration.credential = value } }
+                            .onChange(of: endpointDraft) { _, value in scheduleSave { configuration.endpoint = value } }
                     }
+                }
+                LabeledContent("API Key") {
+                    SecureField(L("留空表示本机无需密钥"), text: $credentialDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .onChange(of: credentialDraft) { _, value in scheduleSave { configuration.credential = value } }
                 }
 
                 LabeledContent(L("视觉模型")) {
                     HStack(spacing: 4) {
-                        TextField(
-                            configuration.reuseTranslationAI ? L("留空则复用翻译模型") : L("如 gpt-4o / qwen-vl-plus"),
-                            text: $modelDraft
-                        )
+                        TextField(L("如 gpt-4o / qwen-vl-plus"), text: $modelDraft)
                         .textFieldStyle(.roundedBorder)
                         .focused($modelFieldFocused)
                         .onChange(of: modelDraft) { _, value in scheduleSave { configuration.model = value } }

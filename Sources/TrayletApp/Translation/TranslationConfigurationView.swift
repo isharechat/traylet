@@ -14,6 +14,7 @@ struct TranslationConfigurationView: View {
     @State private var modelDraft: String
     @State private var credentialDraft: String
     @State private var deeplKeyDraft: String
+    @State private var customPromptDraft: String
     @State private var debounceTask: Task<Void, Never>?
     @FocusState private var modelFieldFocused: Bool
     init(configuration: TranslationConfiguration, expanded: Set<TranslationEngineChoice> = [],
@@ -25,6 +26,7 @@ struct TranslationConfigurationView: View {
         _modelDraft = State(initialValue: configuration.model)
         _credentialDraft = State(initialValue: configuration.credential)
         _deeplKeyDraft = State(initialValue: configuration.deeplKey)
+        _customPromptDraft = State(initialValue: configuration.customPrompt)
     }
     var body: some View {
         Form {
@@ -71,6 +73,7 @@ struct TranslationConfigurationView: View {
         .onChange(of: configuration.model) { _, value in if modelDraft != value { modelDraft = value } }
         .onChange(of: configuration.credential) { _, value in if credentialDraft != value { credentialDraft = value } }
         .onChange(of: configuration.deeplKey) { _, value in if deeplKeyDraft != value { deeplKeyDraft = value } }
+        .onChange(of: configuration.customPrompt) { _, value in if customPromptDraft != value { customPromptDraft = value } }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             flushDrafts()
         }
@@ -212,6 +215,29 @@ struct TranslationConfigurationView: View {
         }
         SecureField(L("API Key"), text: debouncedBinding($credentialDraft), prompt: Text(L("保存在 macOS 钥匙串")))
             .onSubmit { flushDrafts() }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(L("自定义提示词")).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if !customPromptDraft.isEmpty {
+                    Button(L("恢复默认提示词")) {
+                        customPromptDraft = ""
+                        configuration.customPrompt = ""
+                    }
+                    .controlSize(.small)
+                    .buttonStyle(.borderless)
+                }
+            }
+            TextEditor(text: debouncedBinding($customPromptDraft))
+                .font(.callout)
+                .frame(minHeight: 60, maxHeight: 110)
+                .padding(4)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: Design.Radius.control))
+                .overlay(RoundedRectangle(cornerRadius: Design.Radius.control).stroke(Color(nsColor: .separatorColor).opacity(0.4)))
+            Text(L("留空使用默认提示词；支持 {source} 与 {target} 占位符"))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
         HStack(spacing: 8) {
             Spacer()
             settingsActionButton(.models, idle: "获取模型", running: "获取中…", success: "获取成功", failure: "获取失败",
@@ -276,6 +302,7 @@ struct TranslationConfigurationView: View {
         if configuration.model != modelDraft { configuration.model = modelDraft }
         if configuration.credential != credentialDraft { configuration.credential = credentialDraft }
         if configuration.deeplKey != deeplKeyDraft { configuration.deeplKey = deeplKeyDraft }
+        if configuration.customPrompt != customPromptDraft { configuration.customPrompt = customPromptDraft }
     }
     private static func note(_ engine: TranslationEngineChoice) -> String {
         switch engine {
