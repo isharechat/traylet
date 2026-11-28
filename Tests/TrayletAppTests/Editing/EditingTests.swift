@@ -506,7 +506,7 @@ extension EditingTests {
 
     @Test func redesignedToolbarFitsAcrossWidthTiersAndWiresActions() async throws {
         _ = NSApplication.shared
-        for width in [CGFloat(900), 620, 420, 180] {
+        for width in [CGFloat(900), 620, 480, 420, 260, 180] {
             let canvasSize = CGSize(width:width,height:480)
             let session = EditingSession(image:try Self.fixture(),canvas:canvasSize,fullScreen:true,writer:EditingFakeOutput())
             let canvas = EditingCanvasView(session:session,selectingForTranslation:false)

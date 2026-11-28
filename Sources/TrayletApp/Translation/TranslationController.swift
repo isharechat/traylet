@@ -83,10 +83,10 @@ import TrayletCore
         }
         let count = max(1, configuration.visibleEngines.count)
         let engines = CGFloat(count) * Design.iconButton + CGFloat(count - 1) * 6 + 8
-        let labels = languageWidth(flow.source) + languageWidth(flow.target) + textWidth("翻译") + 28
-        let controls = Design.iconButton * 3 + engines + 46 + 4
-        let width = ceil(max(CGFloat(442 + 34 * count), labels + controls + Design.Space.m * 2 + 8))
-        panel.minSize = NSSize(width: width, height: 440)
+        let labels = languageWidth(flow.source) + languageWidth(flow.target) + textWidth("翻译") + 32
+        let controls = Design.iconButton * 3 + engines + 56 + 16
+        let width = ceil(max(CGFloat(468 + 34 * count), labels + controls + Design.Space.m * 2 + 12))
+        panel.minSize = NSSize(width: width, height: 460)
         if panel.contentLayoutRect.width < width { panel.setContentSize(NSSize(width: width, height: panel.contentLayoutRect.height)) }
     }
     /// Picks another engine from the icon row; existing source text is translated right away.
@@ -110,9 +110,9 @@ import TrayletCore
         else if !text.isEmpty { lastSourceImage = nil }
         if image == nil, !text.isEmpty { flow.input = text; flow.clearOutput() }
         if panel == nil {
-            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 600, height: 630), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 580, height: 580), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
             panel.title = windowTitle; panel.isReleasedWhenClosed = false; panel.hidesOnDeactivate = false
-            backing = GlassWindowBacking(window: panel, content: NSHostingView(rootView: TranslationWorkspaceView(controller: self, flow: flow, configuration: configuration)))
+            backing = GlassWindowBacking(window: panel, content: NSHostingView(rootView: TranslationWorkspaceView(controller: self, flow: flow, configuration: configuration)), fullBleedTitlebar: true)
             panel.delegate = self; panel.center(); self.panel = panel; updateMinimumSize()
             dismissal = FloatingWindow.hideOnResignKey(panel, canHide: { [weak self] in self?.preparingResources != true }) { [weak self] in self?.close() }
         }

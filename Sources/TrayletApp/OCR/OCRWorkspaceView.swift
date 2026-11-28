@@ -9,17 +9,17 @@ struct OCRWorkspaceView: View {
     @State private var isDropTargeted = false
 
     var body: some View {
-        HStack(spacing: Design.Space.s) {
+        HStack(spacing: 0) {
             if controller.showsPreview {
                 previewPane
-                    .frame(minWidth: 220, idealWidth: 320, maxWidth: 420)
+                    .frame(width: Design.Layout.ocrSidebarWidth)
+                    .mac27SidebarSurface()
+                Divider()
             }
             resultPane
-                .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .mac27ContentSurface()
         }
-        .padding(.horizontal, Design.Space.m)
-        .padding(.top, Design.Space.m)
-        .padding(.bottom, Design.Space.s)
         .background {
             Button {
                 if !controller.text.isEmpty && controller.phase != .recognizing {
@@ -35,100 +35,73 @@ struct OCRWorkspaceView: View {
     }
 
     private var previewPane: some View {
-        VStack(spacing: Design.Space.xs) {
-            HStack(spacing: 6) {
-                HStack(spacing: 2) {
-                    WorkspaceIconButton(symbol: "minus.magnifyingglass", label: "缩小", size: 26, iconSize: 12, disabled: controller.previewImage == nil) {
-                        controller.zoomScale = max(0.25, controller.zoomScale - 0.25)
-                    }
-
-                    Button { controller.zoomScale = 1.0 } label: {
-                        Text("\(Int((controller.zoomScale * 100).rounded()))%")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .frame(minWidth: 38).frame(height: 22)
-                            .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(controller.previewImage == nil)
-                    .help(L("重置视图"))
-
-                    WorkspaceIconButton(symbol: "plus.magnifyingglass", label: "放大", size: 26, iconSize: 12, disabled: controller.previewImage == nil) {
-                        controller.zoomScale = min(4.0, controller.zoomScale + 0.25)
-                    }
-
-                    WorkspaceIconButton(symbol: "arrow.up.left.and.arrow.down.right", label: "重置视图", size: 26, iconSize: 11, disabled: controller.previewImage == nil) {
-                        controller.zoomScale = 1.0
-                    }
-                }
-                .padding(.horizontal, 4)
-                .frame(height: Design.iconButton)
-                .v2GlassBackground(in: Capsule(), interactive: true)
-
-                Spacer(minLength: 4)
-
-                WorkspaceIconButton(symbol: "camera.viewfinder", label: "重新截图") {
-                    controller.recapture()
-                }
-                .v2GlassBackground(in: Circle(), interactive: true)
-
-                WorkspaceIconButton(symbol: "photo.badge.plus", label: "导入图片") {
-                    chooseImageFile()
-                }
-                .v2GlassBackground(in: Circle(), interactive: true)
-
-                WorkspaceIconButton(symbol: "sidebar.left", label: "收起原图") {
+        VStack(spacing: 0) {
+            HStack {
+                Spacer(minLength: 0)
+                Mac27GlassCircleButton(symbol: "sidebar.left", label: "收起原图") {
                     withAnimation(Design.Animation.snappy) { controller.showsPreview = false }
                 }
-                .v2GlassBackground(in: Circle(), interactive: true)
             }
+            .padding(.leading, Design.Layout.trafficLightsClearance)
+            .padding(.trailing, 10)
+            .frame(height: Design.Layout.toolbarHeight)
 
-            ZStack {
-                if let nsImage = controller.previewImage {
-                    GeometryReader { geo in
-                        ScrollView([.horizontal, .vertical]) {
-                            Image(nsImage: nsImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(
-                                    width: max(geo.size.width - 16, 120) * controller.zoomScale,
-                                    height: max(geo.size.height - 16, 120) * controller.zoomScale
+            ZStack(alignment: .bottom) {
+                Group {
+                    if let nsImage = controller.previewImage {
+                        GeometryReader { geo in
+                            ScrollView([.horizontal, .vertical]) {
+                                Image(nsImage: nsImage)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(
+                                        width: max(geo.size.width - 24, 120) * controller.zoomScale,
+                                        height: max(geo.size.height - 68, 120) * controller.zoomScale
+                                    )
+                                    .padding(.horizontal, 12)
+                                    .padding(.top, 8)
+                                    .padding(.bottom, 60)
+                            }
+                        }
+                    } else {
+                        VStack(spacing: 10) {
+                            Image(systemName: "photo.on.rectangle.angled")
+                                .font(.system(size: 28))
+                                .foregroundStyle(.secondary)
+                            Text(L("拖入或选择图片"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            HStack(spacing: 8) {
+                                Button(L("截图识别")) { controller.recapture() }
+                                    .controlSize(.small)
+                                Button(L("选择图片")) { chooseImageFile() }
+                                    .controlSize(.small)
+                            }
+                        }
+                        .padding()
+                        .padding(.bottom, 48)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Design.Radius.card)
+                                .strokeBorder(
+                                    isDropTargeted ? Color.accentColor : Color(nsColor: .separatorColor).opacity(0.45),
+                                    style: StrokeStyle(lineWidth: isDropTargeted ? 2 : 1, dash: [5, 4])
                                 )
-                                .padding(8)
-                        }
+                                .padding(12)
+                                .padding(.bottom, 48)
+                        )
                     }
-                } else {
-                    VStack(spacing: 10) {
-                        Image(systemName: "photo.on.rectangle.angled")
-                            .font(.system(size: 28))
-                            .foregroundStyle(.secondary)
-                        Text(L("拖入或选择图片"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        HStack(spacing: 8) {
-                            Button(L("截图识别")) { controller.recapture() }
-                                .controlSize(.small)
-                            Button(L("选择图片")) { chooseImageFile() }
-                                .controlSize(.small)
-                        }
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Design.Radius.panel - 6)
-                            .strokeBorder(
-                                isDropTargeted ? Color.accentColor : Color(nsColor: .separatorColor).opacity(0.45),
-                                style: StrokeStyle(lineWidth: isDropTargeted ? 2 : 1, dash: [5, 4])
-                            )
-                            .padding(8)
-                    )
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                previewDock
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 12)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .v2GlassBackground(in: RoundedRectangle(cornerRadius: Design.Radius.panel))
             .overlay(
-                RoundedRectangle(cornerRadius: Design.Radius.panel)
+                RoundedRectangle(cornerRadius: Design.Radius.card)
                     .strokeBorder(isDropTargeted ? Color.accentColor : Color.clear, lineWidth: 2)
+                    .padding(6)
             )
             .onDrop(of: [.fileURL, .image, .png], isTargeted: $isDropTargeted) { providers in
                 handleDrop(providers)
@@ -136,92 +109,128 @@ struct OCRWorkspaceView: View {
         }
     }
 
-    private var resultPane: some View {
-        VStack(spacing: Design.Space.xs) {
-            topControlRow
-            textResultBox
-        }
-    }
-
-    private var topControlRow: some View {
+    private var previewDock: some View {
         HStack(spacing: 6) {
-            if !controller.showsPreview {
-                WorkspaceIconButton(symbol: "sidebar.left", label: "展开原图") {
-                    withAnimation(Design.Animation.snappy) { controller.showsPreview = true }
+            Mac27GlassCapsule(spacing: 2, horizontalPadding: 4) {
+                WorkspaceIconButton(symbol: "minus.magnifyingglass", label: "缩小", size: 26, iconSize: 12, disabled: controller.previewImage == nil) {
+                    controller.zoomScale = max(0.25, controller.zoomScale - 0.25)
                 }
-                .v2GlassBackground(in: Circle(), interactive: true)
-            }
-
-            Picker("", selection: Binding(
-                get: { controller.selectedEngine },
-                set: { controller.selectEngine($0) }
-            )) {
-                ForEach(OCREngineChoice.allCases) { engine in
-                    Text(L(engine.title)).tag(engine)
+                Button { controller.zoomScale = 1.0 } label: {
+                    Text("\(Int((controller.zoomScale * 100).rounded()))%")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 38).frame(height: 24)
+                        .contentShape(Capsule())
                 }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-
-            if controller.selectedEngine == .ai {
-                Menu {
-                    ForEach(OCRAIPreset.allCases) { preset in
-                        Button {
-                            controller.selectPreset(preset)
-                        } label: {
-                            if controller.selectedPreset == preset {
-                                Label(L(preset.title), systemImage: "checkmark")
-                            } else {
-                                Text(L(preset.title))
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(L(controller.selectedPreset.title))
-                            .font(.callout)
-                            .lineLimit(1)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 10)
-                    .frame(height: Design.iconButton)
-                    .v2GlassBackground(in: Capsule(), interactive: true)
+                .buttonStyle(.plain)
+                .disabled(controller.previewImage == nil)
+                .help(L("重置视图"))
+                WorkspaceIconButton(symbol: "plus.magnifyingglass", label: "放大", size: 26, iconSize: 12, disabled: controller.previewImage == nil) {
+                    controller.zoomScale = min(4.0, controller.zoomScale + 0.25)
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help(L("识别模式"))
+                WorkspaceIconButton(symbol: "arrow.up.left.and.arrow.down.right", label: "重置视图", size: 26, iconSize: 11, disabled: controller.previewImage == nil) {
+                    controller.zoomScale = 1.0
+                }
             }
 
             Spacer(minLength: 4)
 
-            WorkspaceIconButton(
-                symbol: "arrow.clockwise",
-                label: "重新识别",
-                help: L("重新识别") + " ⌘R",
-                disabled: controller.image == nil || controller.phase == .recognizing
-            ) {
-                controller.recognize()
+            Mac27GlassCapsule(spacing: 2, horizontalPadding: 4) {
+                WorkspaceIconButton(symbol: "camera.viewfinder", label: "重新截图") {
+                    controller.recapture()
+                }
+                WorkspaceIconButton(symbol: "photo.badge.plus", label: "导入图片") {
+                    chooseImageFile()
+                }
             }
-            .keyboardShortcut("r", modifiers: .command)
-            .v2GlassBackground(in: Circle(), interactive: true)
-
-            WorkspaceIconButton(symbol: "gearshape", label: "设置") {
-                controller.openSettings()
-            }
-            .v2GlassBackground(in: Circle(), interactive: true)
         }
     }
 
-    private var textResultBox: some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private var resultPane: some View {
+        VStack(spacing: 0) {
+            topControlRow
+            textResultBody
+            Divider()
+            bottomActionFooter
+        }
+    }
+
+    private var topControlRow: some View {
+        Mac27ToolbarBar(leadingPadding: controller.showsPreview ? 16 : Design.Layout.trafficLightsClearance) {
+            if !controller.showsPreview {
+                Mac27GlassCircleButton(symbol: "sidebar.left", label: "展开原图") {
+                    withAnimation(Design.Animation.snappy) { controller.showsPreview = true }
+                }
+            }
+
+            Mac27SegmentedControl(
+                options: OCREngineChoice.allCases,
+                selection: Binding(
+                    get: { controller.selectedEngine },
+                    set: { controller.selectEngine($0) }
+                ),
+                title: { L($0.title) }
+            )
+
+            if controller.selectedEngine == .ai {
+                Mac27GlassCapsule(spacing: 4, horizontalPadding: 10) {
+                    Menu {
+                        ForEach(OCRAIPreset.allCases) { preset in
+                            Button {
+                                controller.selectPreset(preset)
+                            } label: {
+                                if controller.selectedPreset == preset {
+                                    Label(L(preset.title), systemImage: "checkmark")
+                                } else {
+                                    Text(L(preset.title))
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(L(controller.selectedPreset.title))
+                                .font(.callout)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(height: 28)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help(L("识别模式"))
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            Mac27GlassCapsule(spacing: 2, horizontalPadding: 4) {
+                WorkspaceIconButton(
+                    symbol: "arrow.clockwise",
+                    label: "重新识别",
+                    help: L("重新识别") + " ⌘R",
+                    disabled: controller.image == nil || controller.phase == .recognizing
+                ) {
+                    controller.recognize()
+                }
+                .keyboardShortcut("r", modifiers: .command)
+
+                WorkspaceIconButton(symbol: "gearshape", label: "设置") {
+                    controller.openSettings()
+                }
+            }
+        }
+    }
+
+    private var textResultBody: some View {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text(L("识别结果"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+                StatusPill(text: L(controller.selectedEngine.title), tint: .accentColor)
                 if controller.phase == .recognizing {
                     ProgressView().controlSize(.mini)
                     Text(L(controller.selectedEngine == .vision ? "正在本机识别文字…" : "正在通过 AI 识别…"))
@@ -234,7 +243,6 @@ struct OCRWorkspaceView: View {
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.tertiary)
                 }
-                StatusPill(text: L(controller.selectedEngine.title), tint: .accentColor)
             }
 
             if case .failed(let message) = controller.phase {
@@ -273,12 +281,16 @@ struct OCRWorkspaceView: View {
                 .focused($editorFocused)
                 .accessibilityLabel(L("识别结果"))
                 .padding(.horizontal, -5)
-                .padding(.bottom, 38)
         }
-        .padding(Design.Space.m)
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
+        .padding(.bottom, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay(alignment: .bottomLeading) {
-            HStack(spacing: 2) {
+    }
+
+    private var bottomActionFooter: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 4) {
                 WorkspaceIconButton(
                     symbol: controller.speaking ? "stop.fill" : "speaker.wave.2",
                     label: controller.speaking ? "停止朗读" : "朗读",
@@ -286,11 +298,9 @@ struct OCRWorkspaceView: View {
                 ) {
                     controller.toggleSpeaking()
                 }
-
                 CopyIconButton(label: "复制", disabled: controller.text.isEmpty) {
                     controller.copyText()
                 }
-
                 WorkspaceIconButton(
                     symbol: "text.alignleft",
                     label: "合并换行",
@@ -299,12 +309,10 @@ struct OCRWorkspaceView: View {
                     controller.applyMergeLineBreaks()
                 }
             }
-            .padding(.horizontal, 3)
-            .v2GlassBackground(in: Capsule(), interactive: true)
-            .padding(10)
-        }
-        .overlay(alignment: .bottomTrailing) {
-            HStack(spacing: 6) {
+
+            Spacer(minLength: 8)
+
+            HStack(spacing: 8) {
                 if controller.phase == .recognizing {
                     Button(L("取消")) { controller.cancel() }
                         .controlSize(.small)
@@ -316,7 +324,6 @@ struct OCRWorkspaceView: View {
                 ) {
                     controller.clear()
                 }
-                .v2GlassBackground(in: Circle(), interactive: true)
 
                 let canTranslate = !controller.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && controller.phase != .recognizing
                 Button { controller.sendToTranslation() } label: {
@@ -336,10 +343,9 @@ struct OCRWorkspaceView: View {
                 .opacity(canTranslate ? 1 : 0.4)
                 .help(L("去翻译") + " ⌘↩")
             }
-            .padding(10)
         }
-        .v2GlassBackground(in: RoundedRectangle(cornerRadius: Design.Radius.panel))
-        .v2PanelFocusRing(focused: editorFocused)
+        .padding(.horizontal, 16)
+        .frame(height: 48)
     }
 
     private func chooseImageFile() {

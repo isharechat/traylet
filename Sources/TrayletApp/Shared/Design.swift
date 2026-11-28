@@ -8,6 +8,7 @@ enum Design {
         static let control: CGFloat = 8
         static let card: CGFloat = 12
         static let floating: CGFloat = 16
+        static let window: CGFloat = 16
         static let panel: CGFloat = 18
     }
     /// Spacing steps (multiples of 4): xs 4, s 8, m 12, l 16, xl 24.
@@ -17,6 +18,16 @@ enum Design {
         static let m: CGFloat = 12
         static let l: CGFloat = 16
         static let xl: CGFloat = 24
+    }
+    /// macOS 27 window chrome & split-view metrics.
+    enum Layout {
+        static let toolbarHeight: CGFloat = 52
+        static let compactTitlebarHeight: CGFloat = 40
+        static let capsuleHeight: CGFloat = 36
+        static let trafficLightsClearance: CGFloat = 76
+        static let settingsSidebarWidth: CGFloat = 224
+        static let clipboardSidebarWidth: CGFloat = 300
+        static let ocrSidebarWidth: CGFloat = 300
     }
     enum Animation {
         static let snappy = SwiftUI.Animation.snappy(duration: 0.2)

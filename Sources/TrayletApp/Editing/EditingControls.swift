@@ -24,20 +24,15 @@ struct EditingToolbar: View {
     let fitView: () -> Void
     let resetView: () -> Void
 
-    @State private var lastShapeTool: EditingTool = .rectangle
-    @State private var lastMaskTool: EditingTool = .blur
+    @State private var lastFoldedTool: EditingTool = .ellipse
     @State private var handleHovering = false
 
     private var isZoomed: Bool { Int((session.viewport.scale * 100).rounded()) != 100 }
     private var zoomStatus: String { "\(Int((session.viewport.scale * 100).rounded()))%" }
-    private var shapeTools: [EditingTool] { [.rectangle, .ellipse, .line] }
-    private var maskTools: [EditingTool] { [.blur, .redaction] }
-    private var activeShape: EditingTool? {
-        guard let tool = session.tool, shapeTools.contains(tool) else { return nil }
-        return tool
-    }
-    private var activeMask: EditingTool? {
-        guard let tool = session.tool, maskTools.contains(tool) else { return nil }
+    private var primaryTools: [EditingTool] { [.rectangle, .arrow, .text, .blur] }
+    private var foldedTools: [EditingTool] { [.ellipse, .line, .pencil, .number, .highlight, .redaction] }
+    private var activeFoldedTool: EditingTool? {
+        guard let tool = session.tool, foldedTools.contains(tool) else { return nil }
         return tool
     }
 
@@ -62,11 +57,9 @@ struct EditingToolbar: View {
                     action: triggerOCR
                 )
                 EditingIconButton(symbol: "xmark", label: L("关闭"), help: L("关闭 Esc"), subtle: true, destructiveHover: true, action: cancel)
-            } else if session.document.canvas.width >= 740 {
-                fullFlatToolbarContent
-            } else if session.document.canvas.width >= 560 {
-                groupedToolbarContent
-            } else if session.document.canvas.width >= 280 {
+            } else if session.document.canvas.width >= 480 {
+                standardToolbarContent
+            } else if session.document.canvas.width >= 260 {
                 compactToolbarContent
             } else {
                 ultraNarrowToolbarContent
@@ -77,9 +70,8 @@ struct EditingToolbar: View {
         .fixedSize(horizontal: true, vertical: false)
         .modifier(EditingSurface())
         .onChange(of: session.tool) { _, newTool in
-            guard let newTool else { return }
-            if shapeTools.contains(newTool) { lastShapeTool = newTool }
-            else if maskTools.contains(newTool) { lastMaskTool = newTool }
+            guard let newTool, foldedTools.contains(newTool) else { return }
+            lastFoldedTool = newTool
         }
         .environment(\.locale, Locale(identifier: localization.english ? "en" : "zh-Hans"))
     }
@@ -110,10 +102,10 @@ struct EditingToolbar: View {
         )
     }
 
-    @ViewBuilder private var fullFlatToolbarContent: some View {
-        // Zone 1: All 10 annotation tools flat for 1-click access
+    @ViewBuilder private var standardToolbarContent: some View {
+        // Zone 1: 4 primary tools visible (Rectangle, Arrow, Text, Blur) + folded menu for the other 6
         HStack(spacing: 2) {
-            ForEach(EditingTool.allCases) { tool in
+            ForEach(primaryTools) { tool in
                 EditingIconButton(
                     symbol: tool.symbol,
                     glyph: tool == .text ? "T" : nil,
@@ -123,96 +115,25 @@ struct EditingToolbar: View {
                 ) { select(tool) }
                     .accessibilityValue(session.tool == tool ? L("已选择") : L("未选择"))
             }
-        }
 
-        ToolbarDivider()
-
-        // Zone 2: History & View
-        historyAndViewZone
-
-        ToolbarDivider()
-
-        // Zone 3: Secondary outputs
-        secondaryOutputsZone
-
-        ToolbarDivider()
-
-        // Zone 4: Primary confirm & close
-        HStack(spacing: 4) {
-            EditingPrimaryActionButton(
-                symbol: "doc.on.doc",
-                title: L("复制"),
-                label: L("复制"),
-                help: L("复制截图 ⌘C"),
-                action: copy
-            )
-            EditingIconButton(symbol: "xmark", label: L("关闭"), help: L("关闭 Esc"), subtle: true, destructiveHover: true, action: cancel)
-        }
-    }
-
-    @ViewBuilder private var groupedToolbarContent: some View {
-        // Zone 1: Grouped annotation tools
-        HStack(spacing: 2) {
             EditingGroupMenuButton(
-                symbol: (activeShape ?? lastShapeTool).symbol,
-                active: activeShape != nil,
-                label: L("图形"),
-                help: L("图形")
+                symbol: activeFoldedTool?.symbol ?? "square.on.circle",
+                active: activeFoldedTool != nil,
+                label: L("更多标注工具"),
+                help: L("更多标注工具")
             ) {
-                ForEach(shapeTools) { tool in
+                ForEach(foldedTools) { tool in
                     Button { select(tool) } label: {
                         Label(tool.title, systemImage: session.tool == tool ? "checkmark" : tool.symbol)
                     }
                 }
             }
-            .accessibilityValue(activeShape?.title ?? L("未选择"))
-
-            ForEach([EditingTool.arrow, .pencil, .text, .number, .highlight]) { tool in
-                EditingIconButton(
-                    symbol: tool.symbol,
-                    glyph: tool == .text ? "T" : nil,
-                    label: tool.title,
-                    help: toolHelp(tool),
-                    selected: session.tool == tool
-                ) { select(tool) }
-                    .accessibilityValue(session.tool == tool ? L("已选择") : L("未选择"))
-            }
-
-            EditingGroupMenuButton(
-                symbol: (activeMask ?? lastMaskTool).symbol,
-                active: activeMask != nil,
-                label: L("模糊与遮挡"),
-                help: L("模糊与遮挡")
-            ) {
-                ForEach(maskTools) { tool in
-                    Button { select(tool) } label: {
-                        Label(tool.title, systemImage: session.tool == tool ? "checkmark" : tool.symbol)
-                    }
-                }
-            }
-            .accessibilityValue(activeMask?.title ?? L("未选择"))
+            .accessibilityValue(activeFoldedTool?.title ?? L("未选择"))
         }
 
         ToolbarDivider()
 
-        // Zone 2: History & View
-        historyAndViewZone
-
-        ToolbarDivider()
-
-        // Zone 3: Secondary outputs
-        secondaryOutputsZone
-
-        ToolbarDivider()
-
-        // Zone 4: Primary confirm & close (compact icon-only Copy to fit 560pt+)
-        HStack(spacing: 4) {
-            EditingIconButton(symbol: "doc.on.doc", label: L("复制"), help: L("复制截图 ⌘C"), prominent: true, action: copy)
-            EditingIconButton(symbol: "xmark", label: L("关闭"), help: L("关闭 Esc"), subtle: true, destructiveHover: true, action: cancel)
-        }
-    }
-
-    @ViewBuilder private var historyAndViewZone: some View {
+        // Zone 2: Undo / Redo (+ active zoom indicator when zoomed)
         HStack(spacing: 2) {
             EditingIconButton(
                 symbol: "arrow.uturn.backward",
@@ -228,17 +149,51 @@ struct EditingToolbar: View {
                 enabled: session.document.canRedo,
                 action: redo
             )
-            zoomOrMoreMenu
+            if isZoomed {
+                Menu { viewActionsWithStatus } label: {
+                    ZoomPillLabel(zoomStatus: zoomStatus)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help(L("视图缩放") + " · " + L("适配选区") + " ⌘2 · " + L("重置视图") + " ⌘0")
+                .accessibilityLabel(L("视图缩放"))
+                .accessibilityValue(zoomStatus)
+            }
+        }
+
+        ToolbarDivider()
+
+        // Zone 3: Float visible directly; Translate / OCR / Save folded into More menu
+        HStack(spacing: 2) {
+            EditingIconButton(symbol: "macwindow", label: L("悬浮"), help: L("悬浮到屏幕最上层 ⌘F"), action: float)
+            moreActionsMenu
+        }
+
+        ToolbarDivider()
+
+        // Zone 4: Icon-only Copy CTA + Close
+        HStack(spacing: 4) {
+            EditingIconButton(symbol: "doc.on.doc", label: L("复制"), help: L("复制截图 ⌘C"), prominent: true, action: copy)
+            EditingIconButton(symbol: "xmark", label: L("关闭"), help: L("关闭 Esc"), subtle: true, destructiveHover: true, action: cancel)
         }
     }
 
-    @ViewBuilder private var secondaryOutputsZone: some View {
-        HStack(spacing: 2) {
-            EditingIconButton(symbol: "translate", label: L("翻译"), help: L("翻译截图"), action: triggerTranslate)
-            EditingIconButton(symbol: "text.viewfinder", label: L("OCR"), help: L("OCR 识别"), action: triggerOCR)
-            EditingIconButton(symbol: "macwindow", label: L("悬浮"), help: L("悬浮到屏幕最上层 ⌘F"), action: float)
-            EditingIconButton(symbol: "square.and.arrow.down", label: L("保存"), help: L("保存 PNG ⌘S"), action: save)
+    private var moreActionsMenu: some View {
+        Menu {
+            Button { triggerTranslate() } label: { Label(L("翻译截图"), systemImage: "translate") }
+            Button { triggerOCR() } label: { Label(L("OCR 识别"), systemImage: "text.viewfinder") }
+            Button { save() } label: { Label(L("保存 PNG") + "  ⌘S", systemImage: "square.and.arrow.down") }
+            Divider()
+            viewActionsWithStatus
+        } label: {
+            MoreOrZoomLabel(isZoomed: false, zoomStatus: zoomStatus)
         }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(L("更多操作"))
+        .accessibilityLabel(L("更多操作"))
     }
 
     @ViewBuilder private var compactToolbarContent: some View {
@@ -257,29 +212,23 @@ struct EditingToolbar: View {
         Menu {
             viewActionsWithStatus
             Divider()
-            Button { triggerTranslate() } label: { Label(L("翻译"), systemImage: "translate") }
-            Button { triggerOCR() } label: { Label(L("OCR"), systemImage: "text.viewfinder") }
-            Button { float() } label: { Label(L("悬浮"), systemImage: "macwindow") }
+            Button { triggerTranslate() } label: { Label(L("翻译截图"), systemImage: "translate") }
+            Button { triggerOCR() } label: { Label(L("OCR 识别"), systemImage: "text.viewfinder") }
+            Button { save() } label: { Label(L("保存 PNG") + "  ⌘S", systemImage: "square.and.arrow.down") }
         } label: {
             MoreOrZoomLabel(isZoomed: isZoomed, zoomStatus: zoomStatus)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help(L("更多"))
-        .accessibilityLabel(isZoomed ? L("视图缩放") : L("更多"))
+        .help(L("更多操作"))
+        .accessibilityLabel(isZoomed ? L("视图缩放") : L("更多操作"))
         .accessibilityValue(zoomStatus)
 
         ToolbarDivider()
 
-        EditingIconButton(symbol: "square.and.arrow.down", label: L("保存"), help: L("保存 PNG ⌘S"), action: save)
-        EditingPrimaryActionButton(
-            symbol: "doc.on.doc",
-            title: L("复制"),
-            label: L("复制"),
-            help: L("复制截图 ⌘C"),
-            action: copy
-        )
+        EditingIconButton(symbol: "macwindow", label: L("悬浮"), help: L("悬浮到屏幕最上层 ⌘F"), action: float)
+        EditingIconButton(symbol: "doc.on.doc", label: L("复制"), help: L("复制截图 ⌘C"), prominent: true, action: copy)
         EditingIconButton(symbol: "xmark", label: L("关闭"), help: L("关闭 Esc"), subtle: true, destructiveHover: true, action: cancel)
     }
 
@@ -291,9 +240,10 @@ struct EditingToolbar: View {
             Divider()
             viewActionsWithStatus
             Divider()
-            Button { triggerTranslate() } label: { Label(L("翻译"), systemImage: "translate") }
-            Button { triggerOCR() } label: { Label(L("OCR"), systemImage: "text.viewfinder") }
+            Button { triggerTranslate() } label: { Label(L("翻译截图"), systemImage: "translate") }
+            Button { triggerOCR() } label: { Label(L("OCR 识别"), systemImage: "text.viewfinder") }
             Button { float() } label: { Label(L("悬浮"), systemImage: "macwindow") }
+            Button { save() } label: { Label(L("保存 PNG") + "  ⌘S", systemImage: "square.and.arrow.down") }
             Button { cancel() } label: { Label(L("关闭"), systemImage: "xmark") }
         } label: {
             if isZoomed {
@@ -309,39 +259,19 @@ struct EditingToolbar: View {
         .accessibilityLabel(L("标注工具") + " · " + L("视图缩放"))
         .accessibilityValue(session.tool?.title ?? L("未选择"))
 
-        EditingIconButton(symbol: "square.and.arrow.down", label: L("保存"), help: L("保存 PNG ⌘S"), action: save)
         EditingIconButton(symbol: "doc.on.doc", label: L("复制"), help: L("复制截图 ⌘C"), prominent: true, action: copy)
     }
 
-    private var zoomOrMoreMenu: some View {
-        Menu { viewActionsWithStatus } label: {
-            MoreOrZoomLabel(isZoomed: isZoomed, zoomStatus: zoomStatus)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help(L("视图缩放") + " · " + L("适配选区") + " ⌘2 · " + L("重置视图") + " ⌘0")
-        .accessibilityLabel(isZoomed ? L("视图缩放") : L("更多"))
-        .accessibilityValue(zoomStatus)
-    }
-
     @ViewBuilder private var groupedToolMenuItems: some View {
-        Section(L("图形")) {
-            ForEach(shapeTools) { tool in
+        Section(L("常用工具")) {
+            ForEach(primaryTools) { tool in
                 Button { select(tool) } label: {
                     Label(tool.title, systemImage: session.tool == tool ? "checkmark" : tool.symbol)
                 }
             }
         }
-        Section(L("绘制与文字")) {
-            ForEach([EditingTool.arrow, .pencil, .text, .number, .highlight]) { tool in
-                Button { select(tool) } label: {
-                    Label(tool.title, systemImage: session.tool == tool ? "checkmark" : tool.symbol)
-                }
-            }
-        }
-        Section(L("模糊与遮挡")) {
-            ForEach(maskTools) { tool in
+        Section(L("更多标注工具")) {
+            ForEach(foldedTools) { tool in
                 Button { select(tool) } label: {
                     Label(tool.title, systemImage: session.tool == tool ? "checkmark" : tool.symbol)
                 }

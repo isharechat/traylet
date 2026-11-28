@@ -50,13 +50,17 @@ import SwiftUI
     var body: some View {
         GeometryReader { geometry in
             HStack(alignment: .top, spacing: 0) {
-                sidebar.frame(width: geometry.size.width < 650 ? (english ? 160 : 140) : 190)
-                // Keep the column geometry while solid mode shares one uninterrupted surface.
-                Divider().opacity(usesGlass ? 1 : 0)
-                detail
+                sidebar
+                    .frame(width: geometry.size.width < 660 ? (english ? 176 : 168) : Design.Layout.settingsSidebarWidth)
+                    .mac27SidebarSurface()
+                Divider()
+                VStack(spacing: 0) {
+                    toolbar
+                    detail
+                }
+                .mac27ContentSurface()
             }
         }
-        .background { if !usesGlass { Color(nsColor: .windowBackgroundColor) } }
         .background(ShortcutRecordingResponder(manager: shortcuts).frame(width: 0, height: 0))
         .preferredColorScheme(preferences.value.appearance == .system ? nil : preferences.value.appearance == .dark ? .dark : .light)
         .environment(\.locale, Locale(identifier: english ? "en" : "zh-Hans"))
@@ -72,33 +76,85 @@ import SwiftUI
         .onChange(of: navigation.current) { _, _ in shortcuts.cancel() }
         .onDisappear { shortcuts.cancel() }
     }
-    /// macOS System Settings layout: a grouped source list on the left, one grouped form at a time on the right.
+
+    private var toolbar: some View {
+        Mac27ToolbarBar {
+            Text(navigation.current.title(english: english))
+                .font(.system(size: 13, weight: .bold))
+            Spacer(minLength: 8)
+            if navigation.current == .shortcuts {
+                Mac27GlassCapsule(spacing: 4, horizontalPadding: 10) {
+                    if shortcuts.recordingAction != nil {
+                        Button(text("取消录入", "Cancel Recording")) { shortcuts.cancel() }
+                            .buttonStyle(.plain)
+                            .font(.callout)
+                    }
+                    Button(text("恢复默认", "Restore Defaults")) { shortcuts.restoreDefaults() }
+                        .buttonStyle(.plain)
+                        .font(.callout.weight(.medium))
+                }
+            } else if navigation.current == .about {
+                let busy = if case .checking = updater.state { true } else if case .downloading = updater.state { true } else { false }
+                Mac27GlassCapsule(spacing: 4, horizontalPadding: 10) {
+                    Button(text("检查更新", "Check for Updates")) {
+                        Task { await updater.checkForUpdates(manual: true) }
+                    }
+                    .buttonStyle(.plain)
+                    .font(.callout.weight(.medium))
+                    .disabled(busy)
+                }
+            }
+        }
+    }
+
+    /// macOS 27 full-height translucent sidebar with monochrome accent icons and neutral pill selection.
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(SettingsSectionGroup.allCases) { group in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(group.title(english: english))
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 10)
-                        .padding(.bottom, 2)
-                    ForEach(group.sections) { section in
-                        SettingsSidebarRow(
-                            section: section,
-                            title: section.title(english: english),
-                            selected: navigation.current == section
-                        ) {
-                            withAnimation(Design.Animation.snappy) {
-                                navigation.navigate(to: section)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Spacer(minLength: 0)
+                Mac27GlassCircleButton(
+                    symbol: "info.circle",
+                    label: "关于",
+                    active: navigation.current == .about
+                ) {
+                    withAnimation(Design.Animation.snappy) {
+                        navigation.navigate(to: .about)
+                    }
+                }
+            }
+            .padding(.leading, Design.Layout.trafficLightsClearance)
+            .padding(.trailing, 10)
+            .frame(height: Design.Layout.toolbarHeight)
+
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(SettingsSectionGroup.allCases) { group in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(group.title(english: english))
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 8)
+                                .padding(.bottom, 3)
+                            ForEach(group.sections) { section in
+                                SettingsSidebarRow(
+                                    section: section,
+                                    title: section.title(english: english),
+                                    selected: navigation.current == section
+                                ) {
+                                    withAnimation(Design.Animation.snappy) {
+                                        navigation.navigate(to: section)
+                                    }
+                                }
                             }
                         }
                     }
                 }
+                .padding(.horizontal, 12)
+                .padding(.top, 4)
+                .padding(.bottom, 14)
             }
-            Spacer(minLength: 0)
-        }.padding(.horizontal, 10).padding(.vertical, 12).frame(maxHeight: .infinity, alignment: .top)
-            // The column stays transparent so both sides draw on the window's own glass (or one solid
-            // plane in solid mode); the Divider is the only seam between them.
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
     }
     private var detail: some View {
         Group {
@@ -334,32 +390,37 @@ private struct SettingsSidebarRow: View {
     let selected: Bool
     let action: () -> Void
     @State private var hovering = false
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 9) {
+            HStack(spacing: 8) {
                 Image(systemName: section.symbol)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 13, weight: selected ? .semibold : .medium))
+                    .foregroundStyle(Color.accentColor)
                     .frame(width: 20, height: 20)
-                    .background(section.tint.gradient, in: RoundedRectangle(cornerRadius: 5))
-                    .shadow(color: section.tint.opacity(0.24), radius: 2, y: 1)
                     .accessibilityHidden(true)
                 Text(title)
-                    .font(.body.weight(selected ? .medium : .regular))
+                    .font(.body.weight(selected ? .semibold : .regular))
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
-            .frame(height: 30)
+            .frame(height: 28)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .foregroundStyle(selected ? Color.white : Color.primary)
+            .foregroundStyle(Color.primary)
             .background(
-                selected ? AnyShapeStyle(Color.accentColor)
-                         : AnyShapeStyle(hovering ? Color.primary.opacity(0.06) : Color.clear),
+                selected ? Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.085)
+                         : (hovering ? Color.primary.opacity(0.045) : Color.clear),
                 in: RoundedRectangle(cornerRadius: Design.Radius.control)
             )
-            // The whole row is the target, not just the glyph and title.
+            .overlay {
+                if selected && contrast == .increased {
+                    RoundedRectangle(cornerRadius: Design.Radius.control)
+                        .strokeBorder(Color.primary.opacity(0.65), lineWidth: 1)
+                }
+            }
             .contentShape(RoundedRectangle(cornerRadius: Design.Radius.control))
         }
         .buttonStyle(.plain)

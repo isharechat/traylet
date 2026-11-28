@@ -3,244 +3,1074 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Traylet 交互原型 · 1:1 当前实现视图</title>
+<title>Traylet macOS 27</title>
 <style>
 :root{
-  --fg:#1d1d1f;--sec:#6e6e73;--ter:#9a9aa0;--bg:#ffffff;--card:#f2f2f7;--sep:rgba(60,60,67,.18);
-  --fill:rgba(120,120,128,.12);--fill2:rgba(120,120,128,.2);--fill3:rgba(120,120,128,.3);
-  --acc:#007aff;--red:#ff3b30;--ok:#248a3d;--org:#ff9500;--pur:#af52de;--teal:#30b0c7;--ind:#5856d6;
-  --r-cap:999px;--r-ctl:8px;--r-card:12px;--r-panel:18px;
-  --ease:cubic-bezier(.3,.9,.3,1);--dur:.2s;
-  --wall:linear-gradient(135deg,#99c5ff 0%,#cbb8ff 48%,#ffb8d0 100%);
-  --gl:rgba(255,255,255,.52);--gl-in:rgba(255,255,255,.58);--gl-bd:rgba(255,255,255,.68);
-  --gl-hi:inset 0 1px 0 rgba(255,255,255,.76),inset 0 -1px 0 rgba(255,255,255,.18);
-  --gl-sh:0 12px 32px rgba(20,30,60,.18);
+  --fg:rgba(0,0,0,.85);
+  --fg-strong:#141416;
+  --sec:rgba(0,0,0,.52);
+  --ter:rgba(0,0,0,.34);
+  --bg:#ffffff;
+  --bg-subtle:#f6f6f8;
+  --bg-band:rgba(0,0,0,.028);
+  --sidebar-bg:rgba(226,232,240,.66);
+  --sidebar-sel:rgba(0,0,0,.075);
+  --toolbar-bg:rgba(255,255,255,.78);
+  --menu-bg:rgba(246,247,249,.82);
+  --card-bg:rgba(0,0,0,.032);
+  --ctrl-bg:#ffffff;
+  --ctrl-fill:rgba(0,0,0,.075);
+  --ctrl-fill-hover:rgba(0,0,0,.12);
+  --sep:rgba(0,0,0,.09);
+  --sep-strong:rgba(0,0,0,.15);
+  --acc:#0088ff;
+  --acc-tint:rgba(0,136,255,.14);
+  --red:#ff383c;
+  --red-tint:rgba(255,56,60,.15);
+  --ok:#248a3d;
+  --ok-tint:rgba(36,138,61,.14);
+  --org:#e67700;
+  --org-tint:rgba(230,119,0,.14);
+  --pur:#8e44ec;
+  --teal:#0087a8;
+  --ind:#4f46e5;
+
+  /* macOS 27 Liquid Glass tokens */
+  --gl-cap-bg:linear-gradient(180deg,rgba(255,255,255,.76),rgba(245,246,248,.62));
+  --gl-cap-shadow:inset 0 1px 0 rgba(255,255,255,.92),inset 0 -1px 0 rgba(0,0,0,.05),0 1px 3px rgba(0,0,0,.06),0 6px 16px rgba(0,0,0,.04);
+  --gl-cap-border:rgba(255,255,255,.72);
+  --gl-cap-ring:rgba(0,0,0,.08);
+  --gl-pill-active:rgba(0,0,0,.09);
+  --gl-float-bg:rgba(248,249,252,.74);
+  --gl-float-bd:rgba(255,255,255,.78);
+  --gl-float-hi:inset 0 1px 0 rgba(255,255,255,.88),inset 0 -1px 0 rgba(0,0,0,.06),0 10px 28px rgba(15,23,42,.18);
+
+  --win-bd:rgba(0,0,0,.22);
+  --win-sh:0 0 0 .5px var(--win-bd),0 20px 56px rgba(0,0,0,.28),0 4px 12px rgba(0,0,0,.08);
+  --dialog-sh:0 0 0 .5px rgba(0,0,0,.22),0 22px 48px rgba(0,0,0,.32);
+  --focus-ring:0 0 0 3.5px rgba(0,136,255,.34);
+
+  --r-ctrl:6px;
+  --r-row:8px;
+  --r-card:12px;
+  --r-win:16px;
+  --r-cap:999px;
+  --ease:cubic-bezier(.25,.9,.3,1);
+  --dur:.18s;
+
+  /* Organic champagne-silk macOS 27 wallpaper inspired by Figma 4440:8148 */
+  --wall:
+    radial-gradient(110% 90% at 18% 20%,rgba(232,208,176,.95) 0%,rgba(232,208,176,0) 58%),
+    radial-gradient(95% 85% at 84% 22%,rgba(198,210,224,.92) 0%,rgba(198,210,224,0) 56%),
+    radial-gradient(100% 90% at 52% 88%,rgba(143,154,186,.9) 0%,rgba(143,154,186,0) 62%),
+    linear-gradient(135deg,#c9b79f 0%,#9ca7b8 48%,#6d748f 100%);
+  --page-bg:#f2f3f6;
+  --page-panel:#ffffff;
+  --scroll-thumb:rgba(0,0,0,.28);
 }
+
 body.dark{
-  --fg:#f5f5f7;--sec:#98989d;--ter:#636366;--bg:#1e1e20;--card:#2c2c2e;--sep:rgba(84,84,88,.62);
-  --fill:rgba(235,235,245,.12);--fill2:rgba(235,235,245,.18);--fill3:rgba(235,235,245,.26);
-  --acc:#0a84ff;--red:#ff453a;--ok:#32d74b;--org:#ff9f0a;--pur:#bf5af2;--teal:#40cbe0;--ind:#5e5ce6;
-  --wall:linear-gradient(135deg,#13213e 0%,#261b48 52%,#3d1d35 100%);
-  --gl:rgba(42,42,46,.56);--gl-in:rgba(255,255,255,.10);--gl-bd:rgba(255,255,255,.17);
-  --gl-hi:inset 0 1px 0 rgba(255,255,255,.22);--gl-sh:0 12px 32px rgba(0,0,0,.48);
+  --fg:rgba(255,255,255,.88);
+  --fg-strong:#f5f5f7;
+  --sec:rgba(255,255,255,.55);
+  --ter:rgba(255,255,255,.35);
+  --bg:#1c1c1e;
+  --bg-subtle:#242427;
+  --bg-band:rgba(255,255,255,.035);
+  --sidebar-bg:rgba(36,38,44,.68);
+  --sidebar-sel:rgba(255,255,255,.11);
+  --toolbar-bg:rgba(30,30,33,.78);
+  --menu-bg:rgba(36,36,40,.84);
+  --card-bg:rgba(255,255,255,.055);
+  --ctrl-bg:#2c2c30;
+  --ctrl-fill:rgba(255,255,255,.10);
+  --ctrl-fill-hover:rgba(255,255,255,.16);
+  --sep:rgba(255,255,255,.11);
+  --sep-strong:rgba(255,255,255,.20);
+  --acc:#0a84ff;
+  --acc-tint:rgba(10,132,255,.20);
+  --red:#ff453a;
+  --red-tint:rgba(255,69,58,.22);
+  --ok:#30d158;
+  --ok-tint:rgba(48,209,88,.18);
+  --org:#ff9f0a;
+  --org-tint:rgba(255,159,10,.20);
+  --pur:#bf5af2;
+  --teal:#40cbe0;
+  --ind:#7d7aff;
+
+  --gl-cap-bg:linear-gradient(180deg,rgba(62,64,70,.72),rgba(44,45,50,.66));
+  --gl-cap-shadow:inset 0 1px 0 rgba(255,255,255,.20),inset 0 -1px 0 rgba(0,0,0,.35),0 2px 8px rgba(0,0,0,.24);
+  --gl-cap-border:rgba(255,255,255,.16);
+  --gl-cap-ring:rgba(0,0,0,.42);
+  --gl-pill-active:rgba(255,255,255,.16);
+  --gl-float-bg:rgba(40,41,46,.76);
+  --gl-float-bd:rgba(255,255,255,.16);
+  --gl-float-hi:inset 0 1px 0 rgba(255,255,255,.22),0 14px 36px rgba(0,0,0,.52);
+
+  --win-bd:rgba(255,255,255,.16);
+  --win-sh:0 0 0 .5px rgba(0,0,0,.7),inset 0 0 0 .5px var(--win-bd),0 22px 58px rgba(0,0,0,.58);
+  --dialog-sh:0 0 0 .5px rgba(255,255,255,.16),0 24px 54px rgba(0,0,0,.65);
+  --focus-ring:0 0 0 3.5px rgba(10,132,255,.42);
+
+  --wall:
+    radial-gradient(110% 90% at 18% 20%,rgba(92,72,56,.85) 0%,rgba(92,72,56,0) 58%),
+    radial-gradient(95% 85% at 84% 22%,rgba(44,58,86,.9) 0%,rgba(44,58,86,0) 56%),
+    radial-gradient(100% 90% at 50% 88%,rgba(34,36,64,.95) 0%,rgba(34,36,64,0) 62%),
+    linear-gradient(135deg,#2a2320 0%,#1d2333 50%,#141522 100%);
+  --page-bg:#141416;
+  --page-panel:#1c1c1e;
+  --scroll-thumb:rgba(255,255,255,.26);
+}
+
+/* Accessibility fallbacks */
+body.rt *{
+  -webkit-backdrop-filter:none !important;
+  backdrop-filter:none !important;
+}
+body.rt{
+  --sidebar-bg:#eceef2;
+  --toolbar-bg:#f7f7f9;
+  --menu-bg:#f7f7f9;
+  --gl-cap-bg:#ffffff;
+  --gl-cap-shadow:0 0 0 1px var(--sep-strong),0 1px 2px rgba(0,0,0,.05);
+  --gl-float-bg:#f6f6f8;
+  --gl-float-bd:var(--sep-strong);
+  --gl-float-hi:0 6px 20px rgba(0,0,0,.18);
+  --wall:#dfe2e8;
+}
+body.dark.rt{
+  --sidebar-bg:#262629;
+  --toolbar-bg:#222225;
+  --menu-bg:#26262a;
+  --gl-cap-bg:#323236;
+  --gl-float-bg:#2a2a2e;
+  --wall:#121214;
+}
+body.hc{
+  --fg:#000000;
+  --fg-strong:#000000;
+  --sec:rgba(0,0,0,.78);
+  --ter:rgba(0,0,0,.58);
+  --sidebar-bg:#eef0f4;
+  --toolbar-bg:#ffffff;
+  --menu-bg:#ffffff;
+  --gl-cap-bg:#ffffff;
+  --gl-float-bg:#ffffff;
+  --sep:rgba(0,0,0,.45);
+  --sep-strong:rgba(0,0,0,.78);
+  --win-bd:#000000;
+  --wall:#d8dce4;
+  --gl-cap-shadow:0 0 0 1.5px #000000;
+  --gl-float-hi:0 0 0 2px #000000,0 8px 20px rgba(0,0,0,.22);
+}
+body.dark.hc{
+  --fg:#ffffff;
+  --fg-strong:#ffffff;
+  --sec:rgba(255,255,255,.82);
+  --ter:rgba(255,255,255,.65);
+  --sidebar-bg:#1c1c1e;
+  --toolbar-bg:#141416;
+  --menu-bg:#1c1c1e;
+  --gl-cap-bg:#242428;
+  --gl-float-bg:#1c1c1e;
+  --sep:rgba(255,255,255,.45);
+  --sep-strong:rgba(255,255,255,.82);
+  --win-bd:#ffffff;
+  --wall:#0a0a0c;
+  --gl-cap-shadow:0 0 0 1.5px #ffffff;
+  --gl-float-hi:0 0 0 2px #ffffff,0 8px 24px rgba(0,0,0,.6);
+}
+body.hc *{
+  -webkit-backdrop-filter:none !important;
+  backdrop-filter:none !important;
 }
 body.rm *{transition:none !important;animation:none !important}
+
 *{box-sizing:border-box}
-body{margin:0;padding:20px;font:13px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;color:var(--fg);background:var(--bg);min-height:100vh}
-main{max-width:980px;margin:0 auto}
+::selection{background:color-mix(in srgb,var(--acc) 24%,transparent);color:var(--fg-strong)}
+input,textarea,select{caret-color:var(--acc)}
+:focus-visible{outline:none;box-shadow:var(--focus-ring)}
 
-/* Shared SVG icon wrapper */
-.ic{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;flex:none}
+/* macOS style scrollbars */
+::-webkit-scrollbar{width:12px;height:12px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{
+  background:var(--scroll-thumb);
+  border-radius:999px;
+  border:3px solid transparent;
+  background-clip:content-box;
+}
+::-webkit-scrollbar-thumb:hover{background:var(--sec);border:3px solid transparent;background-clip:content-box}
+
+body{
+  margin:0;
+  padding:20px;
+  font:13px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;
+  color:var(--fg);
+  background:var(--page-bg);
+  min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+}
+main{max-width:1040px;margin:0 auto}
+
+.ic{display:inline-flex;align-items:center;justify-content:center;flex:none}
 .ic svg{width:100%;height:100%;display:block}
+.num{font-variant-numeric:tabular-nums}
 
-/* Header & tabs */
-.hdr{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+/* Prototype shell header & screen tabs */
+.hdr{
+  display:flex;
+  align-items:center;
+  gap:14px;
+  flex-wrap:wrap;
+  margin-bottom:14px;
+}
 .brand{display:flex;align-items:center;gap:10px}
-.brand-ic{width:34px;height:34px;border-radius:9px;background:linear-gradient(145deg,#3ea6ff,#007aff);display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(0,122,255,.3);flex:none}
-.hdr h1{font-size:18px;margin:0;font-weight:650}
-.hdr small{display:block;font-size:11px;color:var(--sec)}
-.toggles{margin-left:auto;display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--sec)}
+.brand-ic{
+  width:34px;height:34px;border-radius:9px;
+  background:linear-gradient(155deg,#3ea6ff,#007aff);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 3px 10px rgba(0,122,255,.28),inset 0 1px 0 rgba(255,255,255,.35);
+  flex:none;
+}
+.hdr h1{font-size:17px;margin:0;font-weight:650;letter-spacing:-.015em;color:var(--fg-strong)}
+.hdr small{display:block;font-size:11.5px;color:var(--sec);margin-top:1px}
+.toggles{
+  margin-left:auto;
+  display:flex;gap:10px;flex-wrap:wrap;
+  background:var(--page-panel);
+  border:1px solid var(--sep);
+  border-radius:var(--r-cap);
+  padding:5px 12px;
+  font-size:12px;color:var(--sec);
+}
 .toggles label{display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none}
-.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
-.tab{height:30px;padding:0 14px;border-radius:var(--r-cap);border:1px solid var(--sep);background:var(--fill);color:var(--fg);font:inherit;font-weight:500;cursor:pointer;transition:all var(--dur) var(--ease)}
-.tab:hover{background:var(--fill2)}
-.tab.on{background:var(--acc);color:#fff;border-color:transparent}
+.toggles input{accent-color:var(--acc);margin:0;cursor:pointer}
 
-/* Stage */
-.stage{position:relative;border-radius:var(--r-panel);padding:26px 20px;min-height:540px;background:var(--wall);overflow-x:auto;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
-body.rt .stage,body.hc .stage{background:var(--card)}
-.scr{display:none;width:100%;justify-content:center;align-items:center;flex-direction:column;gap:12px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.tab{
+  height:30px;padding:0 14px;border-radius:var(--r-cap);
+  border:1px solid var(--sep);background:var(--page-panel);
+  color:var(--fg);font:inherit;font-size:12.5px;font-weight:500;
+  cursor:pointer;transition:background var(--dur) var(--ease),color var(--dur) var(--ease),border-color var(--dur) var(--ease);
+}
+.tab:hover{background:var(--ctrl-fill)}
+.tab.on{background:var(--acc);color:#fff;border-color:transparent;font-weight:560}
+.stage-action{
+  margin-left:auto;
+  height:28px;padding:0 11px;border-radius:var(--r-cap);
+  border:1px solid var(--sep);background:var(--page-panel);
+  color:var(--sec);font:inherit;font-size:11.5px;font-weight:500;
+  cursor:pointer;display:inline-flex;align-items:center;gap:5px;
+}
+.stage-action:hover{color:var(--fg);background:var(--ctrl-fill)}
+
+/* Desktop Wallpaper Stage */
+.stage{
+  position:relative;
+  border-radius:20px;
+  padding:28px 24px 22px;
+  min-height:610px;
+  background:var(--wall);
+  overflow-x:auto;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.1);
+}
+.scr{display:none;width:100%;justify-content:center;align-items:center;flex-direction:column;gap:14px}
 .scr.on{display:flex}
-.hint{font-size:11px;color:rgba(255,255,255,.92);background:rgba(0,0,0,.38);padding:4px 12px;border-radius:var(--r-cap);text-align:center}
-body.rt .hint,body.hc .hint{background:var(--bg);color:var(--sec);border:1px solid var(--sep)}
+.hint{
+  font-size:11.5px;
+  color:rgba(255,255,255,.92);
+  background:rgba(16,18,24,.46);
+  -webkit-backdrop-filter:blur(12px);
+  backdrop-filter:blur(12px);
+  padding:5px 14px;
+  border-radius:var(--r-cap);
+  text-align:center;
+  box-shadow:inset 0 0 0 .5px rgba(255,255,255,.18);
+}
+body.rt .hint,body.hc .hint{
+  background:var(--page-panel);
+  color:var(--sec);
+  box-shadow:inset 0 0 0 1px var(--sep-strong);
+}
 
-/* Glass surface system (mirrors Glass.swift) */
-.glass{background:var(--gl);-webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);border:1px solid var(--gl-bd);box-shadow:var(--gl-hi),var(--gl-sh);color:var(--fg)}
-.glass-ctl{background:var(--gl-in);-webkit-backdrop-filter:blur(16px) saturate(160%);backdrop-filter:blur(16px) saturate(160%);border:1px solid var(--gl-bd);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 2px 8px rgba(0,0,0,.08);color:var(--fg)}
-body.rt .glass,body.rt .glass-ctl{background:var(--bg);-webkit-backdrop-filter:none;backdrop-filter:none;border:1px solid var(--sep);box-shadow:0 2px 8px rgba(0,0,0,.12)}
-body.hc .glass,body.hc .glass-ctl{background:var(--bg);-webkit-backdrop-filter:none;backdrop-filter:none;border:2px solid var(--fg);box-shadow:none}
+/* macOS 27 Shared Window & Liquid Glass Controls */
+.mac-win{
+  border-radius:var(--r-win);
+  overflow:hidden;
+  background:var(--bg);
+  box-shadow:var(--win-sh);
+  display:flex;
+  position:relative;
+}
+.mac-win.col{flex-direction:column}
 
-/* Shared controls */
-.w-ib{width:28px;height:28px;border:0;border-radius:50%;background:transparent;color:var(--fg);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:background .15s,transform .15s var(--ease)}
-.w-ib:hover:not(:disabled){background:color-mix(in srgb,var(--fg) 9%,transparent)}
-.w-ib:active:not(:disabled){transform:scale(.93)}
-.w-ib:disabled{opacity:.38;cursor:default}
-.w-ib.ok{color:var(--ok)}
-.w-ib.on-acc{color:var(--acc);background:color-mix(in srgb,var(--acc) 16%,transparent)}
-.pill{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 8px;border-radius:999px;font-size:11px;font-weight:500;white-space:nowrap}
-.pill.sec{color:var(--sec);background:color-mix(in srgb,var(--sec) 12%,transparent)}
-.pill.acc{color:var(--acc);background:color-mix(in srgb,var(--acc) 13%,transparent)}
-.pill.org{color:var(--org);background:color-mix(in srgb,var(--org) 14%,transparent)}
-.pill.ok{color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,transparent)}
-.cta-grad{height:28px;padding:0 14px;border:0;border-radius:var(--r-cap);background:linear-gradient(180deg,color-mix(in srgb,var(--acc) 88%,#fff),var(--acc));color:#fff;font:inherit;font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:5px;box-shadow:0 2px 6px color-mix(in srgb,var(--acc) 30%,transparent);transition:filter .15s,transform .15s var(--ease)}
-.cta-grad:hover:not(:disabled){filter:brightness(1.07)}
-.cta-grad:active:not(:disabled){transform:scale(.96)}
-.cta-grad:disabled{opacity:.4;box-shadow:none;cursor:default}
-.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);padding:6px 14px;border-radius:var(--r-cap);background:rgba(28,28,30,.92);color:#fff;font-size:12px;z-index:99;box-shadow:0 6px 20px rgba(0,0,0,.3);pointer-events:none}
+/* 14px Tactile macOS 27 Traffic Lights */
+.stoplights{
+  display:inline-flex;
+  align-items:center;
+  gap:9px;
+  flex:none;
+}
+.stoplights i{
+  display:block;
+  width:14px;height:14px;
+  border-radius:50%;
+  position:relative;
+}
+.stoplights i.cl{
+  background:#fa9891;
+  box-shadow:inset -1.5px 0 .5px -1px #c40000,inset 1.5px 0 .5px -1px #c40000,inset 0 0 1px rgba(196,0,0,.45),inset 0 4px 4px -4px rgba(0,0,0,.55),0 1px 1px rgba(250,129,120,.2);
+}
+.stoplights i.mn{
+  background:#ffda66;
+  box-shadow:inset -1.5px 0 .5px -1px #9e4c00,inset 1.5px 0 .5px -1px #9e4c00,inset 0 0 1px rgba(158,76,0,.45),inset 0 4px 4px -4px rgba(0,0,0,.55),0 1px 1px rgba(255,215,89,.2);
+}
+.stoplights i.zm{
+  background:#ade392;
+  box-shadow:inset -1.5px 0 .5px -1px #005600,inset 1.5px 0 .5px -1px #005600,inset 0 0 1px rgba(0,86,0,.45),inset 0 4px 4px -4px rgba(0,0,0,.55),0 1px 1px rgba(173,227,146,.2);
+}
+body.hc .stoplights i.cl{background:#ff3b30}
+body.hc .stoplights i.mn{background:#ffcc00}
+body.hc .stoplights i.zm{background:#28cd41}
 
-/* 1. Menu Bar (MenuFactory.swift) */
-.mb-stage{width:760px;height:430px;border-radius:12px;overflow:hidden;position:relative;box-shadow:0 18px 46px rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.28)}
-.mb-bar{height:28px;background:rgba(255,255,255,.55);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);display:flex;align-items:center;justify-content:flex-end;padding:0 14px;gap:14px;font-size:12px;color:#1d1d1f;border-bottom:1px solid rgba(0,0,0,.08)}
-body.dark .mb-bar{background:rgba(30,30,34,.72);color:#f5f5f7;border-bottom-color:rgba(255,255,255,.1)}
-.mb-ic{width:28px;height:22px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;background:rgba(0,122,255,.16);color:var(--acc);cursor:pointer}
-.nsmenu{position:absolute;top:34px;right:14px;width:276px;border-radius:10px;padding:5px;z-index:2}
-.nsm-item{display:flex;align-items:center;gap:8px;height:25px;padding:0 10px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--fg);border:0;background:transparent;width:100%;text-align:left;font-family:inherit}
+/* Full-height translucent macOS 27 Sidebar */
+.m27-sidebar{
+  flex:none;
+  display:flex;
+  flex-direction:column;
+  background:var(--sidebar-bg);
+  -webkit-backdrop-filter:blur(40px) saturate(165%);
+  backdrop-filter:blur(40px) saturate(165%);
+  border-right:1px solid var(--sep);
+  position:relative;
+  min-height:0;
+}
+.m27-sidebar-top{
+  height:52px;
+  padding:0 10px 0 18px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex:none;
+}
+
+/* 52pt Unified Toolbar with Scroll Edge Effect */
+.m27-toolbar{
+  height:52px;
+  padding:0 12px 0 16px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  background:var(--toolbar-bg);
+  -webkit-backdrop-filter:blur(10px);
+  backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--sep);
+  flex:none;
+  position:relative;
+  z-index:2;
+}
+.m27-title{
+  font-size:13px;
+  font-weight:700;
+  color:var(--fg-strong);
+  letter-spacing:-.01em;
+  white-space:nowrap;
+}
+.m27-subtitle{
+  font-size:11.5px;
+  color:var(--sec);
+  font-weight:450;
+  white-space:nowrap;
+}
+
+/* 36pt Liquid Glass Capsule Containers */
+.gl-pill{
+  height:36px;
+  padding:4px;
+  border-radius:var(--r-cap);
+  background:var(--gl-cap-bg);
+  box-shadow:var(--gl-cap-shadow),0 0 0 .5px var(--gl-cap-ring);
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  flex:none;
+}
+.gl-circle{
+  width:36px;height:36px;
+  padding:4px;
+  border-radius:50%;
+  border:0;
+  background:var(--gl-cap-bg);
+  box-shadow:var(--gl-cap-shadow),0 0 0 .5px var(--gl-cap-ring);
+  color:var(--fg);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  flex:none;
+  transition:transform var(--dur) var(--ease),background var(--dur) var(--ease),color var(--dur) var(--ease);
+}
+.gl-circle:hover:not(:disabled){filter:brightness(.97)}
+.gl-circle:active:not(:disabled){transform:scale(.94)}
+.gl-circle.on{color:var(--acc)}
+.gl-circle.warn{color:var(--org)}
+.gl-circle:disabled{opacity:.38;cursor:default}
+
+.gl-btn{
+  min-width:28px;height:28px;
+  padding:0 6px;
+  border:0;
+  border-radius:var(--r-cap);
+  background:transparent;
+  color:var(--fg);
+  font:inherit;
+  font-size:12.5px;
+  font-weight:510;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  cursor:pointer;
+  transition:background var(--dur) var(--ease),color var(--dur) var(--ease),transform var(--dur) var(--ease);
+}
+.gl-btn:hover:not(:disabled){background:rgba(0,0,0,.055)}
+body.dark .gl-btn:hover:not(:disabled){background:rgba(255,255,255,.09)}
+.gl-btn:active:not(:disabled){transform:scale(.94)}
+.gl-btn.on{background:var(--gl-pill-active);color:var(--fg-strong);font-weight:580}
+.gl-btn.on-acc{background:var(--acc-tint);color:var(--acc);font-weight:580}
+.gl-btn.ok{background:var(--ok-tint);color:var(--ok)}
+.gl-btn.danger:hover:not(:disabled){background:var(--red-tint);color:var(--red)}
+.gl-btn:disabled{opacity:.38;cursor:default}
+
+/* Liquid Glass Segmented Control (height 36px, 28px pills, 20px hairline dividers) */
+.gl-seg{
+  height:36px;
+  padding:4px;
+  border-radius:var(--r-cap);
+  background:var(--gl-cap-bg);
+  box-shadow:var(--gl-cap-shadow),0 0 0 .5px var(--gl-cap-ring);
+  display:inline-flex;
+  align-items:center;
+  flex:none;
+}
+.gl-seg button{
+  height:28px;
+  padding:0 12px;
+  border:0;
+  border-radius:var(--r-cap);
+  background:transparent;
+  color:var(--fg);
+  font:inherit;
+  font-size:12.5px;
+  font-weight:510;
+  cursor:pointer;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  transition:background var(--dur) var(--ease),color var(--dur) var(--ease);
+}
+.gl-seg button:hover:not(.on){background:rgba(0,0,0,.045)}
+body.dark .gl-seg button:hover:not(.on){background:rgba(255,255,255,.07)}
+.gl-seg button.on{
+  background:var(--gl-pill-active);
+  color:var(--fg-strong);
+  font-weight:590;
+}
+.gl-seg .sep{
+  width:1px;height:18px;
+  background:var(--sep);
+  margin:0 2px;
+  flex:none;
+  transition:opacity var(--dur);
+}
+.gl-seg .sep.hide{opacity:0}
+
+/* 36px Capsule Search Input */
+.gl-search{
+  height:36px;
+  padding:0 12px;
+  border-radius:var(--r-cap);
+  background:var(--gl-cap-bg);
+  box-shadow:var(--gl-cap-shadow),0 0 0 .5px var(--gl-cap-ring);
+  display:flex;
+  align-items:center;
+  gap:7px;
+  color:var(--sec);
+  transition:box-shadow var(--dur) var(--ease);
+}
+.gl-search:focus-within{box-shadow:var(--focus-ring),0 0 0 1px var(--acc)}
+.gl-search input{
+  flex:1;min-width:0;border:0;background:transparent;outline:none;
+  color:var(--fg);font:inherit;font-size:13px;
+}
+.gl-search input::placeholder{color:var(--ter)}
+.gl-search .clr{
+  width:18px;height:18px;border:0;border-radius:50%;padding:0;
+  background:var(--ctrl-fill);color:var(--sec);
+  display:none;align-items:center;justify-content:center;cursor:pointer;
+}
+.gl-search.has-val .clr{display:inline-flex}
+.gl-search .clr:hover{background:var(--ctrl-fill-hover);color:var(--fg)}
+
+/* Status Pills & Badges */
+.pill{
+  display:inline-flex;align-items:center;gap:4px;
+  height:20px;padding:0 8px;border-radius:var(--r-cap);
+  font-size:11px;font-weight:550;white-space:nowrap;
+}
+.pill.sec{color:var(--sec);background:var(--ctrl-fill)}
+.pill.acc{color:var(--acc);background:var(--acc-tint)}
+.pill.ok{color:var(--ok);background:var(--ok-tint)}
+.pill.org{color:var(--org);background:var(--org-tint)}
+.pill.pur{color:var(--pur);background:color-mix(in srgb,var(--pur) 14%,transparent)}
+.pill.teal{color:var(--teal);background:color-mix(in srgb,var(--teal) 14%,transparent)}
+
+/* Primary Blue Capsule CTA */
+.cta-pill{
+  height:28px;padding:0 13px;border:0;border-radius:var(--r-cap);
+  background:var(--acc);color:#fff;
+  font:inherit;font-size:12.5px;font-weight:580;
+  display:inline-flex;align-items:center;justify-content:center;gap:5px;
+  cursor:pointer;white-space:nowrap;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.26),0 1px 3px color-mix(in srgb,var(--acc) 32%,transparent);
+  transition:filter var(--dur) var(--ease),transform var(--dur) var(--ease);
+}
+.cta-pill:hover:not(:disabled){filter:brightness(1.07)}
+.cta-pill:active:not(:disabled){transform:scale(.96)}
+.cta-pill:disabled{opacity:.4;box-shadow:none;cursor:default}
+
+/* 24pt macOS 27 Form Controls (Pop-up, Button, Input, Switch) */
+.m27-btn{
+  height:24px;padding:0 12px;border:0;border-radius:var(--r-ctrl);
+  background:var(--ctrl-fill);color:var(--fg);
+  font:inherit;font-size:12.5px;font-weight:510;
+  display:inline-flex;align-items:center;justify-content:center;gap:5px;
+  cursor:pointer;white-space:nowrap;
+  transition:background var(--dur) var(--ease);
+}
+.m27-btn:hover:not(:disabled){background:var(--ctrl-fill-hover)}
+.m27-btn.pri{
+  background:var(--acc);color:#fff;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22);
+}
+.m27-btn.pri:hover:not(:disabled){filter:brightness(1.07)}
+.m27-btn.del{background:var(--red-tint);color:var(--red)}
+.m27-btn.del:hover:not(:disabled){background:color-mix(in srgb,var(--red) 24%,transparent)}
+
+.m27-popup{
+  position:relative;height:24px;border-radius:var(--r-ctrl);
+  background:var(--ctrl-fill);
+  display:inline-flex;align-items:center;
+  padding:0 24px 0 10px;
+  cursor:pointer;
+}
+.m27-popup:hover{background:var(--ctrl-fill-hover)}
+.m27-popup select{
+  appearance:none;-webkit-appearance:none;
+  border:0;background:transparent;color:var(--fg);
+  font:inherit;font-size:12.5px;font-weight:510;
+  outline:none;cursor:pointer;padding:0;width:100%;
+}
+.m27-popup .chev{
+  position:absolute;right:6px;pointer-events:none;color:var(--sec);
+  display:inline-flex;align-items:center;
+}
+
+.m27-input{
+  height:24px;padding:0 8px;border-radius:var(--r-ctrl);
+  background:var(--ctrl-bg);
+  border:1px solid var(--sep-strong);
+  color:var(--fg);font:inherit;font-size:12.5px;font-weight:500;
+  outline:none;
+}
+.m27-input:focus{border-color:var(--acc);box-shadow:var(--focus-ring)}
+
+.m27-switch{
+  width:36px;height:20px;border-radius:999px;
+  background:var(--ctrl-fill-hover);border:0;
+  position:relative;cursor:pointer;flex:none;
+  transition:background var(--dur) var(--ease);
+}
+.m27-switch:after{
+  content:"";position:absolute;left:2px;top:2px;
+  width:16px;height:16px;border-radius:50%;
+  background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.28);
+  transition:left var(--dur) var(--ease);
+}
+.m27-switch.on{background:#34c759}
+.m27-switch.on:after{left:18px}
+
+/* Quiet small icon button for inline toolbars/footers */
+.q-ib{
+  width:26px;height:26px;border:0;border-radius:50%;
+  background:transparent;color:var(--sec);
+  display:inline-flex;align-items:center;justify-content:center;
+  cursor:pointer;padding:0;
+  transition:background var(--dur) var(--ease),color var(--dur) var(--ease);
+}
+.q-ib:hover:not(:disabled){background:var(--ctrl-fill);color:var(--fg)}
+.q-ib:disabled{opacity:.35;cursor:default}
+.q-ib.ok{color:var(--ok)}
+
+.toast{
+  position:fixed;left:50%;bottom:24px;transform:translateX(-50%);
+  padding:7px 16px;border-radius:var(--r-cap);
+  background:rgba(24,24,28,.92);color:#fff;
+  font-size:12px;font-weight:500;
+  z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.32);
+  pointer-events:none;
+}
+
+/* =========================================================
+   1. MENU BAR (MenuFactory.swift + macOS 27 Top Bar)
+   ========================================================= */
+.mb-stage{
+  width:820px;height:470px;
+  border-radius:var(--r-win);overflow:hidden;position:relative;
+  background:var(--wall);
+  box-shadow:var(--win-sh);
+}
+.mb-bar{
+  height:32px;
+  background:rgba(255,255,255,.32);
+  -webkit-backdrop-filter:blur(26px) saturate(160%);
+  backdrop-filter:blur(26px) saturate(160%);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 14px;font-size:13px;font-weight:560;color:#fff;
+  text-shadow:0 1px 2px rgba(0,0,0,.18);
+  border-bottom:.5px solid rgba(255,255,255,.22);
+}
+body.dark .mb-bar{background:rgba(20,22,28,.48);border-bottom-color:rgba(255,255,255,.1)}
+body.rt .mb-bar,body.hc .mb-bar{background:var(--toolbar-bg);color:var(--fg);text-shadow:none;border-bottom-color:var(--sep)}
+.mb-left,.mb-right{display:flex;align-items:center;gap:14px}
+.mb-app{font-weight:750}
+.mb-ic{
+  width:28px;height:22px;border-radius:6px;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:rgba(255,255,255,.24);color:#fff;cursor:pointer;
+}
+body.rt .mb-ic,body.hc .mb-ic{background:var(--acc-tint);color:var(--acc)}
+.mb-bg-card{
+  position:absolute;left:42px;top:88px;width:420px;height:270px;
+  border-radius:var(--r-win);background:var(--bg);box-shadow:var(--win-sh);
+  opacity:.82;pointer-events:none;overflow:hidden;display:flex;flex-direction:column;
+}
+.mb-bg-card .m27-toolbar{height:44px}
+.mb-bg-card .sk{padding:18px;display:flex;flex-direction:column;gap:10px}
+.mb-bg-card .sk i{display:block;height:10px;border-radius:5px;background:var(--ctrl-fill)}
+.nsmenu{
+  position:absolute;top:38px;right:14px;width:280px;
+  border-radius:12px;padding:5px;z-index:3;
+  background:var(--menu-bg);
+  -webkit-backdrop-filter:blur(32px) saturate(180%);
+  backdrop-filter:blur(32px) saturate(180%);
+  box-shadow:0 0 0 .5px var(--win-bd),inset 0 1px 0 rgba(255,255,255,.5),0 18px 42px rgba(0,0,0,.26);
+}
+body.dark .nsmenu{box-shadow:0 0 0 .5px var(--win-bd),inset 0 1px 0 rgba(255,255,255,.15),0 18px 46px rgba(0,0,0,.58)}
+.nsm-item{
+  display:flex;align-items:center;gap:9px;
+  height:26px;padding:0 10px;border-radius:6px;
+  cursor:pointer;font-size:13px;color:var(--fg);
+  border:0;background:transparent;width:100%;text-align:left;font-family:inherit;
+}
 .nsm-item:hover{background:var(--acc);color:#fff}
 .nsm-item:hover .nsm-k,.nsm-item:hover .nsm-i{color:#fff}
-.nsm-i{width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;color:var(--sec);flex:none}
-.nsm-k{margin-left:auto;color:var(--sec);font-size:12px;font-family:ui-monospace,SFMono-Regular,monospace}
+.nsm-i{width:15px;height:15px;display:inline-flex;align-items:center;justify-content:center;color:var(--sec);flex:none}
+.nsm-k{margin-left:auto;color:var(--sec);font-size:11.5px;font-family:ui-monospace,SFMono-Regular,monospace}
 .nsm-sep{height:1px;background:var(--sep);margin:4px 8px}
 
-/* 2. Capture & Editing (EditingControls.swift + EditingCanvasView.swift) */
-.ed{position:relative;width:780px;height:400px;border-radius:10px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.3),0 18px 48px rgba(0,0,0,.45);background:#fff;user-select:none}
+/* =========================================================
+   2. SCREENSHOT EDITOR (40pt Liquid Glass + Save Dialog)
+   ========================================================= */
+.ed{
+  position:relative;width:820px;height:430px;
+  border-radius:var(--r-win);overflow:hidden;
+  box-shadow:var(--win-sh);background:#fff;user-select:none;
+}
 .ed.gone{display:none}
-.shot{position:absolute;inset:0;background:linear-gradient(180deg,#e9edf4 0 32px,#fff 32px);color:#222}
-.shot .tb0{height:32px;display:flex;align-items:center;gap:6px;padding:0 12px;background:#dfe4ec}
-.shot .tb0 i{width:9px;height:9px;border-radius:50%;background:#b8bec9}
-.shot .sec1{position:absolute;left:22px;top:56px;width:340px}
-.shot .ln{height:9px;border-radius:5px;background:#dfe3ea;margin:12px 0}
-.shot .card1{position:absolute;right:24px;top:54px;width:220px;height:130px;border-radius:10px;background:linear-gradient(135deg,#5b8def,#9b6bff)}
-.shot .pw{position:absolute;left:22px;top:198px;padding:6px 10px;background:#fff3d6;border-radius:6px;font:12px ui-monospace,monospace;color:#4a3b14}
-.rg{position:absolute;box-shadow:0 0 0 9999px rgba(0,0,0,.45);outline:1.5px solid #0a84ff;cursor:move}
+.shot{position:absolute;inset:0;background:linear-gradient(180deg,#eef1f6 0 40px,#ffffff 40px);color:#1d1d1f}
+.shot .tb0{height:40px;display:flex;align-items:center;gap:8px;padding:0 14px;background:#e6eaf2;border-bottom:1px solid rgba(0,0,0,.06)}
+.shot .tb0 i{width:10px;height:10px;border-radius:50%;background:#c2c7d1}
+.shot .sec1{position:absolute;left:28px;top:68px;width:360px}
+.shot .ln{height:9px;border-radius:5px;background:#e1e5ec;margin:12px 0}
+.shot .card1{position:absolute;right:28px;top:64px;width:236px;height:140px;border-radius:12px;background:linear-gradient(135deg,#3b82f6,#7c3aed)}
+.shot .pw{position:absolute;left:28px;top:220px;padding:7px 12px;background:#fff4d4;border:1px solid #f0dc9c;border-radius:8px;font:12px ui-monospace,monospace;color:#544214}
+.rg{position:absolute;box-shadow:0 0 0 9999px rgba(0,0,0,.44);outline:1.5px solid #0088ff;cursor:move}
 .rg.draw{cursor:crosshair}
 .rg .clip{position:absolute;inset:0;overflow:hidden}
 .rg .clip svg,.rg .clip .bl,.rg .clip .tx{position:absolute;inset:0}
 .rg .clip svg{width:100%;height:100%}
 .ed .bl{pointer-events:none}.ed .bl div div{position:absolute;border-radius:50%;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
 .ed .tx{pointer-events:none}.ed .tx div{position:absolute;pointer-events:auto;outline:none;white-space:pre;min-width:10px;font-weight:600}
-.hd{position:absolute;width:9px;height:9px;margin:-4.5px 0 0 -4.5px;border-radius:50%;background:#fff;border:1.5px solid #0a84ff;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+.hd{position:absolute;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:#fff;border:1.5px solid #0088ff;box-shadow:0 1px 3px rgba(0,0,0,.3)}
 .hd[data-d=nw],.hd[data-d=se]{cursor:nwse-resize}.hd[data-d=ne],.hd[data-d=sw]{cursor:nesw-resize}.hd[data-d=n],.hd[data-d=s]{cursor:ns-resize}.hd[data-d=e],.hd[data-d=w]{cursor:ew-resize}
-.dim{position:absolute;left:0;top:-24px;font:500 11px ui-monospace,monospace;color:#fff;background:rgba(0,0,0,.64);padding:2px 8px;border-radius:999px;white-space:nowrap;pointer-events:none}
+.dim{position:absolute;left:0;top:-26px;font:560 11px ui-monospace,monospace;color:#fff;background:rgba(20,22,28,.72);padding:2px 9px;border-radius:999px;white-space:nowrap;pointer-events:none}
 .ring{position:absolute;border-radius:50%;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.55);pointer-events:none;display:none}
-.pal{position:absolute;display:block;width:max-content}
-.ed .nt{display:inline-flex;align-items:center;height:40px;padding:0 8px;gap:4px;border-radius:999px}
+.pal{position:absolute;display:block;width:max-content;z-index:4}
+.ed-glass{
+  background:var(--gl-float-bg);
+  -webkit-backdrop-filter:blur(26px) saturate(180%);
+  backdrop-filter:blur(26px) saturate(180%);
+  border:1px solid var(--gl-float-bd);
+  box-shadow:var(--gl-float-hi);
+  color:var(--fg);
+}
+.ed .nt{display:inline-flex;align-items:center;height:40px;padding:0 7px;gap:4px;border-radius:999px}
 .ed .nt .zone{display:inline-flex;align-items:center;gap:2px}
-.ed .nt .vr,.opt .vr{width:1px;height:18px;margin:0 3px;background:color-mix(in srgb,var(--fg) 14%,transparent)}
-body.hc .ed .nt .vr,body.hc .opt .vr{background:color-mix(in srgb,var(--fg) 35%,transparent)}
-.grip{width:14px;height:28px;display:grid;grid-template-columns:repeat(2,2.2px);gap:2.5px;place-content:center;color:var(--fg);opacity:.3;cursor:grab;transition:opacity .15s}
+.ed .nt .vr,.opt .vr{width:1px;height:18px;margin:0 3px;background:var(--sep-strong)}
+.grip{width:14px;height:28px;display:grid;grid-template-columns:repeat(2,2.2px);gap:2.5px;place-content:center;color:var(--fg);opacity:.32;cursor:grab;transition:opacity .15s}
 .grip i{display:block;width:2.2px;height:2.2px;border-radius:50%;background:currentColor}
-.grip:hover{opacity:.6}.grip:active{cursor:grabbing}
+.grip:hover{opacity:.65}.grip:active{cursor:grabbing}
 .ed .nb{border:0;border-radius:999px;background:transparent;color:var(--fg);font:inherit;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background .15s,transform .15s var(--ease),opacity .15s}
 .ed .nb.ico{width:28px;height:28px;padding:0}
-.ed .nb.ico:hover:not(.dis){background:color-mix(in srgb,var(--fg) 9%,transparent)}
-.ed .nb.ico.sel{background:color-mix(in srgb,var(--acc) 18%,transparent);color:var(--acc);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 45%,transparent);font-weight:600}
-body.hc .ed .nb.ico.sel,.opt .dp.on,.opt .fp.on,.opt .fill-btn.on{box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--acc) 85%,transparent)}
+.ed .nb.ico:hover:not(.dis){background:var(--ctrl-fill)}
+.ed .nb.ico.sel{background:var(--acc-tint);color:var(--acc);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 45%,transparent)}
+.ed .nb.trig{height:28px;padding:0 7px;gap:3px}
+.ed .nb.trig:hover:not(.dis){background:var(--ctrl-fill)}
+.ed .nb.trig.sel{background:var(--acc-tint);color:var(--acc);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 45%,transparent)}
+.ed .nb.trig.open{background:var(--ctrl-fill)}
 .ed .nb.dis{opacity:.35;pointer-events:none}
-.ed .nb.cta{height:28px;padding:0 10px;gap:4px;font-size:12px;font-weight:600;background:var(--acc);color:#fff;box-shadow:inset 0 0 0 .75px rgba(255,255,255,.22)}
-.ed .nb.cta:hover{filter:brightness(1.06);box-shadow:inset 0 0 0 .75px rgba(255,255,255,.35)}
+.ed .nb.cta{width:28px;height:28px;padding:0;background:var(--acc);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.26)}
+.ed .nb.cta:hover{filter:brightness(1.07)}
 .ed .nb.close{color:var(--sec)}
-.ed .nb.close:hover{color:var(--red);background:color-mix(in srgb,var(--red) 14%,transparent)}
-.ed .nb:active,.opt button:active{transform:scale(.93);opacity:.85}
+.ed .nb.close:hover{color:var(--red);background:var(--red-tint)}
+.ed .nb:active,.opt button:active{transform:scale(.93)}
+.ed-pop-anchor{position:relative;display:inline-flex;align-items:center}
+.ed-pop{
+  position:absolute;bottom:calc(100% + 8px);left:0;
+  min-width:152px;padding:5px;border-radius:12px;
+  background:var(--menu-bg);
+  -webkit-backdrop-filter:blur(32px) saturate(180%);
+  backdrop-filter:blur(32px) saturate(180%);
+  box-shadow:0 0 0 .5px var(--win-bd),inset 0 1px 0 rgba(255,255,255,.5),0 16px 36px rgba(0,0,0,.24);
+  display:flex;flex-direction:column;gap:2px;z-index:10;
+}
+body.dark .ed-pop{box-shadow:0 0 0 .5px var(--win-bd),inset 0 1px 0 rgba(255,255,255,.15),0 18px 40px rgba(0,0,0,.55)}
+body.hc .ed-pop{box-shadow:0 0 0 1.5px var(--win-bd),0 10px 24px rgba(0,0,0,.3)}
+.ed-pop.down{bottom:auto;top:calc(100% + 8px)}
+.ed-pop.right{left:auto;right:0}
+.ed-pop-item{
+  height:28px;padding:0 9px;border:0;border-radius:7px;
+  background:transparent;color:var(--fg);font:inherit;font-size:12.5px;font-weight:500;
+  display:flex;align-items:center;gap:8px;cursor:pointer;text-align:left;white-space:nowrap;
+}
+.ed-pop-item:hover{background:var(--acc);color:#fff}
+.ed-pop-item:hover .ed-pop-k{color:rgba(255,255,255,.85)}
+.ed-pop-item.on{background:var(--acc-tint);color:var(--acc);font-weight:580}
+.ed-pop-item.on:hover{background:var(--acc);color:#fff}
+.ed-pop-k{margin-left:auto;font:11px ui-monospace,SFMono-Regular,monospace;color:var(--sec)}
 .pal .opt{position:absolute;left:0;top:calc(100% + 8px);white-space:nowrap}
 .pal.flip .opt{top:auto;bottom:calc(100% + 8px)}
 .opt{display:none;align-items:center;gap:8px;height:40px;padding:0 10px;border-radius:999px}
 .opt.on{display:flex}
 .opt .grp{display:flex;align-items:center;gap:4px}
 .opt .dp{width:26px;height:26px;border-radius:50%;border:0;background:transparent;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
-.opt .dp i{display:block;border-radius:50%;background:color-mix(in srgb,var(--fg) 70%,transparent)}
-.opt .dp:hover{background:color-mix(in srgb,var(--fg) 8%,transparent)}
-.opt .dp.on{background:color-mix(in srgb,var(--acc) 18%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 45%,transparent)}.opt .dp.on i{background:var(--acc)}
+.opt .dp i{display:block;border-radius:50%;background:var(--sec)}
+.opt .dp:hover{background:var(--ctrl-fill)}
+.opt .dp.on{background:var(--acc-tint);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 45%,transparent)}.opt .dp.on i{background:var(--acc)}
 .opt .fp{width:26px;height:24px;border-radius:6px;border:0;background:transparent;color:var(--fg);font:11px ui-monospace,monospace;cursor:pointer}
-.opt .fp:hover{background:color-mix(in srgb,var(--fg) 8%,transparent)}
-.opt .fp.on{background:color-mix(in srgb,var(--acc) 18%,transparent);color:var(--acc);font-weight:600;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 45%,transparent)}
-.opt .nval{width:38px;height:22px;text-align:center;border-radius:6px;border:1px solid var(--sep);background:var(--fill);color:var(--fg);font:12px ui-monospace,monospace;outline:none}
+.opt .fp:hover{background:var(--ctrl-fill)}
+.opt .fp.on{background:var(--acc-tint);color:var(--acc);font-weight:600}
+.opt .nval{width:38px;height:22px;text-align:center;border-radius:6px;border:1px solid var(--sep);background:var(--ctrl-fill);color:var(--fg);font:12px ui-monospace,monospace;outline:none}
 .opt .sws{display:inline-flex;align-items:center;gap:3px}
-.opt .swb{width:20px;height:20px;padding:0;border:0;border-radius:50%;background:transparent;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s var(--ease)}
-.opt .swb i{display:block;width:16px;height:16px;border-radius:50%;box-shadow:inset 0 0 0 .75px rgba(128,128,128,.3)}
-.opt .swb:hover{transform:scale(1.12)}
+.opt .swb{width:20px;height:20px;padding:0;border:0;border-radius:50%;background:transparent;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.opt .swb i{display:block;width:16px;height:16px;border-radius:50%;box-shadow:inset 0 0 0 .75px rgba(128,128,128,.35)}
 .opt .swb.on{box-shadow:0 0 0 1.5px var(--acc)}.opt .swb.on i{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.95)}
 .opt .wheel{position:relative;width:24px;height:24px;border-radius:50%;background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red);display:inline-block;cursor:pointer}
 .opt .wheel b{position:absolute;inset:5px;border-radius:50%;border:2px solid var(--bg)}
 .opt .wheel input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
 .opt .fill-btn{width:28px;height:28px;border:0;border-radius:50%;background:transparent;color:var(--fg);cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
-.opt .fill-btn:hover{background:color-mix(in srgb,var(--fg) 9%,transparent)}
-.opt .fill-btn.on{background:color-mix(in srgb,var(--acc) 18%,transparent);color:var(--acc);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 45%,transparent)}
+.opt .fill-btn:hover{background:var(--ctrl-fill)}
+.opt .fill-btn.on{background:var(--acc-tint);color:var(--acc)}
 .opt input[type=range]{width:84px;accent-color:var(--acc)}
 .opt .val{font:11px ui-monospace,monospace;color:var(--sec);min-width:34px;text-align:right}
-.reopen{width:780px;height:400px;border-radius:10px;background:rgba(0,0,0,.78);color:#fff;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+.reopen{width:820px;height:430px;border-radius:var(--r-win);background:rgba(16,18,22,.82);color:#fff;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;box-shadow:var(--win-sh)}
 .reopen.on{display:flex}
 
-/* 3. Translation Floating Window (TranslationWorkspaceView.swift) */
-.tr-win{width:540px;border-radius:var(--r-panel);padding:12px 12px 8px;display:flex;flex-direction:column;gap:8px}
-.tr-box{position:relative;border-radius:var(--r-panel);padding:12px 12px 44px;min-height:148px;display:flex;flex-direction:column;gap:6px;transition:box-shadow .15s}
-.tr-box.focused{box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--acc) 85%,transparent),0 0 10px color-mix(in srgb,var(--acc) 14%,transparent)}
-.tr-hdr{display:flex;align-items:center;gap:8px}
-.tr-hdr .lbl{font-size:11px;font-weight:500;color:var(--sec)}
-.tr-hdr .cnt{margin-left:auto;font:11px ui-monospace,monospace;color:var(--ter)}
-.tr-box textarea{width:100%;min-height:76px;border:0;background:transparent;resize:none;outline:none;font:inherit;font-size:14px;line-height:1.5;color:var(--fg)}
-.tr-out{font-size:14px;line-height:1.5;min-height:76px;white-space:pre-wrap}
-.tr-fl{position:absolute;bottom:8px;left:8px;display:flex;align-items:center;gap:6px}
-.tr-fr{position:absolute;bottom:8px;right:8px;display:flex;align-items:center;gap:6px}
-.tr-cap{display:inline-flex;align-items:center;gap:2px;padding:0 3px;height:30px;border-radius:999px}
-.tr-ctrl{display:flex;align-items:center;gap:6px}
-.lang-sel{height:28px;padding:0 10px;border-radius:999px;font:inherit;font-size:12px;display:inline-flex;align-items:center;gap:5px;cursor:pointer}
-.lang-sel select{border:0;background:transparent;color:var(--fg);font:inherit;outline:none;cursor:pointer}
-.eng-tray{display:inline-flex;align-items:center;gap:4px;padding:2px 4px;border-radius:999px;margin-left:auto}
-.eng-btn{width:28px;height:28px;border:0;border-radius:50%;background:transparent;color:var(--fg);font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
-.eng-btn.on{background:color-mix(in srgb,var(--acc) 18%,transparent);color:var(--acc);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 80%,transparent)}
+/* =========================================================
+   3. TRANSLATION (3-Band Clean Surface + 36px Glass Controls)
+   ========================================================= */
+.tr-win{width:580px}
+.tr-top{
+  height:40px;padding:0 14px;
+  display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid var(--sep);
+  background:var(--toolbar-bg);
+}
+.tr-top-title{position:absolute;left:50%;transform:translateX(-50%);font-size:13px;font-weight:700;color:var(--fg-strong)}
+.tr-pane{
+  padding:12px 16px 10px;
+  display:flex;flex-direction:column;gap:8px;
+  background:var(--bg);
+}
+.tr-pane-hdr{display:flex;align-items:center;gap:8px;min-height:20px}
+.tr-pane-hdr .lbl{font-size:11.5px;font-weight:600;color:var(--sec)}
+.tr-pane-hdr .cnt{margin-left:auto;font-size:11px;color:var(--ter)}
+.tr-pane textarea{
+  width:100%;min-height:84px;border:0;background:transparent;
+  resize:none;outline:none;font:inherit;font-size:14px;line-height:1.55;color:var(--fg-strong);
+}
+.tr-out{min-height:84px;font-size:14px;line-height:1.55;color:var(--fg-strong);white-space:pre-wrap}
+.tr-pane-foot{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding-top:4px;
+}
+.tr-pane-foot-l{display:flex;align-items:center;gap:8px}
+.tr-mid{
+  padding:8px 12px;
+  background:var(--bg-band);
+  border-top:1px solid var(--sep);
+  border-bottom:1px solid var(--sep);
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+}
+.tr-lang-sel{
+  height:28px;padding:0 8px;border:0;border-radius:var(--r-cap);
+  background:transparent;color:var(--fg);font:inherit;font-size:12px;font-weight:520;
+  display:inline-flex;align-items:center;gap:4px;cursor:pointer;
+}
+.tr-lang-sel:hover{background:var(--ctrl-fill)}
+.tr-lang-sel select{
+  border:0;background:transparent;color:var(--fg);
+  font:inherit;font-weight:520;outline:none;cursor:pointer;
+}
+.tr-eng-btn{
+  width:28px;height:28px;border:0;border-radius:50%;
+  background:transparent;color:var(--fg);
+  font-size:11px;font-weight:650;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;
+  transition:background var(--dur) var(--ease),color var(--dur) var(--ease);
+}
+.tr-eng-btn:hover:not(.on){background:var(--ctrl-fill)}
+.tr-eng-btn.on{background:var(--acc-tint);color:var(--acc);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 45%,transparent)}
 
-/* 4. OCR Window (OCRWorkspaceView.swift) */
-.ocr-win{width:780px;height:440px;border-radius:var(--r-panel);padding:12px 12px 8px;display:flex;gap:8px}
-.ocr-left{width:320px;flex:none;display:flex;flex-direction:column;gap:4px}
-.ocr-left.gone{display:none}
-.ocr-bar{height:28px;padding:0 6px;border-radius:999px;display:flex;align-items:center;gap:2px}
-.ocr-prev{flex:1;border-radius:var(--r-panel);overflow:auto;padding:10px;display:flex;align-items:center;justify-content:center}
-.ocr-mock{width:270px;background:#fff;color:#1d1d1f;border-radius:8px;padding:12px;box-shadow:0 2px 10px rgba(0,0,0,.12);transform-origin:center;transition:transform .15s}
-.ocr-mock b{display:block;font-size:12px;margin-bottom:4px}
-.ocr-mock p{margin:0;font-size:11px;line-height:1.5;color:#444}
-.ocr-right{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
-.ocr-top{display:flex;align-items:center;gap:6px}
-.seg{display:inline-flex;padding:2px;border-radius:999px;background:var(--fill)}
-.seg button{height:24px;padding:0 12px;border:0;border-radius:999px;background:transparent;color:var(--fg);font:inherit;font-size:12px;cursor:pointer}
-.seg button.on{background:var(--bg);box-shadow:0 1px 2px rgba(0,0,0,.18)}
-body.dark .seg button.on{background:#636366}
+/* =========================================================
+   4. OCR WORKSPACE (Full-Height Preview Sidebar + 52pt Toolbar)
+   ========================================================= */
+.ocr-win{width:860px;height:520px}
+.ocr-side{width:300px;transition:width var(--dur) var(--ease),opacity var(--dur) var(--ease)}
+.ocr-side.gone{width:0;overflow:hidden;border-right:0;opacity:0}
+.ocr-prev{
+  flex:1;min-height:0;overflow:auto;
+  padding:14px 16px 66px;
+  display:flex;align-items:center;justify-content:center;
+}
+.ocr-mock{
+  width:254px;background:#fff;color:#1d1d1f;
+  border-radius:10px;padding:14px;
+  box-shadow:0 3px 14px rgba(0,0,0,.14);
+  transform-origin:center;transition:transform .15s var(--ease);
+}
+.ocr-mock b{display:block;font-size:12.5px;margin-bottom:6px;color:#111}
+.ocr-mock p{margin:0;font-size:11.5px;line-height:1.55;color:#444}
+.ocr-dock{
+  position:absolute;left:12px;right:12px;bottom:12px;
+  display:flex;align-items:center;justify-content:space-between;gap:6px;
+  pointer-events:none;
+}
+.ocr-dock > *{pointer-events:auto}
+.ocr-main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
+.ocr-body{flex:1;min-height:0;padding:14px 20px 10px;display:flex;flex-direction:column;gap:8px}
+.ocr-body-hdr{display:flex;align-items:center;gap:8px}
+.ocr-body-hdr .lbl{font-size:11.5px;font-weight:600;color:var(--sec)}
+.ocr-body-hdr .cnt{margin-left:auto;font-size:11px;color:var(--ter)}
+.ocr-body textarea{
+  flex:1;width:100%;border:0;background:transparent;
+  resize:none;outline:none;font:inherit;font-size:14px;line-height:1.6;color:var(--fg-strong);
+}
+.ocr-foot{
+  height:48px;padding:0 16px;
+  border-top:1px solid var(--sep);
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+}
 
-/* 5. Clipboard Window + Companion Detail Popup (ClipboardFeature.swift) */
-.cb-wrap{display:flex;align-items:flex-start;gap:12px}
-.cb-win{width:380px;height:470px;border-radius:var(--r-panel);overflow:hidden;display:flex;flex-direction:column}
-.cb-det{width:350px;height:470px;border-radius:var(--r-panel);overflow:hidden;display:none;flex-direction:column}
-.cb-det.on{display:flex}
-.win-bar{height:34px;padding:0 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--sep);font-size:12px;font-weight:600}
-.dots{display:inline-flex;gap:6px}.dots i{width:10px;height:10px;border-radius:50%;background:#ff5f57}.dots i:nth-child(2){background:#febc2e}.dots i:nth-child(3){background:#28c840}
-.cb-top{padding:10px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--sep)}
-.cb-srch{flex:1;height:28px;padding:0 10px;border-radius:999px;display:flex;align-items:center;gap:6px;color:var(--sec)}
-.cb-srch input{flex:1;min-width:0;border:0;background:transparent;outline:none;color:var(--fg);font:inherit;font-size:12px}
-.cb-list{flex:1;overflow-y:auto;padding:4px 0}
-.cb-row{height:44px;padding:0 12px;display:flex;align-items:center;gap:10px;border-bottom:1px solid color-mix(in srgb,var(--sep) 55%,transparent);cursor:pointer}
-.cb-row:hover{background:var(--fill)}
-.cb-row.on{background:var(--acc);color:#fff}
-.cb-row.on .cb-ty,.cb-row.on .cb-act{color:#fff}
-.cb-ty{width:18px;display:inline-flex;align-items:center;justify-content:center;color:var(--sec);flex:none}
-.cb-line{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
-.cb-act{color:var(--sec);display:inline-flex;align-items:center;flex:none}
-.cb-foot{padding:7px 12px;border-top:1px solid var(--sep);font:11px ui-monospace,monospace;color:var(--sec)}
-.cb-dhdr{padding:12px;border-bottom:1px solid var(--sep);display:flex;align-items:center;justify-content:space-between;font-size:12px}
-.cb-dbody{flex:1;padding:12px;overflow-y:auto;font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
-.cb-img-ph{height:130px;border-radius:10px;background:linear-gradient(135deg,#5b8def,#9b6bff);margin-bottom:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600}
+/* =========================================================
+   5. CLIPBOARD (Single-Window Master-Detail Split)
+   ========================================================= */
+.cb-win{width:840px;height:540px}
+.cb-side{width:300px}
+.cb-side-controls{padding:0 12px 10px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid var(--sep)}
+.cb-filter-row{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;padding:3px;border-radius:9px;background:var(--ctrl-fill)}
+.cb-filter-btn{
+  height:24px;border:0;border-radius:6px;background:transparent;
+  color:var(--sec);font:inherit;font-size:11.5px;font-weight:510;cursor:pointer;
+}
+.cb-filter-btn:hover{color:var(--fg)}
+.cb-filter-btn.on{background:var(--ctrl-bg);color:var(--fg-strong);font-weight:590;box-shadow:0 1px 2px rgba(0,0,0,.1)}
+.cb-list{flex:1;min-height:0;overflow-y:auto;padding:8px 10px}
+.cb-sec-hdr{font-size:11px;font-weight:700;color:var(--sec);padding:10px 6px 5px}
+.cb-sec-hdr:first-child{padding-top:2px}
+.cb-row{
+  height:36px;padding:0 8px;border-radius:var(--r-row);
+  display:flex;align-items:center;gap:8px;cursor:pointer;
+  color:var(--fg);transition:background var(--dur) var(--ease);
+}
+.cb-row:hover{background:rgba(0,0,0,.04)}
+body.dark .cb-row:hover{background:rgba(255,255,255,.06)}
+.cb-row.on{background:var(--sidebar-sel);color:var(--fg-strong);font-weight:560}
+.cb-row .cb-ty{width:20px;display:inline-flex;align-items:center;justify-content:center;color:var(--acc);flex:none}
+.cb-row .cb-line{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12.5px}
+.cb-row .cb-star{color:var(--org);display:inline-flex;align-items:center;flex:none}
+.cb-img-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;padding:4px 2px}
+.cb-img-card{
+  border-radius:10px;border:1px solid var(--sep);background:var(--ctrl-bg);
+  padding:6px;cursor:pointer;display:flex;flex-direction:column;gap:5px;
+  text-align:left;font:inherit;
+}
+.cb-img-card.on{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc-tint)}
+.cb-img-thumb{
+  height:68px;border-radius:6px;
+  background:linear-gradient(135deg,#3b82f6,#7c3aed);
+  display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:600;
+}
+.cb-img-cap{font-size:11px;color:var(--sec);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cb-side-foot{
+  height:34px;padding:0 14px;border-top:1px solid var(--sep);
+  display:flex;align-items:center;justify-content:space-between;
+  font-size:11px;color:var(--sec);
+}
+.cb-main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
+.cb-detail-scroll{flex:1;min-height:0;overflow-y:auto;padding:20px}
+.cb-detail-text{font-size:13.5px;line-height:1.65;color:var(--fg-strong);white-space:pre-wrap;word-break:break-word}
+.cb-code-block{
+  font:12.5px/1.6 ui-monospace,SFMono-Regular,monospace;
+  background:var(--bg-subtle);border:1px solid var(--sep);
+  border-radius:10px;padding:14px 16px;color:var(--fg-strong);white-space:pre-wrap;
+}
+.cb-url-card{
+  border:1px solid var(--sep);border-radius:12px;padding:14px 16px;
+  background:var(--bg-subtle);display:flex;flex-direction:column;gap:6px;
+}
+.cb-url-card a{color:var(--acc);text-decoration:none;font-weight:550;word-break:break-all}
+.cb-url-card a:hover{text-decoration:underline}
+.cb-img-preview{
+  border-radius:12px;overflow:hidden;border:1px solid var(--sep);
+  background:linear-gradient(135deg,#2563eb,#7c3aed);
+  height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  color:#fff;cursor:pointer;
+}
+.cb-detail-foot{
+  height:36px;padding:0 18px;border-top:1px solid var(--sep);
+  display:flex;align-items:center;justify-content:space-between;
+  font-size:11px;color:var(--sec);
+}
+.cb-empty{
+  height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:8px;color:var(--sec);text-align:center;
+}
 
-/* 6. Settings Window (SettingsWorkspaceView.swift) */
-.st-win{width:760px;height:470px;border-radius:var(--r-panel);overflow:hidden;display:flex;flex-direction:column}
-.st-body{flex:1;min-height:0;display:flex}
-.st-side{width:176px;padding:12px 10px;border-right:1px solid var(--sep);display:flex;flex-direction:column;gap:3px}
-.st-row{height:30px;padding:0 8px;border:0;border-radius:8px;background:transparent;color:var(--fg);font:inherit;display:flex;align-items:center;gap:8px;cursor:pointer;text-align:left}
-.st-row:hover{background:var(--fill)}
-.st-row.on{background:color-mix(in srgb,var(--acc) 16%,transparent);color:var(--acc);font-weight:600}
-.st-tile{width:20px;height:20px;border-radius:5px;color:#fff;display:inline-flex;align-items:center;justify-content:center;flex:none}
-.st-main{flex:1;min-width:0;display:flex;flex-direction:column}
-.st-hdr{padding:14px 20px 8px;display:flex;align-items:center;gap:10px}
-.st-hdr .st-tile{width:26px;height:26px;border-radius:7px}
-.st-hdr h2{margin:0;font-size:17px;font-weight:600}
-.st-scroll{flex:1;overflow-y:auto;padding:4px 20px 18px}
-.st-card{background:var(--fill);border-radius:var(--r-card);padding:0 14px;margin-bottom:14px}
-.st-item{min-height:42px;padding:8px 0;display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid color-mix(in srgb,var(--sep) 65%,transparent)}
+/* =========================================================
+   6. SETTINGS (Modern macOS 27 Sidebar + 52pt Toolbar + Forms)
+   ========================================================= */
+.st-win{width:840px;height:560px}
+.st-side{width:224px}
+.st-nav{flex:1;overflow-y:auto;padding:2px 14px 14px}
+.st-sec-hdr{
+  font-size:11px;font-weight:700;color:var(--sec);
+  padding:14px 6px 5px;
+}
+.st-sec-hdr:first-child{padding-top:2px}
+.st-row{
+  width:100%;height:28px;padding:0 8px;margin:1px 0;
+  border:0;border-radius:var(--r-row);
+  background:transparent;color:var(--fg);
+  font:inherit;font-size:13px;font-weight:480;
+  display:flex;align-items:center;gap:8px;
+  cursor:pointer;text-align:left;
+  transition:background var(--dur) var(--ease);
+}
+.st-row:hover{background:rgba(0,0,0,.04)}
+body.dark .st-row:hover{background:rgba(255,255,255,.06)}
+.st-row.on{background:var(--sidebar-sel);color:var(--fg-strong);font-weight:580}
+.st-row .st-ic{color:var(--acc);width:18px;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.st-main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
+.st-scroll{flex:1;min-height:0;overflow-y:auto;padding:20px}
+.st-group-hdr{font-size:11.5px;font-weight:650;color:var(--sec);padding:0 12px 6px}
+.st-card{
+  background:var(--card-bg);
+  border:1px solid var(--sep);
+  border-radius:var(--r-card);
+  padding:0 14px;margin-bottom:16px;
+}
+.st-item{
+  min-height:42px;padding:9px 0;
+  display:flex;align-items:center;justify-content:space-between;gap:14px;
+  border-bottom:1px solid var(--sep);
+}
 .st-item:last-child{border-bottom:0}
-.st-item small{display:block;font-size:11px;color:var(--sec);margin-top:2px}
-.sw-tgl{width:36px;height:20px;border-radius:999px;background:var(--fill3);border:0;position:relative;cursor:pointer;transition:background .15s;flex:none}
-.sw-tgl:after{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:left .15s var(--ease)}
-.sw-tgl.on{background:#34c759}.sw-tgl.on:after{left:18px}
-.kcap{height:24px;padding:0 10px;border-radius:6px;background:var(--bg);border:1px solid var(--sep);font:12px ui-monospace,monospace;display:inline-flex;align-items:center}
-.sbtn{height:24px;padding:0 10px;border-radius:6px;border:1px solid var(--sep);background:var(--bg);color:var(--fg);font:inherit;font-size:12px;cursor:pointer}
-.sbtn.pri{background:var(--acc);color:#fff;border-color:transparent}
+.st-item-lbl{min-width:0;flex:1}
+.st-item-lbl span{display:block;font-size:13px;color:var(--fg-strong)}
+.st-item-lbl small{display:block;font-size:11.5px;color:var(--sec);margin-top:2px;line-height:1.4}
+.st-item-ctl{display:flex;align-items:center;gap:8px;flex:none}
+.st-seg{
+  display:inline-flex;padding:2px;border-radius:var(--r-ctrl);
+  background:var(--ctrl-fill);gap:2px;
+}
+.st-seg button{
+  height:20px;padding:0 10px;border:0;border-radius:5px;
+  background:transparent;color:var(--fg);font:inherit;font-size:12px;cursor:pointer;
+}
+.st-seg button.on{background:var(--ctrl-bg);font-weight:580;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.kcap{
+  height:24px;min-width:96px;padding:0 10px;border-radius:var(--r-ctrl);
+  background:var(--ctrl-bg);border:1px solid var(--sep-strong);
+  font:550 12px ui-monospace,SFMono-Regular,monospace;color:var(--fg-strong);
+  display:inline-flex;align-items:center;justify-content:center;cursor:pointer;
+}
+.kcap.rec{border-color:var(--acc);color:var(--acc);background:var(--acc-tint);box-shadow:var(--focus-ring)}
+.st-subpanel{
+  padding:10px 0 12px 32px;
+  border-bottom:1px solid var(--sep);
+  display:flex;flex-direction:column;gap:8px;
+}
+.st-subpanel:last-child{border-bottom:0}
+.st-subrow{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.st-subrow label{font-size:12px;color:var(--sec);width:82px;flex:none}
+.st-subrow .m27-input{flex:1;min-width:0}
+
+/* =========================================================
+   7. SHARED MACOS 27 MODAL DIALOG (Figma 4440:8148)
+   ========================================================= */
+.m27-scrim{
+  position:absolute;inset:0;z-index:40;
+  background:rgba(0,0,0,.24);
+  display:none;align-items:center;justify-content:center;
+  padding:20px;
+}
+.m27-scrim.open{display:flex}
+.m27-dialog{
+  width:390px;max-width:100%;
+  background:var(--bg);
+  border-radius:var(--r-win);
+  box-shadow:var(--dialog-sh);
+  color:var(--fg-strong);
+  overflow:hidden;
+}
+.m27-dlg-body{padding:20px 26px 12px;display:flex;flex-direction:column;gap:12px}
+.m27-dlg-head{display:flex;flex-direction:column;gap:6px;padding-left:92px}
+.m27-dlg-head.flush{padding-left:0}
+.m27-dlg-head h3{margin:0;font-size:13px;font-weight:700;line-height:1.3}
+.m27-dlg-head p{margin:0;font-size:11.5px;line-height:1.45;color:var(--sec)}
+.m27-dlg-form{display:flex;flex-direction:column;gap:10px}
+.m27-dlg-row{display:grid;grid-template-columns:84px 1fr;gap:8px;align-items:center}
+.m27-dlg-row label{font-size:13px;font-weight:510;color:var(--sec);text-align:right}
+.m27-dlg-where{display:flex;align-items:center;gap:6px}
+.m27-dlg-where .m27-popup{flex:1}
+.m27-dlg-foot{
+  padding:12px 20px 20px;
+  display:flex;align-items:center;gap:8px;
+}
+.m27-dlg-foot .spacer{flex:1}
+.m27-dlg-foot .m27-btn{min-width:74px}
+
+@media (max-width:920px){
+  .stage{justify-content:flex-start}
+}
 </style>
 </head>
 <body>
@@ -248,18 +1078,23 @@ body.dark .seg button.on{background:#636366}
   <header class="hdr">
     <div class="brand">
       <div class="brand-ic" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="#fff"><circle cx="12" cy="7.5" r="3.6"/><circle cx="8.2" cy="13.2" r="3.6"/><circle cx="15.8" cy="13.2" r="3.6"/><rect x="11.1" y="13" width="1.8" height="6.5" rx=".9"/></svg>
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="#fff">
+          <circle cx="12" cy="7.5" r="3.6"/>
+          <circle cx="8.2" cy="13.2" r="3.6"/>
+          <circle cx="15.8" cy="13.2" r="3.6"/>
+          <rect x="11.1" y="13" width="1.8" height="6.5" rx=".9"/>
+        </svg>
       </div>
       <div>
-        <h1>Traylet 交互原型</h1>
-        <small>1:1 映射当前 SwiftUI / AppKit 实现 · 全矢量 SVG 图标 · Liquid Glass 默认与无障碍回退</small>
+        <h1>Traylet · macOS 27 重排版交互原型</h1>
+        <small>52pt 一体化工具栏 · 36pt 液态玻璃胶囊 · 通顶毛玻璃侧边栏 + 干净主面 · 无障碍回退</small>
       </div>
     </div>
-    <div class="toggles">
-      <label><input type="checkbox" data-c="dark"> 深色</label>
-      <label><input type="checkbox" data-c="rt"> 减少透明度</label>
-      <label><input type="checkbox" data-c="hc"> 提高对比度</label>
-      <label><input type="checkbox" data-c="rm"> 减少动态</label>
+    <div class="toggles" id="a11y-toggles">
+      <label><input type="checkbox" data-c="dark" id="chk-dark"> 深色</label>
+      <label><input type="checkbox" data-c="rt" id="chk-rt"> 减少透明度</label>
+      <label><input type="checkbox" data-c="hc" id="chk-hc"> 提高对比度</label>
+      <label><input type="checkbox" data-c="rm" id="chk-rm"> 减少动态</label>
     </div>
   </header>
 
@@ -270,20 +1105,39 @@ body.dark .seg button.on{background:#636366}
     <button class="tab" data-s="ocr">OCR 识别</button>
     <button class="tab" data-s="clipboard">剪贴板历史</button>
     <button class="tab" data-s="settings">设置</button>
+    <button class="stage-action" id="btn-demo-dialog" title="预览 Figma 4440:8148 同款保存弹窗">预览 Dialog 弹窗</button>
   </nav>
 
-  <section class="stage">
+  <section class="stage" id="stage">
     <!-- 1. Menu Bar -->
     <div class="scr on" id="s-menubar">
       <div class="mb-stage">
         <div class="mb-bar">
-          <span>Wi-Fi</span><span>100%</span>
-          <span class="mb-ic" title="Traylet" data-ic="shamrock"></span>
-          <span>周五 23:54</span>
+          <div class="mb-left">
+            <span data-ic="apple" data-sz="14"></span>
+            <span class="mb-app">Traylet</span>
+            <span>文件</span><span>编辑</span><span>视图</span><span>窗口</span><span>帮助</span>
+          </div>
+          <div class="mb-right">
+            <span data-ic="wifi" data-sz="14"></span>
+            <span data-ic="search" data-sz="13"></span>
+            <span data-ic="sliders" data-sz="14"></span>
+            <span class="mb-ic" title="Traylet 菜单" data-ic="shamrock" data-sz="14"></span>
+            <span>周六 13:45</span>
+          </div>
         </div>
-        <div class="nsmenu glass" id="nsmenu"></div>
+        <div class="mb-bg-card" aria-hidden="true">
+          <div class="m27-toolbar">
+            <span class="stoplights"><i class="cl"></i><i class="mn"></i><i class="zm"></i></span>
+            <span class="m27-title">Traylet Workspace</span>
+          </div>
+          <div class="sk">
+            <i style="width:45%"></i><i style="width:82%"></i><i style="width:68%"></i><i style="width:55%"></i>
+          </div>
+        </div>
+        <div class="nsmenu" id="nsmenu"></div>
       </div>
-      <div class="hint">菜单结构与快捷键 1:1 对应 MenuFactory.swift；点击菜单项可直接切换对应页面原型</div>
+      <div class="hint">菜单结构与快捷键 1:1 对应 MenuFactory.swift · 点击任意菜单项直接进入对应界面原型</div>
     </div>
 
     <!-- 2. Screenshot Editor -->
@@ -291,7 +1145,7 @@ body.dark .seg button.on{background:#636366}
       <div class="ed" id="ed">
         <div class="shot">
           <div class="tb0"><i></i><i></i><i></i></div>
-          <div class="sec1"><div class="ln" style="width:210px"></div><div class="ln" style="width:310px"></div><div class="ln" style="width:250px"></div></div>
+          <div class="sec1"><div class="ln" style="width:210px"></div><div class="ln" style="width:320px"></div><div class="ln" style="width:255px"></div></div>
           <div class="card1"></div>
           <div class="pw">API_KEY = "sk-traylet-demo-local"</div>
         </div>
@@ -300,174 +1154,236 @@ body.dark .seg button.on{background:#636366}
           <div class="clip"><div class="bl" id="bl"></div><svg id="sv"></svg><div class="tx" id="tx"></div><div class="ring" id="ring"></div></div>
         </div>
         <div class="pal" id="palw">
-          <div class="opt glass" id="opt"></div>
-          <div class="nt glass" id="pal"></div>
+          <div class="opt ed-glass" id="opt"></div>
+          <div class="nt ed-glass" id="pal"></div>
         </div>
       </div>
       <div class="reopen" id="ro">
         <div>已退出截图（Esc）</div>
-        <button class="cta-grad" id="reo">重新截图</button>
+        <button class="cta-pill" id="reo">重新截图</button>
       </div>
-      <div class="hint">40pt 玻璃胶囊工具栏 · 10 个标注工具宽屏直出 · 拖动左侧 2×3 圆点移动，双击复位</div>
+      <div class="hint">40pt 玻璃胶囊工具栏：默认展示矩形 / 箭头 / 文字 / 高斯模糊与悬浮置顶 · 纯图标复制 · 更多工具与翻译 / OCR / 保存已折叠</div>
     </div>
 
-    <!-- 3. Translation Window -->
+    <!-- 3. Translation Window (3-Band Layout) -->
     <div class="scr" id="s-translation">
-      <div class="tr-win glass">
-        <div class="tr-box glass-ctl focused" id="tr-src-box">
-          <div class="tr-hdr">
+      <div class="mac-win col tr-win">
+        <div class="tr-top">
+          <span class="stoplights"><i class="cl"></i><i class="mn"></i><i class="zm"></i></span>
+          <span class="tr-top-title">翻译</span>
+          <span style="width:60px"></span>
+        </div>
+
+        <!-- Band 1: Source -->
+        <div class="tr-pane">
+          <div class="tr-pane-hdr">
             <span class="lbl">原文</span>
-            <span class="cnt" id="tr-cnt">0 字符</span>
+            <span class="pill sec" id="tr-det">识别为：English</span>
+            <span class="cnt num" id="tr-cnt">0 字符</span>
           </div>
           <textarea id="tr-in" placeholder="输入文本或从前台选区自动预填…">Liquid Glass adapts to its background and keeps controls legible.</textarea>
-          <div class="tr-fl">
-            <div class="tr-cap glass-ctl">
-              <button class="w-ib" id="tr-spk1" title="朗读原文" data-ic="speaker"></button>
-              <button class="w-ib" id="tr-cp1" title="复制原文" data-ic="copy"></button>
+          <div class="tr-pane-foot">
+            <div class="tr-pane-foot-l">
+              <button class="q-ib" id="tr-spk1" title="朗读原文" data-ic="speaker" data-sz="14"></button>
+              <button class="q-ib" id="tr-cp1" title="复制原文" data-ic="copy" data-sz="14"></button>
             </div>
-            <span class="pill sec" id="tr-det">识别为：English</span>
-          </div>
-          <div class="tr-fr">
-            <button class="w-ib glass-ctl" id="tr-clr1" title="清空输入" data-ic="closeCircle"></button>
+            <button class="q-ib" id="tr-clr1" title="清空输入" data-ic="closeCircle" data-sz="14"></button>
           </div>
         </div>
 
-        <div class="tr-ctrl">
-          <label class="lang-sel glass-ctl">
-            <select id="tr-src-lang"><option value="auto">自动检测</option><option value="en">English</option><option value="zh-Hans">简体中文</option><option value="ja">日本語</option></select>
-          </label>
-          <button class="w-ib glass-ctl" id="tr-swap" title="互换语言" data-ic="swap"></button>
-          <label class="lang-sel glass-ctl">
-            <select id="tr-dst-lang"><option value="zh-Hans">简体中文</option><option value="en">English</option><option value="ja">日本語</option></select>
-          </label>
-          <button class="cta-grad" id="tr-go" title="翻译 ⌘↩">翻译</button>
-          <div class="eng-tray glass-ctl" id="tr-engs"></div>
-          <button class="w-ib glass-ctl" id="tr-to-ocr" title="截图 OCR 识别" data-ic="ocr"></button>
-          <button class="w-ib glass-ctl" id="tr-to-set" title="设置" data-ic="gear"></button>
+        <!-- Band 2: Unified macOS 27 Middle Control Band -->
+        <div class="tr-mid">
+          <div class="gl-pill">
+            <label class="tr-lang-sel" title="原文语言">
+              <select id="tr-src-lang"><option value="auto">自动检测</option><option value="en">English</option><option value="zh-Hans">简体中文</option><option value="ja">日本語</option></select>
+            </label>
+            <button class="gl-btn" id="tr-swap" title="互换语言" data-ic="swap" data-sz="13"></button>
+            <label class="tr-lang-sel" title="译文语言">
+              <select id="tr-dst-lang"><option value="zh-Hans">简体中文</option><option value="en">English</option><option value="ja">日本語</option></select>
+            </label>
+          </div>
+
+          <button class="cta-pill" id="tr-go" style="height:32px;padding:0 15px" title="翻译 ⌘↩">翻译</button>
+
+          <div class="gl-pill" id="tr-engs" style="margin-left:auto"></div>
+
+          <div class="gl-pill">
+            <button class="gl-btn" id="tr-to-ocr" title="截图 OCR 识别" data-ic="ocr" data-sz="14"></button>
+            <button class="gl-btn" id="tr-to-set" title="设置" data-ic="gear" data-sz="14"></button>
+          </div>
         </div>
 
-        <div class="tr-box glass-ctl">
-          <div class="tr-hdr">
+        <!-- Band 3: Output -->
+        <div class="tr-pane">
+          <div class="tr-pane-hdr">
             <span class="lbl">译文</span>
             <span class="pill org" id="tr-stale" style="display:none">内容已变更</span>
             <span class="pill acc" id="tr-eng-pill" style="margin-left:auto">系统翻译</span>
           </div>
           <div class="tr-out" id="tr-out">液态玻璃会根据背景自适应，并保持控件清晰可读。</div>
-          <div class="tr-fl">
-            <div class="tr-cap glass-ctl">
-              <button class="w-ib" id="tr-spk2" title="朗读译文" data-ic="speaker"></button>
-              <button class="w-ib" id="tr-cp2" title="复制译文" data-ic="copy"></button>
+          <div class="tr-pane-foot">
+            <div class="tr-pane-foot-l">
+              <button class="q-ib" id="tr-spk2" title="朗读译文" data-ic="speaker" data-sz="14"></button>
+              <button class="q-ib" id="tr-cp2" title="复制译文" data-ic="copy" data-sz="14"></button>
             </div>
-          </div>
-          <div class="tr-fr">
-            <button class="w-ib glass-ctl" id="tr-clr2" title="清空译文" data-ic="closeCircle"></button>
+            <button class="q-ib" id="tr-clr2" title="清空译文" data-ic="closeCircle" data-sz="14"></button>
           </div>
         </div>
       </div>
-      <div class="hint">TranslationWorkspaceView 1:1 布局 · 修改原文立即标记“内容已变更” · 切换引擎直接重译</div>
+      <div class="hint">保留「上原文 / 中间控制条 / 下译文」三段式 · 去除多层玻璃套娃，控件统一为 36pt macOS 27 胶囊</div>
     </div>
 
     <!-- 4. OCR Window -->
     <div class="scr" id="s-ocr">
-      <div class="ocr-win glass">
-        <div class="ocr-left" id="ocr-left">
-          <div class="ocr-bar glass-ctl">
-            <button class="w-ib" id="ocr-zm" title="缩小" data-ic="zoomOut"></button>
-            <button class="w-ib" id="ocr-zval" style="width:40px;font:11px ui-monospace,monospace;color:var(--sec)" title="重置视图">100%</button>
-            <button class="w-ib" id="ocr-zp" title="放大" data-ic="zoomIn"></button>
-            <button class="w-ib" id="ocr-zr" title="重置视图" data-ic="fit"></button>
-            <span style="flex:1"></span>
-            <button class="w-ib" id="ocr-recap" title="重新截图" data-ic="viewfinder"></button>
-            <button class="w-ib" id="ocr-imp" title="导入图片" data-ic="photo"></button>
-            <button class="w-ib" id="ocr-col" title="收起原图" data-ic="sidebar"></button>
+      <div class="mac-win ocr-win">
+        <aside class="m27-sidebar ocr-side" id="ocr-side">
+          <div class="m27-sidebar-top">
+            <span class="stoplights"><i class="cl"></i><i class="mn"></i><i class="zm"></i></span>
+            <button class="gl-circle" id="ocr-col" title="收起原图" data-ic="sidebar" data-sz="14"></button>
           </div>
-          <div class="ocr-prev glass-ctl">
+          <div class="ocr-prev">
             <div class="ocr-mock" id="ocr-mock">
               <b>Traylet Release Notes</b>
               <p>Local-first macOS menu bar utility.<br>Vision OCR runs offline on Apple Silicon.<br><br>Shortcuts: ⌃⌥⇧O for OCR.</p>
             </div>
           </div>
-        </div>
-        <div class="ocr-right">
-          <div class="ocr-top">
-            <button class="w-ib glass-ctl" id="ocr-exp" style="display:none" title="展开原图" data-ic="sidebar"></button>
-            <div class="seg" id="ocr-eng">
+          <div class="ocr-dock">
+            <div class="gl-pill">
+              <button class="gl-btn" id="ocr-zm" title="缩小" data-ic="zoomOut" data-sz="13"></button>
+              <button class="gl-btn num" id="ocr-zval" style="min-width:44px;font-size:11.5px" title="重置视图">100%</button>
+              <button class="gl-btn" id="ocr-zp" title="放大" data-ic="zoomIn" data-sz="13"></button>
+              <button class="gl-btn" id="ocr-zr" title="适配视图" data-ic="fit" data-sz="13"></button>
+            </div>
+            <div class="gl-pill">
+              <button class="gl-btn" id="ocr-recap" title="重新截图" data-ic="viewfinder" data-sz="14"></button>
+              <button class="gl-btn" id="ocr-imp" title="导入图片" data-ic="photo" data-sz="14"></button>
+            </div>
+          </div>
+        </aside>
+
+        <section class="ocr-main">
+          <div class="m27-toolbar">
+            <span class="stoplights" id="ocr-main-lights" style="display:none;margin-right:4px"><i class="cl"></i><i class="mn"></i><i class="zm"></i></span>
+            <button class="gl-circle" id="ocr-exp" style="display:none" title="展开原图" data-ic="sidebar" data-sz="14"></button>
+
+            <div class="gl-seg" id="ocr-eng">
               <button class="on" data-e="vision">本机 Vision</button>
+              <span class="sep hide"></span>
               <button data-e="ai">AI OCR</button>
             </div>
-            <label class="lang-sel glass-ctl" id="ocr-preset-wrap" style="display:none">
-              <select id="ocr-preset"><option>纯文本</option><option>Markdown 表格</option><option>数学公式 (LaTeX)</option><option>自定义提示词</option></select>
-            </label>
-            <span style="flex:1"></span>
-            <button class="w-ib glass-ctl" id="ocr-rerun" title="重新识别 ⌘R" data-ic="refresh"></button>
-            <button class="w-ib glass-ctl" id="ocr-set" title="设置" data-ic="gear"></button>
-          </div>
-          <div class="tr-box glass-ctl focused" style="flex:1">
-            <div class="tr-hdr">
-              <span class="lbl">识别结果</span>
-              <span class="cnt" id="ocr-cnt"></span>
-              <span class="pill acc" id="ocr-pill">本机 Vision</span>
+
+            <div class="gl-pill" id="ocr-preset-wrap" style="display:none;padding:0 10px">
+              <label class="tr-lang-sel" style="padding:0" title="AI 识别模式">
+                <select id="ocr-preset"><option>纯文本</option><option>Markdown 表格</option><option>数学公式 (LaTeX)</option><option>自定义提示词</option></select>
+              </label>
             </div>
-            <textarea id="ocr-txt" style="flex:1">Local-first macOS menu bar utility.
+
+            <span style="flex:1"></span>
+
+            <div class="gl-pill">
+              <button class="gl-btn" id="ocr-rerun" title="重新识别 ⌘R" data-ic="refresh" data-sz="14"></button>
+              <button class="gl-btn" id="ocr-set" title="设置" data-ic="gear" data-sz="14"></button>
+            </div>
+          </div>
+
+          <div class="ocr-body">
+            <div class="ocr-body-hdr">
+              <span class="lbl">识别结果</span>
+              <span class="pill acc" id="ocr-pill">本机 Vision</span>
+              <span class="cnt num" id="ocr-cnt">0 字符</span>
+            </div>
+            <textarea id="ocr-txt">Local-first macOS menu bar utility.
 Vision OCR runs offline on Apple Silicon.
 
 Shortcuts: ⌃⌥⇧O for OCR.</textarea>
-            <div class="tr-fl">
-              <div class="tr-cap glass-ctl">
-                <button class="w-ib" id="ocr-spk" title="朗读" data-ic="speaker"></button>
-                <button class="w-ib" id="ocr-cp" title="复制 ⌘⇧C" data-ic="copy"></button>
-                <button class="w-ib" id="ocr-merge" title="合并换行" data-ic="merge"></button>
-              </div>
+          </div>
+
+          <div class="ocr-foot">
+            <div style="display:flex;align-items:center;gap:4px">
+              <button class="q-ib" id="ocr-spk" title="朗读" data-ic="speaker" data-sz="14"></button>
+              <button class="q-ib" id="ocr-cp" title="复制 ⌘⇧C" data-ic="copy" data-sz="14"></button>
+              <button class="q-ib" id="ocr-merge" title="合并段落换行" data-ic="merge" data-sz="14"></button>
             </div>
-            <div class="tr-fr">
-              <button class="w-ib glass-ctl" id="ocr-clr" title="清空" data-ic="closeCircle"></button>
-              <button class="cta-grad" id="ocr-tr" title="去翻译 ⌘↩">去翻译</button>
+            <div style="display:flex;align-items:center;gap:8px">
+              <button class="q-ib" id="ocr-clr" title="清空" data-ic="closeCircle" data-sz="14"></button>
+              <button class="cta-pill" id="ocr-tr" title="去翻译 ⌘↩">去翻译</button>
             </div>
           </div>
-        </div>
+        </section>
       </div>
-      <div class="hint">OCRWorkspaceView 1:1 布局 · 支持收起原图、切换 AI OCR 预设、点击合并换行按钮整理段落</div>
+      <div class="hint">通顶原图毛玻璃侧栏（可折叠）+ 右侧 52pt 一体化顶栏（Liquid Glass 分段切换 Vision / AI OCR）</div>
     </div>
 
-    <!-- 5. Clipboard History -->
+    <!-- 5. Clipboard Master-Detail Split -->
     <div class="scr" id="s-clipboard">
-      <div class="cb-wrap">
-        <div class="cb-win glass">
-          <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span>剪贴板</span></div>
-          <div class="cb-top">
-            <div class="cb-srch glass-ctl"><span data-ic="search"></span><input id="cb-q" placeholder="搜索文本、链接或图片…"></div>
-            <button class="w-ib glass-ctl" id="cb-fav" title="仅看收藏" data-ic="star"></button>
-            <button class="w-ib glass-ctl" id="cb-ign" title="忽略下一次复制" data-ic="eye"></button>
+      <div class="mac-win cb-win">
+        <aside class="m27-sidebar cb-side">
+          <div class="m27-sidebar-top">
+            <span class="stoplights"><i class="cl"></i><i class="mn"></i><i class="zm"></i></span>
+            <div class="gl-pill">
+              <button class="gl-btn" id="cb-fav" title="仅看收藏" data-ic="star" data-sz="14"></button>
+              <button class="gl-btn" id="cb-ign" title="忽略下一次复制" data-ic="eye" data-sz="14"></button>
+              <button class="gl-btn danger" id="cb-clear-btn" title="清空非收藏历史…" data-ic="trash" data-sz="14"></button>
+            </div>
+          </div>
+          <div class="cb-side-controls">
+            <div class="gl-search" id="cb-srch-wrap">
+              <span data-ic="search" data-sz="13"></span>
+              <input id="cb-q" placeholder="搜索文本、链接或图片…">
+              <button class="clr" id="cb-q-clr" title="清除搜索" data-ic="close" data-sz="10"></button>
+            </div>
+            <div class="cb-filter-row" id="cb-filters">
+              <button class="cb-filter-btn on" data-k="all">全部</button>
+              <button class="cb-filter-btn" data-k="text">文本</button>
+              <button class="cb-filter-btn" data-k="img">图片</button>
+              <button class="cb-filter-btn" data-k="link">链接</button>
+            </div>
           </div>
           <div class="cb-list" id="cb-list"></div>
-          <div class="cb-foot" id="cb-foot"></div>
-        </div>
-        <div class="cb-det glass" id="cb-det">
-          <div class="cb-dhdr"><b id="cb-dty">文本</b><span style="color:var(--sec)" id="cb-dmeta"></span></div>
-          <div class="cb-dbody" id="cb-dbody"></div>
-        </div>
+          <div class="cb-side-foot">
+            <span class="num" id="cb-foot"></span>
+          </div>
+        </aside>
+
+        <section class="cb-main">
+          <div class="m27-toolbar" id="cb-detail-bar"></div>
+          <div class="cb-detail-scroll" id="cb-detail-body"></div>
+          <div class="cb-detail-foot" id="cb-detail-foot"></div>
+        </section>
       </div>
-      <div class="hint">ClipboardFeature 1:1 双窗体布局 · 列表默认不选中，点击条目展开无红绿灯伴生详情浮窗</div>
+      <div class="hint">双窗体合一为 macOS 27 主从分栏 · 点击「清空」按钮预览 macOS 27 确认弹窗 · 选「图片」筛选切为双列缩略图</div>
     </div>
 
     <!-- 6. Settings -->
     <div class="scr" id="s-settings">
-      <div class="st-win glass">
-        <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span>设置</span></div>
-        <div class="st-body">
-          <aside class="st-side" id="st-side"></aside>
-          <div class="st-main">
-            <div class="st-hdr" id="st-hdr"></div>
-            <div class="st-scroll" id="st-scroll"></div>
+      <div class="mac-win st-win">
+        <aside class="m27-sidebar st-side">
+          <div class="m27-sidebar-top">
+            <span class="stoplights"><i class="cl"></i><i class="mn"></i><i class="zm"></i></span>
+            <button class="gl-circle" id="st-info-btn" title="Traylet 0.1.0-beta.16" data-ic="info" data-sz="14"></button>
           </div>
-        </div>
+          <nav class="st-nav" id="st-side"></nav>
+        </aside>
+
+        <section class="st-main">
+          <div class="m27-toolbar" id="st-toolbar"></div>
+          <div class="st-scroll" id="st-scroll"></div>
+        </section>
       </div>
-      <div class="hint">SettingsWorkspaceView 1:1 布局 · 7 个侧栏分区与彩色图标块对应 SettingsNavigation.swift</div>
+      <div class="hint">macOS 27 现代侧边栏（无彩色底块 + 中性胶囊选态）+ 右侧 52pt 标题搜索顶栏 · 切换外观实时同步全页深浅色</div>
+    </div>
+
+    <!-- Shared macOS 27 Modal Dialog (Figma 4440:8148) -->
+    <div class="m27-scrim" id="m27-scrim" role="dialog" aria-modal="true">
+      <div class="m27-dialog" id="m27-dialog"></div>
     </div>
   </section>
 </main>
 <script>
 const IC={
+  apple:'<path d="M12.7 10.4c0-1.9 1.5-2.8 1.6-2.9-.9-1.3-2.2-1.5-2.7-1.5-1.1-.1-2.2.7-2.8.7s-1.5-.7-2.4-.7c-1.2 0-2.4.7-3 1.8-1.3 2.3-.3 5.7.9 7.5.6.9 1.3 1.9 2.3 1.9.9 0 1.3-.6 2.4-.6 1.1 0 1.4.6 2.4.6s1.7-.9 2.3-1.8c.7-1.1 1-2.1 1-2.2-.1 0-2-.8-2-2.8z" fill="currentColor" stroke="none"/><path d="M10.9 4.7c.5-.6.9-1.5.8-2.4-.8 0-1.7.5-2.2 1.1-.5.5-.9 1.4-.8 2.3.8.1 1.7-.4 2.2-1z" fill="currentColor" stroke="none"/>',
+  wifi:'<path d="M2.8 7.6a10.5 10.5 0 0 1 14.4 0M5.4 10.5a6.8 6.8 0 0 1 9.2 0M8 13.4a3.2 3.2 0 0 1 4 0"/><circle cx="10" cy="16" r="1" fill="currentColor" stroke="none"/>',
+  sliders:'<path d="M3.5 6h13M3.5 14h13"/><circle cx="7.5" cy="6" r="1.8" fill="currentColor"/><circle cx="12.5" cy="14" r="1.8" fill="currentColor"/>',
   shamrock:'<circle cx="10" cy="6.2" r="2.8" fill="currentColor" stroke="none"/><circle cx="6.8" cy="11.1" r="2.8" fill="currentColor" stroke="none"/><circle cx="13.2" cy="11.1" r="2.8" fill="currentColor" stroke="none"/><rect x="9.2" y="11" width="1.6" height="5.5" rx=".8" fill="currentColor" stroke="none"/>',
   crop:'<path d="M5.5 2.5v11a1 1 0 0 0 1 1h11M2.5 5.5h11a1 1 0 0 1 1 1v11"/>',
   display:'<rect x="2.5" y="3.5" width="15" height="10.5" rx="1.8"/><path d="M7 17h6M10 14v3"/>',
@@ -510,29 +1426,130 @@ const IC={
   star:'<path d="M10 3l2.2 4.5 5 .7-3.6 3.5.8 5-4.4-2.3-4.4 2.3.8-5L2.8 8.2l5-.7z"/>',
   starFill:'<path d="M10 3l2.2 4.5 5 .7-3.6 3.5.8 5-4.4-2.3-4.4 2.3.8-5L2.8 8.2l5-.7z" fill="currentColor"/>',
   eye:'<path d="M2.5 10s2.8-4.8 7.5-4.8 7.5 4.8 7.5 4.8-2.8 4.8-7.5 4.8S2.5 10 2.5 10z"/><circle cx="10" cy="10" r="2"/>',
+  trash:'<path d="M4 5.5h12M8 5.5V4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M6 5.5l.7 10a1.2 1.2 0 0 0 1.2 1.1h4.2a1.2 1.2 0 0 0 1.2-1.1l.7-10"/>',
   link:'<path d="M8.5 11.5a3 3 0 0 0 4.2 0l2.3-2.3a3 3 0 0 0-4.2-4.2l-.8.8M11.5 8.5a3 3 0 0 0-4.2 0L5 10.8a3 3 0 0 0 4.2 4.2l.8-.8"/>',
   doc:'<path d="M5.5 3h6l3.5 3.5V16a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 4 16V4.5A1.5 1.5 0 0 1 5.5 3z"/><path d="M7 9.5h6M7 12.5h4"/>',
   keyboard:'<rect x="2.5" y="5" width="15" height="10" rx="2"/><path d="M5.5 8.5h1M8.5 8.5h1M11.5 8.5h1M14.5 8.5h.1M6.5 12h7"/>',
   shield:'<path d="M10 2.8L4 5.2v4.6c0 3.7 2.5 6.4 6 7.4 3.5-1 6-3.7 6-7.4V5.2L10 2.8z"/><path d="M7.5 10l1.8 1.8 3.4-3.6"/>',
   info:'<circle cx="10" cy="10" r="7"/><path d="M10 9v4.5M10 6.5h.01"/>',
   check:'<path d="M5 10.2l3.3 3.3L15 6.8"/>',
-  sparkle:'<path d="M10 2.8l1.6 4.6 4.6 1.6-4.6 1.6L10 15.2l-1.6-4.6L3.8 9l4.6-1.6z"/>'
+  sparkle:'<path d="M10 2.8l1.6 4.6 4.6 1.6-4.6 1.6L10 15.2l-1.6-4.6L3.8 9l4.6-1.6z"/>',
+  chevDown:'<path d="M6 8l4 4 4-4"/>',
+  chevUpDown:'<path d="M6.5 8l3.5-3.5L13.5 8M6.5 12l3.5 3.5L13.5 12"/>',
+  shapes:'<rect x="3" y="3.5" width="6.5" height="6.5" rx="1.5"/><circle cx="13.8" cy="6.8" r="3.2"/><path d="M3.2 16.5l3.3-5.2 3.3 5.2z"/><path d="M11.5 14h5.5"/>',
+  globe:'<circle cx="10" cy="10" r="6.8"/><path d="M3.5 10h13M10 3.2c2.1 2 2.1 11.6 0 13.6M10 3.2c-2.1 2-2.1 11.6 0 13.6"/>'
 };
+
 function svg(name,sz=15){
   return `<span class="ic" style="width:${sz}px;height:${sz}px"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${IC[name]||''}</svg></span>`;
 }
-document.querySelectorAll('[data-ic]').forEach(el=>{el.innerHTML=svg(el.dataset.ic,el.dataset.sz?+el.dataset.sz:15)});
+document.querySelectorAll('[data-ic]').forEach(el=>{
+  el.innerHTML=svg(el.dataset.ic,el.dataset.sz?+el.dataset.sz:15);
+});
 
 function toast(m){
-  const t=document.createElement('div');t.className='toast';t.textContent=m;
-  document.body.appendChild(t);setTimeout(()=>t.remove(),1300);
+  const t=document.createElement('div');
+  t.className='toast';
+  t.textContent=m;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(),1500);
 }
+
 function showTab(id){
   document.querySelectorAll('#tabs .tab').forEach(b=>b.classList.toggle('on',b.dataset.s===id));
   document.querySelectorAll('.stage .scr').forEach(s=>s.classList.toggle('on',s.id==='s-'+id));
 }
 document.querySelectorAll('#tabs .tab').forEach(b=>b.onclick=()=>showTab(b.dataset.s));
-document.querySelectorAll('[data-c]').forEach(i=>i.onchange=()=>document.body.classList.toggle(i.dataset.c,i.checked));
+
+const chkDark=document.getElementById('chk-dark');
+const chkRt=document.getElementById('chk-rt');
+document.querySelectorAll('[data-c]').forEach(i=>{
+  i.onchange=()=>{
+    document.body.classList.toggle(i.dataset.c,i.checked);
+    if(typeof window._syncSettingsAppearance==='function') window._syncSettingsAppearance();
+  };
+});
+
+// Shared macOS 27 Modal Dialog (Figma 4440:8148)
+const scrim=document.getElementById('m27-scrim');
+const dlg=document.getElementById('m27-dialog');
+function closeDialog(){scrim.classList.remove('open');dlg.innerHTML='';}
+scrim.addEventListener('click',e=>{if(e.target===scrim)closeDialog();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&scrim.classList.contains('open'))closeDialog();});
+
+function openSaveDialog(){
+  dlg.innerHTML=`
+    <div class="m27-dlg-body">
+      <div class="m27-dlg-head">
+        <h3>要保留这张新的截图标注“Traylet-Capture”吗？</h3>
+        <p>你可以选择保存本次标注与图像，或立即舍弃更改。此操作无法撤销。</p>
+      </div>
+      <div class="m27-dlg-form">
+        <div class="m27-dlg-row">
+          <label for="dlg-name">存储为:</label>
+          <input class="m27-input" id="dlg-name" value="Traylet-Capture">
+        </div>
+        <div class="m27-dlg-row">
+          <label for="dlg-tags">标签:</label>
+          <input class="m27-input" id="dlg-tags" placeholder="可选">
+        </div>
+        <div class="m27-dlg-row">
+          <label for="dlg-fmt">文件格式:</label>
+          <div class="m27-popup">
+            <select id="dlg-fmt"><option>PNG 图像</option><option>JPEG 图像</option></select>
+            <span class="chev">${svg('chevUpDown',11)}</span>
+          </div>
+        </div>
+        <div class="m27-dlg-row">
+          <label for="dlg-where">位置:</label>
+          <div class="m27-dlg-where">
+            <div class="m27-popup">
+              <select id="dlg-where"><option>桌面</option><option>下载</option><option>图片</option></select>
+              <span class="chev">${svg('chevUpDown',11)}</span>
+            </div>
+            <button class="m27-btn" style="width:24px;padding:0" title="展开目录">${svg('chevDown',12)}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="m27-dlg-foot">
+      <button class="m27-btn del" id="dlg-del">删除</button>
+      <span class="spacer"></span>
+      <button class="m27-btn" id="dlg-cancel">取消</button>
+      <button class="m27-btn pri" id="dlg-ok">存储</button>
+    </div>`;
+  scrim.classList.add('open');
+  const nameIn=document.getElementById('dlg-name');
+  nameIn.focus();nameIn.select();
+  document.getElementById('dlg-del').onclick=()=>{closeDialog();toast('已舍弃本次截图更改')};
+  document.getElementById('dlg-cancel').onclick=closeDialog;
+  document.getElementById('dlg-ok').onclick=()=>{
+    const fn=nameIn.value.trim()||'Traylet-Capture';
+    const fmt=document.getElementById('dlg-fmt').value.startsWith('PNG')?'png':'jpg';
+    closeDialog();
+    toast(`已保存 ${fn}.${fmt} 到桌面`);
+  };
+}
+
+function openConfirmDialog({title,message,confirmLabel,destructive=true,onConfirm}){
+  dlg.innerHTML=`
+    <div class="m27-dlg-body">
+      <div class="m27-dlg-head flush">
+        <h3>${title}</h3>
+        <p>${message}</p>
+      </div>
+    </div>
+    <div class="m27-dlg-foot">
+      <span class="spacer"></span>
+      <button class="m27-btn" id="dlg-cancel">取消</button>
+      <button class="m27-btn ${destructive?'del':'pri'}" id="dlg-ok">${confirmLabel}</button>
+    </div>`;
+  scrim.classList.add('open');
+  document.getElementById('dlg-cancel').onclick=closeDialog;
+  document.getElementById('dlg-ok').onclick=()=>{closeDialog();if(onConfirm)onConfirm();};
+}
+
+document.getElementById('btn-demo-dialog').onclick=openSaveDialog;
 
 // 1. Menu Bar
 (function(){
@@ -558,32 +1575,43 @@ document.querySelectorAll('[data-c]').forEach(i=>i.onchange=()=>document.body.cl
   });
 })();
 
-// 2. Editor (EditingControls.swift)
+// 2. Editor (40pt Liquid Glass + Folded Tools/Actions + Icon Copy + macOS 27 Save Dialog)
 (function(){
-  const T=[['rect','rect','矩形'],['ell','ell','椭圆'],['line','line','线条'],['arrow','arrow','箭头'],['pen','pen','铅笔'],['text','text','文字'],['num','number','编号'],['hi','highlight','高亮'],['blur','blur','高斯模糊'],['red','redact','遮挡']];
+  const PRIMARY_T=[['rect','rect','矩形'],['arrow','arrow','箭头'],['text','text','文字'],['blur','blur','高斯模糊']];
+  const FOLDED_T=[['ell','ell','椭圆'],['line','line','线条'],['pen','pen','铅笔'],['num','number','编号'],['hi','highlight','高亮'],['red','redact','遮挡']];
   const OPT={rect:['w','c','fill'],ell:['w','c','fill'],line:['w','c'],arrow:['w','c'],pen:['w','c'],text:['sz','c'],num:['sz','c'],hi:['hi','c'],blur:['br'],red:[]};
-  const SW=[['#ff3b30','红色'],['#ff9500','橙色'],['#ffcc00','黄色'],['#34c759','绿色'],['#007aff','蓝色'],['#ffffff','白色'],['#000000','黑色']];
-  let tool=null,st={w:4,c:'#ff3b30',fill:false,sz:24,br:22},undo=[],redo=[],custom=false,lastPt=null,nextNum=1;
+  const SW=[['#ff383c','红色'],['#ff9500','橙色'],['#ffcc00','黄色'],['#34c759','绿色'],['#0088ff','蓝色'],['#ffffff','白色'],['#000000','黑色']];
+  let tool=null,openMenu=null,st={w:4,c:'#ff383c',fill:false,sz:24,br:22},undo=[],redo=[],custom=false,lastPt=null,nextNum=1;
   const $=id=>document.getElementById(id);
   const ed=$('ed'),sel=$('sel'),sv=$('sv'),bl=$('bl'),tx=$('tx'),ring=$('ring'),pal=$('pal'),palw=$('palw'),opt=$('opt'),dim=$('dim');
-  const EW=780,EH=400,NS='http://www.w3.org/2000/svg';
-  const R={x:110,y:56,w:540,h:240};
+  const EW=820,EH=430,NS='http://www.w3.org/2000/svg';
+  const R={x:120,y:64,w:560,h:254};
   ['nw','n','ne','e','se','s','sw','w'].forEach(d=>{const h=document.createElement('i');h.className='hd';h.dataset.d=d;sel.appendChild(h)});
   function layout(){
     sel.style.cssText=`left:${R.x}px;top:${R.y}px;width:${R.w}px;height:${R.h}px`;
     sel.querySelectorAll('.hd').forEach(h=>{const d=h.dataset.d;h.style.left=(d.includes('w')?0:d.includes('e')?R.w:R.w/2)+'px';h.style.top=(d.includes('n')?0:d.includes('s')?R.h:R.h/2)+'px'});
     dim.textContent=`${Math.round(R.w*2)} × ${Math.round(R.h*2)}`;
-    dim.style.top=R.y<30?'6px':'-24px';dim.style.left=R.y<30?'6px':'0';snap();
+    dim.style.top=R.y<32?'6px':'-26px';dim.style.left=R.y<32?'6px':'0';snap();
   }
   function snap(){
     if(custom){clampPal();return}
     const w=palw.offsetWidth,h=palw.offsetHeight;
-    let left=R.x+R.w-w,top=R.y+R.h+10;
+    const left=R.x+R.w-w;
+    let top=R.y+R.h+10;
     if(top+h>EH-4)top=R.y+R.h-h-10;
     palw.style.left=Math.max(4,Math.min(EW-w-4,left))+'px';palw.style.top=top+'px';flip();
   }
   function clampPal(){const w=palw.offsetWidth,h=palw.offsetHeight;palw.style.left=Math.max(4,Math.min(EW-w-4,parseFloat(palw.style.left)))+'px';palw.style.top=Math.max(4,Math.min(EH-h-4,parseFloat(palw.style.top)))+'px';flip()}
-  function flip(){palw.classList.toggle('flip',parseFloat(palw.style.top)+palw.offsetHeight+52>EH)}
+  function flip(){
+    const top=parseFloat(palw.style.top)||0;
+    const optFlip=top+palw.offsetHeight+52>EH;
+    palw.classList.toggle('flip',optFlip);
+    pal.querySelectorAll('.ed-pop').forEach(pop=>{
+      const needH=(pop.offsetHeight||180)+10;
+      const openDown=top<needH && (EH-(top+palw.offsetHeight))>=needH;
+      pop.classList.toggle('down',openDown);
+    });
+  }
   let drag=null;
   sel.addEventListener('pointerdown',e=>{const h=e.target.closest('.hd');if(!h&&tool)return;e.preventDefault();sel.setPointerCapture(e.pointerId);drag={d:h?h.dataset.d:'move',sx:e.clientX,sy:e.clientY,r:{...R}}});
   sel.addEventListener('pointermove',e=>{
@@ -602,25 +1630,35 @@ document.querySelectorAll('[data-c]').forEach(i=>i.onchange=()=>document.body.cl
     g.ondblclick=()=>{custom=false;snap();toast('工具栏已复位到右下角')};
   }
   function render(){
+    const foldedActive=FOLDED_T.find(t=>t[0]===tool);
     const grip='<span class="grip" title="拖动移动工具栏，双击复位"><i></i><i></i><i></i><i></i><i></i><i></i></span>';
-    const tools='<span class="zone">'+T.map(t=>`<button class="nb ico${tool===t[0]?' sel':''}" data-t="${t[0]}" title="${t[2]}">${svg(t[1],15)}</button>`).join('')+'</span>';
-    const hist=`<span class="zone"><button class="nb ico${undo.length?'':' dis'}" id="un" title="撤销 ⌘Z">${svg('undo',14)}</button><button class="nb ico${redo.length?'':' dis'}" id="re" title="重做 ⇧⌘Z">${svg('redo',14)}</button><button class="nb ico" id="mo" title="视图缩放">${svg('more',14)}</button></span>`;
-    const sec=`<span class="zone"><button class="nb ico" id="tr" title="翻译截图">${svg('translate',15)}</button><button class="nb ico" id="oc" title="OCR 识别">${svg('ocr',15)}</button><button class="nb ico" id="fl" title="悬浮置顶 ⌘F">${svg('float',15)}</button><button class="nb ico" id="sa" title="保存 PNG ⌘S">${svg('save',15)}</button></span>`;
-    const act=`<span class="zone" style="gap:4px"><button class="nb cta" id="co" title="复制截图 ⌘C">${svg('copy',13)}<span>复制</span></button><button class="nb ico close" id="cl" title="关闭 Esc">${svg('close',14)}</button></span>`;
+    const primaryBtns=PRIMARY_T.map(t=>`<button class="nb ico${tool===t[0]?' sel':''}" data-t="${t[0]}" title="${t[2]}" aria-label="${t[2]}">${svg(t[1],15)}</button>`).join('');
+    const foldedPop=openMenu==='tools'?`<div class="ed-pop" role="menu">${FOLDED_T.map(t=>`<button class="ed-pop-item${tool===t[0]?' on':''}" data-ft="${t[0]}" role="menuitem">${svg(t[1],14)}<span>${t[2]}</span></button>`).join('')}</div>`:'';
+    const foldedTrigger=`<span class="ed-pop-anchor"><button class="nb trig${foldedActive?' sel':''}${openMenu==='tools'?' open':''}" id="ed-more-tools" title="${foldedActive?foldedActive[2]+'（点击展开更多工具）':'更多标注工具'}" aria-label="更多标注工具" aria-expanded="${openMenu==='tools'}">${svg(foldedActive?foldedActive[1]:'shapes',14)}${svg('chevDown',10)}</button>${foldedPop}</span>`;
+    const tools=`<span class="zone">${primaryBtns}${foldedTrigger}</span>`;
+    const hist=`<span class="zone"><button class="nb ico${undo.length?'':' dis'}" id="un" title="撤销 ⌘Z" aria-label="撤销">${svg('undo',14)}</button><button class="nb ico${redo.length?'':' dis'}" id="re" title="重做 ⇧⌘Z" aria-label="重做">${svg('redo',14)}</button></span>`;
+    const secPop=openMenu==='more'?`<div class="ed-pop right" role="menu"><button class="ed-pop-item" id="tr" role="menuitem">${svg('translate',14)}<span>翻译截图</span></button><button class="ed-pop-item" id="oc" role="menuitem">${svg('ocr',14)}<span>OCR 识别</span></button><button class="ed-pop-item" id="sa" role="menuitem">${svg('save',14)}<span>保存 PNG</span><span class="ed-pop-k">⌘S</span></button></div>`:'';
+    const sec=`<span class="zone"><button class="nb ico" id="fl" title="悬浮置顶 ⌘F" aria-label="悬浮置顶">${svg('float',15)}</button><span class="ed-pop-anchor"><button class="nb ico${openMenu==='more'?' open':''}" id="ed-more-sec" title="翻译、OCR 与保存" aria-label="更多操作" aria-expanded="${openMenu==='more'}">${svg('more',14)}</button>${secPop}</span></span>`;
+    const act=`<span class="zone" style="gap:4px"><button class="nb cta" id="co" title="复制截图 ⌘C" aria-label="复制截图">${svg('copy',14)}</button><button class="nb ico close" id="cl" title="关闭 Esc" aria-label="关闭">${svg('close',14)}</button></span>`;
     pal.innerHTML=grip+tools+'<span class="vr"></span>'+hist+'<span class="vr"></span>'+sec+'<span class="vr"></span>'+act;
-    pal.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{tool=tool===b.dataset.t?null:b.dataset.t;render()});
-    $('un').onclick=doUndo;$('re').onclick=doRedo;
-    $('mo').onclick=()=>toast('视图缩放 100%');
-    $('tr').onclick=()=>showTab('translation');
-    $('oc').onclick=()=>showTab('ocr');
-    $('fl').onclick=()=>toast('已悬浮到屏幕最上层');
-    $('sa').onclick=()=>toast('已保存 PNG');
-    $('co').onclick=()=>toast('已复制截图到剪贴板');
-    $('cl').onclick=()=>{ed.classList.add('gone');$('ro').classList.add('on')};
+    pal.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{openMenu=null;tool=tool===b.dataset.t?null:b.dataset.t;render()});
+    $('ed-more-tools').onclick=e=>{e.stopPropagation();openMenu=openMenu==='tools'?null:'tools';render()};
+    pal.querySelectorAll('[data-ft]').forEach(b=>b.onclick=e=>{e.stopPropagation();openMenu=null;tool=tool===b.dataset.ft?null:b.dataset.ft;render()});
+    $('un').onclick=()=>{openMenu=null;doUndo()};
+    $('re').onclick=()=>{openMenu=null;doRedo()};
+    $('fl').onclick=()=>{openMenu=null;render();toast('已悬浮到屏幕最上层')};
+    $('ed-more-sec').onclick=e=>{e.stopPropagation();openMenu=openMenu==='more'?null:'more';render()};
+    const trBtn=$('tr');if(trBtn)trBtn.onclick=()=>{openMenu=null;render();showTab('translation')};
+    const ocBtn=$('oc');if(ocBtn)ocBtn.onclick=()=>{openMenu=null;render();showTab('ocr')};
+    const saBtn=$('sa');if(saBtn)saBtn.onclick=()=>{openMenu=null;render();openSaveDialog()};
+    $('co').onclick=()=>{openMenu=null;render();toast('已复制截图到剪贴板')};
+    $('cl').onclick=()=>{openMenu=null;ed.classList.add('gone');$('ro').classList.add('on')};
     bindGrip();renderOpt();sel.classList.toggle('draw',!!tool);showRing(true);requestAnimationFrame(snap);
   }
+  document.addEventListener('pointerdown',e=>{if(openMenu&&!e.target.closest('.ed-pop-anchor')){openMenu=null;render()}});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&openMenu){openMenu=null;render()}});
   function renderOpt(){
-    if(!tool||!OPT[tool].length){opt.className='opt glass';opt.innerHTML='';return}
+    if(!tool||!OPT[tool].length){opt.className='opt ed-glass';opt.innerHTML='';return}
     const o=OPT[tool],parts=[];
     if(o.includes('hi'))parts.push('<span class="pill sec">35%</span>');
     if(o.includes('w')){
@@ -643,7 +1681,7 @@ document.querySelectorAll('[data-c]').forEach(i=>i.onchange=()=>document.body.cl
       const bp=[[14,6,'小'],[24,9,'中'],[40,13,'大']].map(([v,d,n])=>`<button class="dp${Math.abs(st.br-v)<3?' on':''}" data-bp="${v}" title="${n} · ${v}pt"><i style="width:${d}px;height:${d}px"></i></button>`).join('');
       parts.push(`<div class="grp">${bp}</div><div class="grp"><input type="range" min="8" max="60" value="${st.br}" data-br><span class="val" id="vb">${st.br}pt</span></div>`);
     }
-    opt.innerHTML=parts.join('<span class="vr"></span>');opt.className='opt glass on';
+    opt.innerHTML=parts.join('<span class="vr"></span>');opt.className='opt ed-glass on';
     opt.querySelectorAll('[data-wp]').forEach(b=>b.onclick=()=>{st.w=+b.dataset.wp;renderOpt()});
     const wIn=opt.querySelector('[data-w]');if(wIn)wIn.onchange=()=>{st.w=Math.max(1,Math.min(20,Math.round(+wIn.value||4)));renderOpt()};
     opt.querySelectorAll('[data-fp]').forEach(b=>b.onclick=()=>{st.sz=+b.dataset.fp;renderOpt()});
@@ -657,7 +1695,7 @@ document.querySelectorAll('[data-c]').forEach(i=>i.onchange=()=>document.body.cl
   function showRing(reset,keep){
     if(tool!=='blur'){ring.style.display='none';return}
     if(reset&&!keep||!lastPt)lastPt=lastPt&&keep?lastPt:[R.w/2,R.h/2];
-    ring.style.display='block';const r=st.br;ring.style.cssText=`display:block;width:${2*r}px;height:${2*r}px;left:${lastPt[0]-r}px;top:${lastPt[1]-r}px`;
+    const r=st.br;ring.style.cssText=`display:block;width:${2*r}px;height:${2*r}px;left:${lastPt[0]-r}px;top:${lastPt[1]-r}px`;
   }
   function push(n){undo.push(n);redo=[];render()}
   function doUndo(){const n=undo.pop();if(!n)return;n.remove();redo.push(n);render()}
@@ -699,7 +1737,7 @@ document.querySelectorAll('[data-c]').forEach(i=>i.onchange=()=>document.body.cl
   render();layout();
 })();
 
-// 3. Translation (TranslationWorkspaceView.swift)
+// 3. Translation (3-Band Layout + macOS 27 Capsules)
 (function(){
   const engs=[['system',svg('translate',14),'系统翻译'],['ai',svg('sparkle',14),'AI 翻译'],['deepl','DL','DeepL 翻译'],['google','G','Google 翻译'],['myMemory','MM','MyMemory 翻译']];
   let curEng=0;
@@ -707,23 +1745,39 @@ document.querySelectorAll('[data-c]').forEach(i=>i.onchange=()=>document.body.cl
   const trIn=$('tr-in'),trOut=$('tr-out'),stale=$('tr-stale'),pill=$('tr-eng-pill'),tray=$('tr-engs');
   function syncCount(){$('tr-cnt').textContent=`${trIn.value.length} 字符`}
   function renderEngs(){
-    tray.innerHTML=engs.map((e,i)=>`<button class="eng-btn${i===curEng?' on':''}" data-i="${i}" title="翻译引擎：${e[2]}">${e[1]}</button>`).join('');
-    tray.querySelectorAll('.eng-btn').forEach(b=>b.onclick=()=>{curEng=+b.dataset.i;pill.textContent=engs[curEng][2];renderEngs();translateNow()});
+    tray.innerHTML=engs.map((e,i)=>`<button class="tr-eng-btn${i===curEng?' on':''}" data-i="${i}" title="翻译引擎：${e[2]}">${e[1]}</button>`).join('');
+    tray.querySelectorAll('.tr-eng-btn').forEach(b=>b.onclick=()=>{
+      curEng=+b.dataset.i;
+      pill.textContent=engs[curEng][2];
+      renderEngs();
+      translateNow();
+    });
   }
   function translateNow(){
     const v=trIn.value.trim();
     if(!v){trOut.textContent='';stale.style.display='none';return}
     const target=$('tr-dst-lang').value;
-    trOut.textContent=target==='en'?'Liquid Glass adapts to its background and keeps controls legible.':'液态玻璃会根据背景自适应，并保持控件清晰可读。';
+    trOut.textContent=target==='en'
+      ?'Liquid Glass adapts to its background and keeps controls legible.'
+      :'液态玻璃会根据背景自适应，并保持控件清晰可读。';
     stale.style.display='none';
   }
   trIn.oninput=()=>{syncCount();stale.style.display=trOut.textContent?'inline-flex':'none'};
   $('tr-go').onclick=translateNow;
-  $('tr-swap').onclick=()=>{if($('tr-src-lang').value!=='auto'){const a=$('tr-src-lang').value;$('tr-src-lang').value=$('tr-dst-lang').value;$('tr-dst-lang').value=a;translateNow()}};
+  $('tr-src-lang').onchange=translateNow;
+  $('tr-dst-lang').onchange=translateNow;
+  $('tr-swap').onclick=()=>{
+    if($('tr-src-lang').value!=='auto'){
+      const a=$('tr-src-lang').value;
+      $('tr-src-lang').value=$('tr-dst-lang').value;
+      $('tr-dst-lang').value=a;
+      translateNow();
+    } else toast('自动检测语言不可互换');
+  };
   $('tr-clr1').onclick=()=>{trIn.value='';syncCount();stale.style.display='none'};
   $('tr-clr2').onclick=()=>{trOut.textContent='';stale.style.display='none'};
-  $('tr-cp1').onclick=()=>{toast('已复制原文')};
-  $('tr-cp2').onclick=()=>{toast('已复制译文')};
+  $('tr-cp1').onclick=()=>toast('已复制原文');
+  $('tr-cp2').onclick=()=>toast('已复制译文');
   $('tr-spk1').onclick=()=>toast('正在朗读原文…');
   $('tr-spk2').onclick=()=>toast('正在朗读译文…');
   $('tr-to-ocr').onclick=()=>showTab('ocr');
@@ -731,20 +1785,28 @@ document.querySelectorAll('[data-c]').forEach(i=>i.onchange=()=>document.body.cl
   syncCount();renderEngs();
 })();
 
-// 4. OCR (OCRWorkspaceView.swift)
+// 4. OCR (Full-Height Preview Sidebar + 52pt Unified Toolbar)
 (function(){
   let zoom=1;
   const $=id=>document.getElementById(id);
-  const txt=$('ocr-txt'),mock=$('ocr-mock');
-  function sync(){$('ocr-cnt').textContent=`${txt.value.length} 字符`;$('ocr-zval').textContent=`${Math.round(zoom*100)}%`;mock.style.transform=`scale(${zoom})`}
+  const txt=$('ocr-txt'),mock=$('ocr-mock'),side=$('ocr-side'),mainLights=$('ocr-main-lights'),expBtn=$('ocr-exp');
+  function sync(){
+    $('ocr-cnt').textContent=`${txt.value.length} 字符`;
+    $('ocr-zval').textContent=`${Math.round(zoom*100)}%`;
+    mock.style.transform=`scale(${zoom})`;
+  }
   $('ocr-zm').onclick=()=>{zoom=Math.max(.25,zoom-.25);sync()};
   $('ocr-zp').onclick=()=>{zoom=Math.min(4,zoom+.25);sync()};
-  $('ocr-zr').onclick=()=>{$('ocr-zval').click()};
+  $('ocr-zr').onclick=()=>{zoom=1;sync()};
   $('ocr-zval').onclick=()=>{zoom=1;sync()};
-  $('ocr-col').onclick=()=>{$('ocr-left').classList.add('gone');$('ocr-exp').style.display='inline-flex'};
-  $('ocr-exp').onclick=()=>{$('ocr-left').classList.remove('gone');$('ocr-exp').style.display='none'};
-  $('ocr-eng').querySelectorAll('button').forEach(b=>b.onclick=()=>{
-    $('ocr-eng').querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  $('ocr-col').onclick=()=>{side.classList.add('gone');expBtn.style.display='inline-flex';mainLights.style.display='inline-flex'};
+  $('ocr-exp').onclick=()=>{side.classList.remove('gone');expBtn.style.display='none';mainLights.style.display='none'};
+  $('ocr-recap').onclick=()=>showTab('editor');
+  $('ocr-imp').onclick=()=>toast('已打开本地图片选择器（示意）');
+  const engSeg=$('ocr-eng');
+  engSeg.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    engSeg.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
     const isAI=b.dataset.e==='ai';
     $('ocr-preset-wrap').style.display=isAI?'inline-flex':'none';
     $('ocr-pill').textContent=isAI?'AI OCR':'本机 Vision';
@@ -759,98 +1821,437 @@ document.querySelectorAll('[data-c]').forEach(i=>i.onchange=()=>document.body.cl
   txt.oninput=sync;sync();
 })();
 
-// 5. Clipboard (ClipboardFeature.swift)
+// 5. Clipboard (Unified Single-Window Master-Detail Split)
 (function(){
-  const items=[
-    {id:1,ty:'text',ic:'doc',fav:true,app:'Notes',time:'10:42',body:'今天评审了 Traylet 首版界面：截图工具栏统一 40pt 玻璃胶囊，支持 10 个标注工具宽屏直出。'},
-    {id:2,ty:'link',ic:'link',fav:false,app:'Safari',time:'10:31',body:'https://developer.apple.com/documentation/swiftui/applying-liquid-glass-to-custom-views'},
-    {id:3,ty:'img',ic:'photo',fav:true,app:'Traylet 截图',time:'10:05',body:'截图 1280 × 720 · PNG'},
-    {id:4,ty:'text',ic:'doc',fav:false,app:'Xcode',time:'09:58',body:'enum EditingToolbarMetrics {\n    static let barHeight: CGFloat = 40\n}'},
-    {id:5,ty:'text',ic:'doc',fav:false,app:'Terminal',time:'昨天',body:'scripts/package/build-from-source.sh'}
+  const initial=[
+    {id:1,ty:'text',ic:'doc',fav:true,app:'Notes',time:'10:42',bytes:'214 B',body:'今天评审了 Traylet 的 macOS 27 重排版方案：采用通顶毛玻璃侧边栏、52pt 一体化工具栏与 36pt 液态玻璃胶囊控件。'},
+    {id:2,ty:'link',ic:'link',fav:false,app:'Safari',time:'10:31',bytes:'88 B',body:'https://developer.apple.com/documentation/swiftui/applying-liquid-glass-to-custom-views'},
+    {id:3,ty:'img',ic:'photo',fav:true,app:'Traylet 截图',time:'10:05',bytes:'1.4 MB',body:'截图 1280 × 720 · PNG'},
+    {id:4,ty:'text',ic:'doc',fav:false,app:'Xcode',time:'09:58',bytes:'96 B',body:'enum EditingToolbarMetrics {\n    static let barHeight: CGFloat = 40\n}'},
+    {id:5,ty:'text',ic:'doc',fav:false,app:'Terminal',time:'昨天',bytes:'42 B',body:'scripts/package/build-from-source.sh'}
   ];
-  let selId=null,favOnly=false,ignore=false;
+  let items=[...initial],selId=1,favOnly=false,kind='all',ignore=false;
   const $=id=>document.getElementById(id);
-  function render(){
-    const q=$('cb-q').value.trim().toLowerCase();
-    const list=items.filter(it=>(!favOnly||it.fav)&&(!q||it.body.toLowerCase().includes(q)));
-    $('cb-list').innerHTML=list.map(it=>`<div class="cb-row${it.id===selId?' on':''}" data-id="${it.id}"><span class="cb-ty">${svg(it.ic,14)}</span><span class="cb-line">${it.body.replace(/\n/g,' ')}</span><span class="cb-act">${it.fav?svg('starFill',12):''}</span></div>`).join('');
-    $('cb-foot').textContent=`${items.length} / 200 条 · 保留 30 天`;
-    $('cb-list').querySelectorAll('.cb-row').forEach(r=>r.onclick=()=>{
-      const id=+r.dataset.id;selId=selId===id?null:id;render();syncDetail();
+  const qEl=$('cb-q'),qWrap=$('cb-srch-wrap');
+
+  function filtered(){
+    const q=qEl.value.trim().toLowerCase();
+    return items.filter(it=>(!favOnly||it.fav)&&(kind==='all'||it.ty===kind)&&(!q||it.body.toLowerCase().includes(q)||it.app.toLowerCase().includes(q)));
+  }
+
+  function renderList(){
+    qWrap.classList.toggle('has-val',!!qEl.value);
+    const list=filtered();
+    if(!list.some(x=>x.id===selId))selId=list[0]?list[0].id:null;
+    const favs=list.filter(x=>x.fav),recents=list.filter(x=>!x.fav);
+    const listEl=$('cb-list');
+    if(!list.length){
+      listEl.innerHTML='<div class="cb-empty" style="padding:24px"><span style="color:var(--ter)">'+svg('search',22)+'</span><span>没有匹配的剪贴板条目</span></div>';
+    }else if(kind==='img'){
+      const card=it=>`<button class="cb-img-card${it.id===selId?' on':''}" data-id="${it.id}"><div class="cb-img-thumb">1280 × 720</div><div class="cb-img-cap">${it.app} · ${it.time}</div></button>`;
+      let html='';
+      if(favs.length&&!favOnly){html+=`<div class="cb-sec-hdr">收藏 (${favs.length})</div><div class="cb-img-grid">${favs.map(card).join('')}</div>`}
+      if(recents.length&&!favOnly){html+=`<div class="cb-sec-hdr">最近 (${recents.length})</div><div class="cb-img-grid">${recents.map(card).join('')}</div>`}
+      if(favOnly){html+=`<div class="cb-img-grid">${favs.map(card).join('')}</div>`}
+      listEl.innerHTML=html;
+    }else{
+      const row=it=>`<div class="cb-row${it.id===selId?' on':''}" data-id="${it.id}"><span class="cb-ty">${svg(it.ic,14)}</span><span class="cb-line">${it.body.replace(/\n/g,' ')}</span><span class="cb-star">${it.fav?svg('starFill',12):''}</span></div>`;
+      let html='';
+      if(favOnly)html=favs.map(row).join('');
+      else{
+        if(favs.length)html+=`<div class="cb-sec-hdr">收藏</div>`+favs.map(row).join('');
+        if(recents.length)html+=`<div class="cb-sec-hdr">最近</div>`+recents.map(row).join('');
+      }
+      listEl.innerHTML=html;
+    }
+    listEl.querySelectorAll('[data-id]').forEach(el=>el.onclick=()=>{
+      selId=+el.dataset.id;renderList();renderDetail();
     });
+    $('cb-foot').textContent=`${items.length} / 200 条 · 保留 30 天`;
   }
-  function syncDetail(){
-    const it=items.find(x=>x.id===selId),det=$('cb-det');
-    if(!it){det.classList.remove('on');return}
-    det.classList.add('on');
-    $('cb-dty').textContent=it.ty==='img'?'图片':(it.ty==='link'?'链接':'文本');
-    $('cb-dmeta').textContent=`${it.app} · ${it.time}`;
-    $('cb-dbody').innerHTML=it.ty==='img'?'<div class="cb-img-ph">1280 × 720</div><div>'+it.body+'</div><div style="display:flex;gap:8px;margin-top:12px"><button class="sbtn" onclick="showTab(\'editor\')">编辑图片</button><button class="sbtn pri" onclick="showTab(\'ocr\')">识别文字</button></div>':it.body.replace(/</g,'&lt;');
+
+  function renderDetail(){
+    const it=items.find(x=>x.id===selId);
+    const bar=$('cb-detail-bar'),body=$('cb-detail-body'),foot=$('cb-detail-foot');
+    if(!it){
+      bar.innerHTML='<span class="m27-title">剪贴板详情</span>';
+      body.innerHTML='<div class="cb-empty"><span style="color:var(--ter)">'+svg('clipboard',28)+'</span><span>选择左侧一条记录查看完整内容</span></div>';
+      foot.innerHTML='<span></span><span>Esc 关闭</span>';
+      return;
+    }
+    const kindMeta=it.ty==='img'?['图片','pur']:it.ty==='link'?['链接','teal']:['文本','acc'];
+    let ctxBtns='';
+    if(it.ty==='text')ctxBtns=`<button class="gl-btn" id="cb-act-tr" title="发送到翻译">${svg('translate',14)}</button>`;
+    else if(it.ty==='link')ctxBtns=`<button class="gl-btn" id="cb-act-open" title="在默认浏览器中打开">${svg('globe',14)}</button>`;
+    else ctxBtns=`<button class="gl-btn" id="cb-act-ocr" title="OCR 识别">${svg('ocr',14)}</button><button class="gl-btn" id="cb-act-edit" title="编辑图片">${svg('pen',14)}</button>`;
+
+    bar.innerHTML=`
+      <div style="display:flex;align-items:center;gap:8px;min-width:0">
+        <span class="m27-title">${it.app}</span>
+        <span class="pill ${kindMeta[1]}">${kindMeta[0]}</span>
+        <span class="m27-subtitle">${it.time}</span>
+      </div>
+      <span style="flex:1"></span>
+      <div class="gl-pill">
+        <button class="gl-btn${it.fav?' on-acc':''}" id="cb-det-fav" title="${it.fav?'取消收藏':'收藏'}">${svg(it.fav?'starFill':'star',14)}</button>
+        ${ctxBtns}
+        <button class="gl-btn" id="cb-det-cp" title="复制 ⌘⇧C">${svg('copy',14)}</button>
+      </div>`;
+
+    if(it.ty==='img'){
+      body.innerHTML=`
+        <div class="cb-img-preview" id="cb-img-prev">
+          <span style="font-size:16px;font-weight:700">1280 × 720</span>
+          <span style="font-size:12px;opacity:.85">${it.body} · 点击全屏预览</span>
+        </div>`;
+      document.getElementById('cb-img-prev').onclick=()=>toast('打开图片预览窗口（Space）');
+    }else if(it.ty==='link'){
+      body.innerHTML=`
+        <div class="cb-url-card">
+          <span class="pill teal" style="align-self:flex-start">${svg('link',11)}<span>HTTPS 链接</span></span>
+          <a href="#preview" onclick="event.preventDefault();toast('已在默认浏览器中打开链接')">${it.body}</a>
+        </div>`;
+    }else if(it.body.includes('\n')){
+      body.innerHTML=`<div class="cb-code-block">${it.body.replace(/</g,'&lt;')}</div>`;
+    }else{
+      body.innerHTML=`<div class="cb-detail-text">${it.body.replace(/</g,'&lt;')}</div>`;
+    }
+
+    const lines=it.body.split('\n').length;
+    foot.innerHTML=`<span class="num">${it.bytes}${it.ty!=='img'?` · ${it.body.length} 字符 · ${lines} 行`:''}</span><span>↵ 复制 · Esc 关闭</span>`;
+
+    document.getElementById('cb-det-fav').onclick=()=>{it.fav=!it.fav;renderList();renderDetail()};
+    document.getElementById('cb-det-cp').onclick=()=>toast('已复制到剪贴板');
+    const trBtn=document.getElementById('cb-act-tr');
+    if(trBtn)trBtn.onclick=()=>{document.getElementById('tr-in').value=it.body;showTab('translation')};
+    const openBtn=document.getElementById('cb-act-open');
+    if(openBtn)openBtn.onclick=()=>toast('已在默认浏览器中打开');
+    const ocrBtn=document.getElementById('cb-act-ocr');
+    if(ocrBtn)ocrBtn.onclick=()=>showTab('ocr');
+    const editBtn=document.getElementById('cb-act-edit');
+    if(editBtn)editBtn.onclick=()=>showTab('editor');
   }
-  $('cb-q').oninput=render;
-  $('cb-fav').onclick=()=>{favOnly=!favOnly;$('cb-fav').innerHTML=svg(favOnly?'starFill':'star',14);$('cb-fav').classList.toggle('on-acc',favOnly);render()};
-  $('cb-ign').onclick=()=>{ignore=!ignore;$('cb-ign').classList.toggle('ok',ignore);toast(ignore?'已开启：忽略下一次复制':'已取消忽略下一次复制')};
-  render();
+
+  qEl.oninput=()=>{renderList();renderDetail()};
+  $('cb-q-clr').onclick=()=>{qEl.value='';renderList();renderDetail()};
+  $('cb-filters').querySelectorAll('.cb-filter-btn').forEach(b=>b.onclick=()=>{
+    $('cb-filters').querySelectorAll('.cb-filter-btn').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    kind=b.dataset.k;
+    renderList();renderDetail();
+  });
+  $('cb-fav').onclick=()=>{
+    favOnly=!favOnly;
+    $('cb-fav').classList.toggle('on-acc',favOnly);
+    $('cb-fav').innerHTML=svg(favOnly?'starFill':'star',14);
+    renderList();renderDetail();
+  };
+  $('cb-ign').onclick=()=>{
+    ignore=!ignore;
+    $('cb-ign').classList.toggle('ok',ignore);
+    toast(ignore?'已开启：忽略下一次复制':'已取消忽略下一次复制');
+  };
+  $('cb-clear-btn').onclick=()=>openConfirmDialog({
+    title:'清空剪贴板历史？',
+    message:'将清空所有非收藏的历史条目，收藏条目保留在本机，不会修改当前系统剪贴板。',
+    confirmLabel:'清空',
+    onConfirm:()=>{items=items.filter(x=>x.fav);renderList();renderDetail();toast('已清空非收藏剪贴板历史')}
+  });
+
+  renderList();renderDetail();
 })();
 
-// 6. Settings (SettingsWorkspaceView.swift)
+// 6. Settings (Modern macOS 27 Sidebar + 52pt Toolbar + Grouped Forms)
 (function(){
-  const secs=[
-    ['general','gear','通用','#8e8e93'],
-    ['shortcuts','keyboard','快捷键','#007aff'],
-    ['ocr','ocr','OCR','#af52de'],
-    ['translation','translate','翻译','#34c759'],
-    ['clipboard','clipboard','剪贴板','#ff9500'],
-    ['permissions','shield','权限','#30b0c7'],
-    ['about','info','关于','#5856d6']
+  const groups=[
+    {title:'基础',items:[['general','gear','通用'],['shortcuts','keyboard','快捷键']]},
+    {title:'功能',items:[['ocr','ocr','OCR'],['translation','translate','翻译'],['clipboard','clipboard','剪贴板']]},
+    {title:'系统',items:[['permissions','shield','权限'],['about','info','关于']]}
   ];
-  const body={
-    general:`<div class="st-card">
-      <div class="st-item"><span>语言</span><span class="kcap">跟随系统</span></div>
-      <div class="st-item"><span>外观</span><span class="kcap">系统 / 浅色 / 深色</span></div>
-      <div class="st-item"><span>玻璃效果<small>macOS 26+ 使用 Liquid Glass；辅助功能减少透明度时自动回退实底</small></span><button class="sw-tgl on" onclick="this.classList.toggle('on')"></button></div>
-    </div>`,
-    shortcuts:`<div class="st-card">
-      <div class="st-item"><span>区域截图</span><span class="kcap">⌃⌥⇧A</span></div>
-      <div class="st-item"><span>屏幕截图</span><span class="kcap">⌃⌥⇧S</span></div>
-      <div class="st-item"><span>输入翻译</span><span class="kcap">⌃⌥⇧T</span></div>
-      <div class="st-item"><span>截图翻译</span><span class="kcap">⌃⌥⇧R</span></div>
-      <div class="st-item"><span>OCR 识别</span><span class="kcap">⌃⌥⇧O</span></div>
-      <div class="st-item"><span>剪贴板</span><span class="kcap">⌃⌥⇧V</span></div>
-    </div>`,
-    ocr:`<div class="st-card">
-      <div class="st-item"><span>默认识别引擎</span><span class="kcap">本机 Vision</span></div>
-      <div class="st-item"><span>识别后自动复制到剪贴板</span><button class="sw-tgl" onclick="this.classList.toggle('on')"></button></div>
-      <div class="st-item"><span>AI OCR 服务配置<small>独立于翻译模块的 OpenAI 兼容多模态接口，API Key 存于钥匙串</small></span><button class="sbtn" onclick="toast('测试连接成功（示意）')">测试连接</button></div>
-    </div>`,
-    translation:`<div class="st-card">
-      <div class="st-item"><span>默认翻译引擎</span><span class="kcap">系统翻译</span></div>
-      <div class="st-item"><span>系统语言包<small>检查或预下载离线翻译语言对</small></span><button class="sbtn" onclick="toast('语言包已就绪（示意）')">检查状态</button></div>
-      <div class="st-item"><span>外部引擎（AI / DeepL / Google / MyMemory）</span><span class="kcap">按需切换</span></div>
-    </div>`,
-    clipboard:`<div class="st-card">
-      <div class="st-item"><span>最大记录条数</span><span class="kcap">200 条</span></div>
-      <div class="st-item"><span>保留期限</span><span class="kcap">30 天</span></div>
-      <div class="st-item"><span>排除应用（Bundle ID）<small>建议填入密码管理器等敏感应用的 Bundle ID</small></span><span class="kcap">com.1password.1password</span></div>
-    </div>`,
-    permissions:`<div class="st-card">
-      <div class="st-item"><span>屏幕录制<small>用于区域截图、整屏截图、截图翻译与 OCR</small></span><span class="pill ok">${svg('check',11)}<span>已允许</span></span></div>
-      <div class="st-item"><span>辅助功能<small>用于输入翻译快捷键读取前台应用选中文本</small></span><button class="sbtn pri" onclick="toast('已打开系统授权提示（示意）')">请求权限</button></div>
-      <div class="st-item"><span>登录时启动<small>登录后自动在菜单栏启动 Traylet</small></span><button class="sw-tgl on" onclick="this.classList.toggle('on')"></button></div>
-    </div>`,
-    about:`<div class="st-card">
-      <div class="st-item"><span>Traylet<small>0.1.0-beta.10 · Swift 6 原生构建</small></span><button class="sbtn pri" onclick="toast('当前已是最新版本（示意）')">检查更新</button></div>
-      <div class="st-item"><span>数据目录</span><span class="kcap">~/Library/Application Support/Traylet/v2</span></div>
-    </div>`
+  const allSecs=groups.flatMap(g=>g.items);
+  let cur='general',searchQ='',aiOcrOpen=false,aiTrOpen=false,recKey=null,updStatus='idle';
+  let state={
+    lang:'system',appearance:'system',
+    autoCopy:false,mergeLines:true,visionHi:true,
+    maxVisible:4,
+    maxCount:200,keepDays:30,capText:true,capImg:true,
+    loginItem:true,autoUpdate:true,previewUpdate:false,
+    shortcuts:{region:'⌃⌥⇧A',screen:'⌃⌥⇧S',inTr:'⌃⌥⇧T',capTr:'⌃⌥⇧R',ocr:'⌃⌥⇧O',clip:'⌃⌥⇧V'}
   };
-  let cur='general';
-  function render(){
-    document.getElementById('st-side').innerHTML=secs.map(s=>`<button class="st-row${s[0]===cur?' on':''}" data-k="${s[0]}"><span class="st-tile" style="background:${s[3]}">${svg(s[1],12)}</span><span>${s[2]}</span></button>`).join('');
-    const ac=secs.find(s=>s[0]===cur);
-    document.getElementById('st-hdr').innerHTML=`<span class="st-tile" style="background:${ac[3]}">${svg(ac[1],14)}</span><h2>${ac[2]}</h2>`;
-    document.getElementById('st-scroll').innerHTML=body[cur];
-    document.querySelectorAll('#st-side .st-row').forEach(b=>b.onclick=()=>{cur=b.dataset.k;render()});
+
+  function getAppMode(){
+    if(document.body.classList.contains('dark'))return 'dark';
+    return state.appearance==='system'?'system':'light';
   }
+  function setAppMode(m){
+    state.appearance=m;
+    const isDark=m==='dark';
+    chkDark.checked=isDark;document.body.classList.toggle('dark',isDark);
+    render();
+  }
+  window._syncSettingsAppearance=()=>{
+    state.appearance=chkDark.checked?'dark':'light';
+    if(document.getElementById('s-settings').classList.contains('on'))render();
+  };
+
+  function renderSidebar(){
+    document.getElementById('st-side').innerHTML=groups.map(g=>`
+      <div class="st-sec-hdr">${g.title}</div>
+      ${g.items.map(s=>`<button class="st-row${s[0]===cur?' on':''}" data-k="${s[0]}"><span class="st-ic">${svg(s[1],15)}</span><span>${s[2]}</span></button>`).join('')}
+    `).join('');
+    document.querySelectorAll('#st-side .st-row').forEach(b=>b.onclick=()=>{
+      cur=b.dataset.k;searchQ='';recKey=null;render();
+    });
+  }
+
+  function renderToolbar(){
+    const active=allSecs.find(s=>s[0]===cur);
+    let actionHtml='';
+    if(cur==='shortcuts'||cur==='general'){
+      actionHtml=`<div class="gl-pill"><button class="gl-btn" id="st-tb-reset">恢复默认…</button></div>`;
+    }else if(cur==='about'){
+      actionHtml=`<div class="gl-pill"><button class="gl-btn" id="st-tb-upd">检查更新</button></div>`;
+    }
+    document.getElementById('st-toolbar').innerHTML=`
+      <span class="m27-title">${active[2]}</span>
+      <span style="flex:1"></span>
+      ${actionHtml}
+      <div class="gl-search${searchQ?' has-val':''}" style="width:184px">
+        ${svg('search',13)}
+        <input id="st-q" placeholder="搜索设置…" value="${searchQ.replace(/"/g,'&quot;')}">
+        <button class="clr" id="st-q-clr" title="清除">${svg('close',10)}</button>
+      </div>`;
+
+    const qIn=document.getElementById('st-q');
+    qIn.oninput=()=>{searchQ=qIn.value;qIn.parentElement.classList.toggle('has-val',!!qIn.value);renderBody()};
+    document.getElementById('st-q-clr').onclick=()=>{searchQ='';render()};
+    const rst=document.getElementById('st-tb-reset');
+    if(rst)rst.onclick=()=>openConfirmDialog({
+      title:cur==='shortcuts'?'恢复默认快捷键？':'恢复通用默认设置？',
+      message:'将恢复此分组的默认配置，其他模块与本机归档数据不受影响。',
+      confirmLabel:'恢复默认',
+      onConfirm:()=>{
+        if(cur==='shortcuts')state.shortcuts={region:'⌃⌥⇧A',screen:'⌃⌥⇧S',inTr:'⌃⌥⇧T',capTr:'⌃⌥⇧R',ocr:'⌃⌥⇧O',clip:'⌃⌥⇧V'};
+        else{state.lang='system';chkRt.checked=false;document.body.classList.remove('rt');setAppMode('system');}
+        render();toast('已恢复默认设置');
+      }
+    });
+    const upd=document.getElementById('st-tb-upd');
+    if(upd)upd.onclick=()=>{updStatus='ok';renderBody();toast('当前已是最新版本 0.1.0-beta.16')};
+  }
+
+  function renderBody(){
+    const q=searchQ.trim().toLowerCase();
+    const wrap=document.getElementById('st-scroll');
+    const glassOn=!chkRt.checked;
+    const appMode=getAppMode();
+
+    let html='';
+    if(cur==='general'){
+      html=`
+        <div class="st-group-hdr">外观与语言</div>
+        <div class="st-card">
+          <div class="st-item">
+            <div class="st-item-lbl"><span>语言</span><small>切换界面显示语言（支持跟随系统、简体中文与 English）</small></div>
+            <div class="st-item-ctl">
+              <div class="m27-popup" style="width:136px">
+                <select id="st-lang"><option value="system">跟随系统</option><option value="zh">简体中文</option><option value="en">English</option></select>
+                <span class="chev">${svg('chevUpDown',11)}</span>
+              </div>
+            </div>
+          </div>
+          <div class="st-item">
+            <div class="st-item-lbl"><span>外观</span></div>
+            <div class="st-item-ctl">
+              <div class="st-seg" id="st-app-seg">
+                <button class="${appMode==='system'?'on':''}" data-m="system">系统</button>
+                <button class="${appMode==='light'?'on':''}" data-m="light">浅色</button>
+                <button class="${appMode==='dark'?'on':''}" data-m="dark">深色</button>
+              </div>
+            </div>
+          </div>
+          <div class="st-item">
+            <div class="st-item-lbl"><span>玻璃效果</span><small>macOS 26+ 使用 Liquid Glass；辅助功能减少透明度或提高对比度时自动回退实底</small></div>
+            <div class="st-item-ctl"><button class="m27-switch${glassOn?' on':''}" id="st-glass-sw" aria-label="玻璃效果"></button></div>
+          </div>
+        </div>`;
+    }else if(cur==='shortcuts'){
+      const defs=[['region','区域截图'],['screen','屏幕截图'],['inTr','输入翻译'],['capTr','截图翻译'],['ocr','OCR 识别'],['clip','剪贴板']];
+      html=`
+        <div class="st-group-hdr">全局快捷键（点击右侧按键框模拟录入）</div>
+        <div class="st-card">
+          ${defs.map(([k,lbl])=>`
+            <div class="st-item">
+              <div class="st-item-lbl"><span>${lbl}</span></div>
+              <div class="st-item-ctl">
+                <button class="kcap${recKey===k?' rec':''}" data-key="${k}">${recKey===k?'请按组合键…':(state.shortcuts[k]||'未设置')}</button>
+              </div>
+            </div>`).join('')}
+        </div>`;
+    }else if(cur==='ocr'){
+      html=`
+        <div class="st-group-hdr">识别与后处理</div>
+        <div class="st-card">
+          <div class="st-item"><div class="st-item-lbl"><span>识别后自动复制到剪贴板</span></div><button class="m27-switch${state.autoCopy?' on':''}" data-tog="autoCopy"></button></div>
+          <div class="st-item"><div class="st-item-lbl"><span>默认合并换行</span></div><button class="m27-switch${state.mergeLines?' on':''}" data-tog="mergeLines"></button></div>
+          <div class="st-item"><div class="st-item-lbl"><span>本机 Vision 高精度识别</span></div><button class="m27-switch${state.visionHi?' on':''}" data-tog="visionHi"></button></div>
+        </div>
+        <div class="st-group-hdr">OCR 引擎</div>
+        <div class="st-card">
+          <div class="st-item">
+            <div class="st-item-lbl"><span>本机 Vision</span><small>Apple Silicon / macOS 系统框架离线识别</small></div>
+            <div class="st-item-ctl"><span class="pill ok">本机 · 离线</span><span class="pill sec">默认</span></div>
+          </div>
+          <div class="st-item">
+            <div class="st-item-lbl"><span>AI OCR</span><small>独立 OpenAI 兼容多模态接口，API Key 加密存本机钥匙串</small></div>
+            <div class="st-item-ctl">
+              <button class="m27-btn" id="st-ai-ocr-tgl">${aiOcrOpen?'收起配置':'配置'}</button>
+              <button class="m27-btn" onclick="toast('已设为默认 OCR 引擎（示意）')">设为默认</button>
+            </div>
+          </div>
+          ${aiOcrOpen?`<div class="st-subpanel">
+            <div class="st-subrow"><label>接口地址</label><input class="m27-input" value="https://api.openai.com/v1"></div>
+            <div class="st-subrow"><label>模型</label><input class="m27-input" value="gpt-4.1-mini"></div>
+            <div class="st-subrow"><label>API Key</label><input class="m27-input" type="password" value="sk-demo-key"></div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px"><button class="m27-btn" onclick="toast('连接测试成功（示意）')">测试连接</button></div>
+          </div>`:''}
+        </div>`;
+    }else if(cur==='translation'){
+      html=`
+        <div class="st-group-hdr">系统语言包与窗口</div>
+        <div class="st-card">
+          <div class="st-item">
+            <div class="st-item-lbl"><span>Apple 系统翻译语言包</span><small>中文 ↔ English · 离线语言资源状态</small></div>
+            <div class="st-item-ctl"><span class="pill ok">${svg('check',11)}<span>已就绪</span></span><button class="m27-btn" onclick="toast('系统语言包检查完成')">检查状态</button></div>
+          </div>
+          <div class="st-item">
+            <div class="st-item-lbl"><span>显示引擎图标数量</span><small>翻译窗口中间条最多展示的引擎数量</small></div>
+            <div class="st-item-ctl">
+              <span class="num" style="min-width:16px;text-align:center">${state.maxVisible}</span>
+              <button class="m27-btn" style="width:24px;padding:0" id="st-vis-dec">-</button>
+              <button class="m27-btn" style="width:24px;padding:0" id="st-vis-inc">+</button>
+            </div>
+          </div>
+        </div>
+        <div class="st-group-hdr">翻译引擎</div>
+        <div class="st-card">
+          <div class="st-item"><div class="st-item-lbl"><span>系统翻译</span><small>macOS 原生离线翻译</small></div><div class="st-item-ctl"><span class="pill ok">本机 · 离线</span><span class="pill sec">默认</span></div></div>
+          <div class="st-item">
+            <div class="st-item-lbl"><span>AI 翻译</span><small>OpenAI 兼容接口 · 支持自定义提示词</small></div>
+            <div class="st-item-ctl"><button class="m27-btn" id="st-ai-tr-tgl">${aiTrOpen?'收起配置':'配置'}</button><button class="m27-btn" onclick="toast('已设为默认翻译引擎')">设为默认</button></div>
+          </div>
+          ${aiTrOpen?`<div class="st-subpanel">
+            <div class="st-subrow"><label>接口地址</label><input class="m27-input" value="https://api.openai.com/v1"></div>
+            <div class="st-subrow"><label>模型</label><input class="m27-input" value="gpt-4.1-mini"></div>
+          </div>`:''}
+          <div class="st-item"><div class="st-item-lbl"><span>DeepL 翻译</span><small>需密钥</small></div><div class="st-item-ctl"><button class="m27-btn" onclick="toast('可展开配置 DeepL Key')">配置</button></div></div>
+          <div class="st-item"><div class="st-item-lbl"><span>Google 翻译 / MyMemory</span><small>免配置在线备选引擎</small></div><div class="st-item-ctl"><span class="pill sec">已启用</span></div></div>
+        </div>`;
+    }else if(cur==='clipboard'){
+      html=`
+        <div class="st-group-hdr">保留策略与采集</div>
+        <div class="st-card">
+          <div class="st-item"><div class="st-item-lbl"><span>最大数量</span></div><div class="st-item-ctl"><span class="kcap num" style="min-width:74px">${state.maxCount} 条</span></div></div>
+          <div class="st-item"><div class="st-item-lbl"><span>保留期限</span></div><div class="st-item-ctl"><span class="kcap num" style="min-width:74px">${state.keepDays} 天</span></div></div>
+          <div class="st-item"><div class="st-item-lbl"><span>采集文字与富文本</span></div><button class="m27-switch${state.capText?' on':''}" data-tog="capText"></button></div>
+          <div class="st-item"><div class="st-item-lbl"><span>采集图片</span></div><button class="m27-switch${state.capImg?' on':''}" data-tog="capImg"></button></div>
+        </div>
+        <div class="st-group-hdr">排除应用与归档</div>
+        <div class="st-card">
+          <div class="st-item"><div class="st-item-lbl"><span>排除应用（Bundle ID）</span><small>建议填入密码管理器等敏感应用的 Bundle ID</small></div><div class="st-item-ctl"><span class="kcap">com.1password.1password</span></div></div>
+          <div class="st-item"><div class="st-item-lbl"><span>本机归档路径</span><small>普通历史与收藏始终写入未加密归档，退出时停止记录</small></div><div class="st-item-ctl"><span class="pill sec">~/Library/Application Support/Traylet/v2/clipboard</span></div></div>
+        </div>`;
+    }else if(cur==='permissions'){
+      html=`
+        <div class="st-group-hdr">系统权限与启动</div>
+        <div class="st-card">
+          <div class="st-item">
+            <div class="st-item-lbl"><span>屏幕录制</span><small>用于区域截图、整屏截图、截图翻译与 OCR</small></div>
+            <div class="st-item-ctl"><span class="pill ok">${svg('check',11)}<span>已允许</span></span><button class="m27-btn" onclick="toast('已打开系统设置 → 隐私与安全性')">打开系统设置</button></div>
+          </div>
+          <div class="st-item">
+            <div class="st-item-lbl"><span>辅助功能</span><small>用于输入翻译快捷键读取前台应用选中文本</small></div>
+            <div class="st-item-ctl"><button class="m27-btn pri" onclick="toast('已触发系统辅助功能授权提示')">请求权限</button><button class="m27-btn" onclick="toast('已打开系统设置')">打开系统设置</button></div>
+          </div>
+          <div class="st-item">
+            <div class="st-item-lbl"><span>登录时启动</span><small>登录后自动在菜单栏启动 Traylet</small></div>
+            <div class="st-item-ctl"><button class="m27-switch${state.loginItem?' on':''}" data-tog="loginItem"></button></div>
+          </div>
+        </div>`;
+    }else if(cur==='about'){
+      html=`
+        <div class="st-card" style="padding:14px 16px">
+          <div style="display:flex;align-items:center;gap:14px">
+            <div class="brand-ic" style="width:48px;height:48px;border-radius:12px">
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="#fff"><circle cx="12" cy="7.5" r="3.6"/><circle cx="8.2" cy="13.2" r="3.6"/><circle cx="15.8" cy="13.2" r="3.6"/><rect x="11.1" y="13" width="1.8" height="6.5" rx=".9"/></svg>
+            </div>
+            <div>
+              <div style="font-size:15px;font-weight:700;color:var(--fg-strong)">Traylet</div>
+              <div style="margin-top:4px"><span class="pill acc num">0.1.0-beta.16 (构建 16)</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="st-group-hdr">软件更新</div>
+        <div class="st-card">
+          <div class="st-item"><div class="st-item-lbl"><span>自动检查更新</span></div><button class="m27-switch${state.autoUpdate?' on':''}" data-tog="autoUpdate"></button></div>
+          <div class="st-item"><div class="st-item-lbl"><span>包含开源预览版</span></div><button class="m27-switch${state.previewUpdate?' on':''}" data-tog="previewUpdate"></button></div>
+          <div class="st-item">
+            <div class="st-item-lbl"><span>检查更新</span><small>仅从 GitHub Releases 只读查询版本与 SHA-256 校验文件</small></div>
+            <div class="st-item-ctl">
+              ${updStatus==='ok'?'<span class="pill ok">已是最新版本</span>':''}
+              <button class="m27-btn" id="st-chk-upd">检查更新</button>
+            </div>
+          </div>
+        </div>
+        <div class="st-group-hdr">第三方声明</div>
+        <div class="st-card">
+          <div class="st-item"><div class="st-item-lbl"><span>系统框架声明</span><small>仅使用 Apple 系统框架，无第三方付费依赖。</small></div></div>
+        </div>`;
+    }
+
+    wrap.innerHTML=html;
+
+    if(q){
+      wrap.querySelectorAll('.st-item').forEach(row=>{
+        if(!row.textContent.toLowerCase().includes(q))row.style.display='none';
+      });
+    }
+
+    const langEl=document.getElementById('st-lang');
+    if(langEl){langEl.value=state.lang;langEl.onchange=()=>{state.lang=langEl.value;toast('已选择语言：'+langEl.options[langEl.selectedIndex].text)}}
+    const seg=document.getElementById('st-app-seg');
+    if(seg)seg.querySelectorAll('button').forEach(b=>b.onclick=()=>setAppMode(b.dataset.m));
+    const gsw=document.getElementById('st-glass-sw');
+    if(gsw)gsw.onclick=()=>{chkRt.checked=!chkRt.checked;document.body.classList.toggle('rt',chkRt.checked);renderBody()};
+    wrap.querySelectorAll('[data-tog]').forEach(sw=>sw.onclick=()=>{const k=sw.dataset.tog;state[k]=!state[k];renderBody()});
+    wrap.querySelectorAll('.kcap[data-key]').forEach(btn=>btn.onclick=()=>{
+      const k=btn.dataset.key;
+      recKey=recKey===k?null:k;
+      renderBody();
+      if(recKey)toast('模拟录入快捷键：再按一次取消，或按任意字母键');
+    });
+    const aiOcrBtn=document.getElementById('st-ai-ocr-tgl');
+    if(aiOcrBtn)aiOcrBtn.onclick=()=>{aiOcrOpen=!aiOcrOpen;renderBody()};
+    const aiTrBtn=document.getElementById('st-ai-tr-tgl');
+    if(aiTrBtn)aiTrBtn.onclick=()=>{aiTrOpen=!aiTrOpen;renderBody()};
+    const dec=document.getElementById('st-vis-dec'),inc=document.getElementById('st-vis-inc');
+    if(dec)dec.onclick=()=>{state.maxVisible=Math.max(1,state.maxVisible-1);renderBody()};
+    if(inc)inc.onclick=()=>{state.maxVisible=Math.min(5,state.maxVisible+1);renderBody()};
+    const chkUpd=document.getElementById('st-chk-upd');
+    if(chkUpd)chkUpd.onclick=()=>{updStatus='ok';renderBody();toast('已是最新版本 0.1.0-beta.16')};
+  }
+
+  document.addEventListener('keydown',e=>{
+    if(!recKey)return;
+    if(e.key==='Escape'){recKey=null;renderBody();return}
+    if(e.key.length===1&&/[a-z0-9]/i.test(e.key)){
+      e.preventDefault();
+      state.shortcuts[recKey]='⌃⌥⇧'+e.key.toUpperCase();
+      recKey=null;renderBody();toast('已更新快捷键');
+    }
+  });
+
+  function render(){renderSidebar();renderToolbar();renderBody();}
   render();
 })();
 </script>

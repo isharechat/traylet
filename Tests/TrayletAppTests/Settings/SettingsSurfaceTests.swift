@@ -64,15 +64,21 @@ import Testing
                     }
                     if !enabled {
                         let scale = CGFloat(bitmap.pixelsWide) / content.bounds.width
+                        for y in [420, 500, 580] {
+                            let sidebarA = try #require(bitmap.colorAt(x: Int(40 * scale), y: Int(CGFloat(y) * scale))?.usingColorSpace(.deviceRGB))
+                            let sidebarB = try #require(bitmap.colorAt(x: Int(200 * scale), y: Int(CGFloat(y) * scale))?.usingColorSpace(.deviceRGB))
+                            let sidebarDelta = max(abs(sidebarA.redComponent - sidebarB.redComponent), abs(sidebarA.greenComponent - sidebarB.greenComponent), abs(sidebarA.blueComponent - sidebarB.blueComponent))
+                            #expect(sidebarDelta < 1.0 / 255, "Solid sidebar plane has an internal edge: \(name), row \(y), delta \(sidebarDelta)")
+                        }
                         for y in [300, 450, 550] {
-                            let reference = try #require(bitmap.colorAt(x: Int(202 * scale), y: Int(CGFloat(y) * scale))?.usingColorSpace(.deviceRGB))
-                            let boundary = try #require(bitmap.colorAt(x: Int(190 * scale), y: Int(CGFloat(y) * scale))?.usingColorSpace(.deviceRGB))
-                            let delta = max(abs(boundary.redComponent - reference.redComponent), abs(boundary.greenComponent - reference.greenComponent), abs(boundary.blueComponent - reference.blueComponent))
-                            #expect(delta < 1.0 / 255, "Solid settings plane has an internal edge: \(name), row \(y), delta \(delta)")
+                            let contentA = try #require(bitmap.colorAt(x: Int(228 * scale), y: Int(CGFloat(y) * scale))?.usingColorSpace(.deviceRGB))
+                            let contentB = try #require(bitmap.colorAt(x: Int(236 * scale), y: Int(CGFloat(y) * scale))?.usingColorSpace(.deviceRGB))
+                            let contentDelta = max(abs(contentA.redComponent - contentB.redComponent), abs(contentA.greenComponent - contentB.greenComponent), abs(contentA.blueComponent - contentB.blueComponent))
+                            #expect(contentDelta < 1.0 / 255, "Solid content plane has an internal edge: \(name), row \(y), delta \(contentDelta)")
                         }
                     }
                     var colors: [String] = []
-                    for x in [188, 189, 190, 191, 192, 194, 198, 202, 206, 210] {
+                    for x in [220, 222, 224, 225, 226, 228, 232] {
                         let scale = CGFloat(bitmap.pixelsWide) / content.bounds.width
                         let color = bitmap.colorAt(x: Int(CGFloat(x) * scale), y: Int(300 * scale))?.usingColorSpace(.deviceRGB)
                         colors.append("\(x):\(color?.redComponent ?? -1),\(color?.greenComponent ?? -1),\(color?.blueComponent ?? -1)")

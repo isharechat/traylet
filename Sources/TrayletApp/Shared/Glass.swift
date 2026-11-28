@@ -60,6 +60,171 @@ extension View {
     }
 }
 
+/// 36pt macOS 27 Liquid Glass capsule container for toolbar control groups and search bars.
+struct Mac27GlassCapsule<Content: View>: View {
+    var spacing: CGFloat = 4
+    var horizontalPadding: CGFloat = 4
+    var height: CGFloat = Design.Layout.capsuleHeight
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        HStack(spacing: spacing, content: content)
+            .padding(.horizontal, horizontalPadding)
+            .frame(height: height)
+            .v2GlassBackground(in: Capsule(), interactive: true)
+    }
+}
+
+/// 36pt macOS 27 circular interactive Liquid Glass button.
+struct Mac27GlassCircleButton: View {
+    let symbol: String
+    let label: String
+    var help: String? = nil
+    var active = false
+    var tint: Color? = nil
+    var iconSize: CGFloat = 13.5
+    var disabled = false
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: iconSize, weight: active ? .semibold : .regular))
+                .foregroundStyle(tint ?? (active ? Color.accentColor : Color.primary))
+                .frame(width: Design.Layout.capsuleHeight, height: Design.Layout.capsuleHeight)
+                .background(
+                    active ? Color.accentColor.opacity(hovering ? 0.22 : 0.16)
+                           : (hovering && !disabled ? Color.primary.opacity(0.06) : Color.clear),
+                    in: Circle()
+                )
+                .overlay {
+                    if active && contrast == .increased {
+                        Circle().strokeBorder(Color.accentColor, lineWidth: 1.5)
+                    }
+                }
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.4 : 1)
+        .onHover { hovering = $0 }
+        .help(L(help ?? label))
+        .accessibilityLabel(L(label))
+    }
+}
+
+/// 52pt macOS 27 integrated unified toolbar with subtle translucent edge and bottom hairline.
+struct Mac27ToolbarBar<Content: View>: View {
+    var leadingPadding: CGFloat = 16
+    var trailingPadding: CGFloat = 14
+    @ObservedObject private var appearance = AppearanceState.shared
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+    @ViewBuilder var content: () -> Content
+
+    private var usesGlass: Bool { appearance.glassActive && !reduceTransparency && contrast != .increased }
+
+    var body: some View {
+        HStack(spacing: 8, content: content)
+            .padding(.leading, leadingPadding)
+            .padding(.trailing, trailingPadding)
+            .frame(height: Design.Layout.toolbarHeight)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                if usesGlass {
+                    Rectangle().fill(.bar)
+                } else {
+                    Rectangle().fill(Color(nsColor: .windowBackgroundColor))
+                }
+            }
+            .overlay(alignment: .bottom) {
+                Divider()
+            }
+    }
+}
+
+/// Full-height translucent macOS 27 sidebar surface (transparent over window glass, solid neutral plane in solid mode).
+struct Mac27SidebarSurface: ViewModifier {
+    @ObservedObject private var appearance = AppearanceState.shared
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    private var usesGlass: Bool { appearance.glassActive && !reduceTransparency && contrast != .increased }
+
+    func body(content: Content) -> some View {
+        content.background {
+            if !usesGlass {
+                Color(nsColor: .underPageBackgroundColor)
+            }
+        }
+    }
+}
+
+/// Clean readable primary content surface for right/main window panes (no glass-on-glass nesting).
+struct Mac27ContentSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        content.background(Color(nsColor: .textBackgroundColor))
+    }
+}
+
+/// 36pt macOS 27 Liquid Glass capsule segmented control with 28pt inner pills and subtle separators.
+struct Mac27SegmentedControl<Option: Hashable & Identifiable>: View {
+    let options: [Option]
+    @Binding var selection: Option
+    let title: (Option) -> String
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Mac27GlassCapsule(spacing: 2, horizontalPadding: 4) {
+            ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
+                let selected = selection == option
+                if index > 0 {
+                    let prevSelected = selection == options[index - 1]
+                    Rectangle()
+                        .fill(Color(nsColor: .separatorColor).opacity(selected || prevSelected ? 0 : 0.65))
+                        .frame(width: 1, height: 18)
+                }
+                Button {
+                    if reduceMotion {
+                        selection = option
+                    } else {
+                        withAnimation(Design.Animation.snappy) { selection = option }
+                    }
+                } label: {
+                    Text(title(option))
+                        .font(.callout.weight(selected ? .semibold : .regular))
+                        .foregroundStyle(selected ? Color.primary : Color.secondary)
+                        .lineLimit(1)
+                        .padding(.horizontal, 12)
+                        .frame(height: 28)
+                        .background(
+                            selected ? Color.primary.opacity(colorScheme == .dark ? 0.16 : 0.09) : Color.clear,
+                            in: Capsule()
+                        )
+                        .overlay {
+                            if selected && contrast == .increased {
+                                Capsule().strokeBorder(Color.primary.opacity(0.65), lineWidth: 1)
+                            }
+                        }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .fixedSize()
+    }
+}
+
+extension View {
+    func mac27SidebarSurface() -> some View { modifier(Mac27SidebarSurface()) }
+    func mac27ContentSurface() -> some View { modifier(Mac27ContentSurface()) }
+}
+
 /// Compact macOS-style capsule badge for status, metadata, and engine tags.
 struct StatusPill: View {
     let text: String
@@ -173,9 +338,10 @@ extension View {
     private weak var window: NSWindow?
     private var content: NSView
     private let cornerRadius: CGFloat
+    private let fullBleedTitlebar: Bool
     private var observers: Set<AnyCancellable> = []
-    init(window: NSWindow, content: NSView, cornerRadius: CGFloat = 0) {
-        self.window = window; self.content = content; self.cornerRadius = cornerRadius
+    init(window: NSWindow, content: NSView, cornerRadius: CGFloat = 0, fullBleedTitlebar: Bool = false) {
+        self.window = window; self.content = content; self.cornerRadius = cornerRadius; self.fullBleedTitlebar = fullBleedTitlebar
         apply()
         AppearanceState.shared.$glassEnabled.dropFirst().sink { [weak self] _ in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.apply() } }
@@ -191,6 +357,9 @@ extension View {
             window.styleMask.insert(.fullSizeContentView)
         }
         window.titlebarAppearsTransparent = true
+        if fullBleedTitlebar {
+            window.titleVisibility = .hidden
+        }
         let contentContainer: NSView
         if AppearanceState.shared.glassActive {
             window.isOpaque = false; window.backgroundColor = .clear
@@ -219,7 +388,7 @@ extension View {
         }
         content.translatesAutoresizingMaskIntoConstraints = false
         contentContainer.addSubview(content)
-        if let guide = window.contentLayoutGuide as? NSLayoutGuide {
+        if !fullBleedTitlebar, let guide = window.contentLayoutGuide as? NSLayoutGuide {
             NSLayoutConstraint.activate([
                 content.leadingAnchor.constraint(equalTo: guide.leadingAnchor),
                 content.trailingAnchor.constraint(equalTo: guide.trailingAnchor),
@@ -227,9 +396,12 @@ extension View {
                 content.bottomAnchor.constraint(equalTo: guide.bottomAnchor)
             ])
         } else {
-            content.frame = contentContainer.bounds
-            content.autoresizingMask = [.width, .height]
-            content.translatesAutoresizingMaskIntoConstraints = true
+            NSLayoutConstraint.activate([
+                content.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
+                content.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
+                content.topAnchor.constraint(equalTo: contentContainer.topAnchor),
+                content.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor)
+            ])
         }
     }
     private static func contentSize(of window: NSWindow) -> CGSize {

@@ -532,5 +532,9 @@ enum English {
         "实际大小": "Actual Size",
         "点击查看大图": "Click to view full image",
         "在默认浏览器中打开": "Open in Default Browser",
+        "常用工具": "Common Tools",
+        "更多标注工具": "More Annotation Tools",
+        "更多操作": "More Actions",
+        "保存 PNG": "Save PNG",
     ]
 }

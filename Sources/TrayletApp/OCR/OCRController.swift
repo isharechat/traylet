@@ -345,18 +345,19 @@ import TrayletCore
     private func ensurePanel() {
         guard panel == nil else { return }
         let created = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 820, height: 560),
+            contentRect: NSRect(x: 0, y: 0, width: 860, height: 540),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         created.title = windowTitle
-        created.minSize = NSSize(width: 540, height: 420)
+        created.minSize = NSSize(width: 560, height: 440)
         created.isReleasedWhenClosed = false
         created.hidesOnDeactivate = false
         backing = GlassWindowBacking(
             window: created,
-            content: NSHostingView(rootView: OCRWorkspaceView(controller: self))
+            content: NSHostingView(rootView: OCRWorkspaceView(controller: self)),
+            fullBleedTitlebar: true
         )
         created.delegate = self
         created.center()

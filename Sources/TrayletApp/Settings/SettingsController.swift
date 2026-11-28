@@ -53,12 +53,12 @@ import Combine
     func present(section: SettingsSection = .general, languagePackPair: TranslationLanguagePackPair? = nil) {
         if let languagePackPair { languagePacks.apply(languagePackPair) }
         if window == nil {
-            let created = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 650), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
-            created.title = windowTitle; created.minSize = NSSize(width: 560, height: 420)
+            let created = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 580), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
+            created.title = windowTitle; created.minSize = NSSize(width: 600, height: 440)
             created.isReleasedWhenClosed = false; created.hidesOnDeactivate = false; created.level = .normal; created.delegate = self
             let hosting = NSHostingView(rootView: SettingsWorkspaceView(preferences: preferences, shortcuts: shortcuts, ocr: ocr, translation: translation, languagePacks: languagePacks, clipboard: clipboard, navigation: navigation, actions: actions, updater: updater, onRequestQuitForUpdate: onRequestQuitForUpdate, localization: localization))
             created.appearance = Self.appearance(preferences.value.appearance)
-            backing = GlassWindowBacking(window: created, content: hosting)
+            backing = GlassWindowBacking(window: created, content: hosting, fullBleedTitlebar: true)
             created.center(); window = created
         }
         actions.refreshLoginStatus()

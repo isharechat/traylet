@@ -5,12 +5,10 @@ import ImageIO
 import UniformTypeIdentifiers
 
 @MainActor final class ClipboardFeature: ObservableObject {
-    static let windowWidth: CGFloat = 380
-    static let windowHeight: CGFloat = 500
-    static let minimumWidth: CGFloat = 340
-    static let minimumHeight: CGFloat = 380
-    static let detailWidth: CGFloat = windowWidth
-    static let detailHeight: CGFloat = windowHeight
+    static let windowWidth: CGFloat = 840
+    static let windowHeight: CGFloat = 540
+    static let minimumWidth: CGFloat = 620
+    static let minimumHeight: CGFloat = 400
     let controller: ClipboardController
     let imageEditing: ClipboardImageEditing
     let storageDirectory: URL
@@ -34,26 +32,16 @@ import UniformTypeIdentifiers
     private var backing: GlassWindowBacking?
     private var dismissal: NSObjectProtocol?
     private var closeObservation: NSObjectProtocol?
-    private var mainMoveObservation: NSObjectProtocol?
-    private var mainResizeObservation: NSObjectProtocol?
     private var appResignObservation: NSObjectProtocol?
-    private var detailPanel: NSPanel?
-    private var detailBacking: GlassWindowBacking?
-    private var detailHosting: NSHostingView<AnyView>?
-    private var detailDismissal: NSObjectProtocol?
-    private var detailResignObservation: NSObjectProtocol?
-    private var detailResizeObservation: NSObjectProtocol?
-    private var detailEndLiveResizeObservation: NSObjectProtocol?
     private var imagePreviewPanel: NSPanel?
     private var imagePreviewBacking: GlassWindowBacking?
     private var imagePreviewHosting: NSHostingView<AnyView>?
     private var imagePreviewCloseObservation: NSObjectProtocol?
     private var imagePreviewResignObservation: NSObjectProtocol?
     private var focusObservations: [NSObjectProtocol] = []
-    private var syncingPanelSize = false
     @Published private(set) var isWindowFocused = false
     @Published private(set) var previewedImageEntryID: UUID?
-    private(set) var renderedDetailID: UUID?
+    @Published private(set) var renderedDetailID: UUID?
     private let preferences: Task<Void, Never>
     private var pendingMutations: [UUID: Task<Void, Never>] = [:]
     private var dismissing = false
@@ -77,12 +65,14 @@ import UniformTypeIdentifiers
         controller.$selectedID.removeDuplicates().dropFirst().sink { [weak imageEditing] _ in imageEditing?.cancel() }.store(in: &imageObservations)
         controller.$selectedID.removeDuplicates().dropFirst().sink { [weak self] _ in
             // `@Published` fires during `willSet`, before `selectedID` is stored, so read the new selection on the next actor turn.
-            Task { @MainActor [weak self] in self?.syncDetailPanel() }
+            Task { @MainActor [weak self] in self?.syncDetailSelection() }
         }.store(in: &imageObservations)
         controller.$entries.sink { [weak self, weak imageEditing] entries in
             imageEditing?.validate(entries: entries)
             Task { @MainActor [weak self] in
-                guard let self, let previewID = self.previewedImageEntryID,
+                guard let self else { return }
+                self.syncDetailSelection()
+                guard let previewID = self.previewedImageEntryID,
                       !self.controller.entries.contains(where: { $0.id == previewID }) else { return }
                 self.closeImagePreview(restoreListFocus: false)
             }
@@ -113,7 +103,6 @@ import UniformTypeIdentifiers
         imageEditing.cancel()
         closeImagePreview(restoreListFocus: false)
         isWindowFocused = false
-        hideDetailPanel()
         if let panel { dismissWindow(panel) }
         controller.kindFilter = .all
     }
@@ -240,7 +229,7 @@ import UniformTypeIdentifiers
             let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: Self.windowWidth, height: Self.windowHeight), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
             window.title = L("剪贴板"); window.minSize = NSSize(width: Self.minimumWidth, height: Self.minimumHeight)
             window.isReleasedWhenClosed = false
-            backing = GlassWindowBacking(window: window, content: NSHostingView(rootView: ClipboardFeatureView(feature: self)))
+            backing = GlassWindowBacking(window: window, content: NSHostingView(rootView: ClipboardFeatureView(feature: self)), fullBleedTitlebar: true)
             window.center(); panel = window
             dismissal = FloatingWindow.hideOnResignKey(
                 window,
@@ -251,7 +240,6 @@ import UniformTypeIdentifiers
                     guard let self, !self.shuttingDown,
                           self.panel?.isVisible == true || self.imagePreviewPanel?.isVisible == true,
                           self.panel?.attachedSheet == nil,
-                          self.detailPanel?.attachedSheet == nil,
                           self.imagePreviewPanel?.attachedSheet == nil,
                           NSApp.modalWindow == nil else { return }
                     self.dismiss()
@@ -263,18 +251,6 @@ import UniformTypeIdentifiers
                     self.dismiss()
                 }
             }
-            mainMoveObservation = NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: window, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self, !self.syncingPanelSize else { return }
-                    self.positionDetailPanel()
-                }
-            }
-            mainResizeObservation = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self, !self.syncingPanelSize else { return }
-                    self.positionDetailPanel()
-                }
-            }
             for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
                 focusObservations.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
                     MainActor.assumeIsolated { self?.refreshWindowFocus() }
@@ -282,15 +258,15 @@ import UniformTypeIdentifiers
             }
         }
         refreshTitle()
-        ensureDetailPanel()
         if let panel {
             panel.contentView?.layoutSubtreeIfNeeded()
             presentWindow(panel)
             isWindowFocused = true
             focusSearchIfNeeded()
-            syncDetailPanel()
+            syncDetailSelection()
         }
     }
+    var mainPanelForTesting: NSPanel? { panel }
     func attachSearchField(_ field: NSTextField) {
         searchField = field
         focusSearchIfNeeded()
@@ -299,86 +275,8 @@ import UniformTypeIdentifiers
         guard wantsSearchFocus, let panel, let searchField, searchField.window === panel else { return }
         if panel.makeFirstResponder(searchField) { wantsSearchFocus = false }
     }
-    /// Builds the companion popup once with the same glass backing as the list window, without titlebar buttons.
-    private func ensureDetailPanel() {
-        guard detailPanel == nil, let mainPanel = panel else { return }
-        let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: Self.detailWidth, height: Self.detailHeight), styleMask: [.titled, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
-        window.title = L("剪贴板详情")
-        window.minSize = NSSize(width: Self.minimumWidth, height: Self.minimumHeight)
-        window.becomesKeyOnlyIfNeeded = true
-        window.hasShadow = true
-        window.isReleasedWhenClosed = false
-        let hosting = NSHostingView(rootView: AnyView(ClipboardDetailView(feature: self)))
-        detailBacking = GlassWindowBacking(window: window, content: hosting)
-        for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
-            window.standardWindowButton(button)?.isHidden = true
-        }
-        hosting.layoutSubtreeIfNeeded()
-        detailHosting = hosting
-        detailPanel = window
-        if window.frame.size != mainPanel.frame.size {
-            window.setFrame(NSRect(origin: window.frame.origin, size: mainPanel.frame.size), display: false)
-        }
-        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
-            focusObservations.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.refreshWindowFocus() }
-            })
-        }
-        detailResizeObservation = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { [weak self, weak window] _ in
-            MainActor.assumeIsolated {
-                guard let self, let window, !self.syncingPanelSize, !window.inLiveResize else { return }
-                self.syncListPanelSizeToDetail()
-            }
-        }
-        detailEndLiveResizeObservation = NotificationCenter.default.addObserver(forName: NSWindow.didEndLiveResizeNotification, object: window, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, !self.syncingPanelSize else { return }
-                self.syncListPanelSizeToDetail()
-            }
-        }
-        detailDismissal = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, !self.shuttingDown else { return }
-                self.dismiss()
-            }
-        }
-        detailResignObservation = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let self, let detailPanel = self.detailPanel, let mainPanel = self.panel,
-                          detailPanel.isVisible, !self.shuttingDown else { return }
-                    let keepOpen = NSApp.keyWindow === mainPanel
-                        || self.imagePreviewPanel?.isKeyWindow == true
-                        || FloatingWindow.ownsKeyPopup(of: mainPanel)
-                    if !keepOpen, mainPanel.isVisible, detailPanel.attachedSheet == nil, NSApp.modalWindow == nil {
-                        self.dismiss()
-                    }
-                }
-            }
-        }
-    }
-    /// The full content lives in a companion popup instead of the list window.
-    private func syncDetailPanel() {
-        guard !shuttingDown, let entry = controller.selectedEntry else {
-            renderedDetailID = nil
-            hideDetailPanel()
-            return
-        }
-        ensureDetailPanel()
-        syncingPanelSize = true
-        // Re-render synchronously for the current selection before the popup appears, so it can never show an empty or stale frame.
-        detailHosting?.rootView = AnyView(ClipboardDetailView(feature: self).id(entry.id))
-        renderedDetailID = entry.id
-        detailHosting?.layoutSubtreeIfNeeded()
-        syncingPanelSize = false
-        positionDetailPanel()
-        if let panel, let detailPanel, detailPanel.parent !== panel {
-            panel.addChildWindow(detailPanel, ordered: .above)
-        }
-        detailPanel?.orderFront(nil)
-    }
-    private func hideDetailPanel() {
-        detailPanel?.orderOut(nil)
+    private func syncDetailSelection() {
+        renderedDetailID = controller.selectedEntry?.id
     }
     private func ensureImagePreviewPanel() {
         guard imagePreviewPanel == nil else { return }
@@ -414,7 +312,6 @@ import UniformTypeIdentifiers
                     guard let self, let preview = self.imagePreviewPanel, preview.isVisible, !self.shuttingDown else { return }
                     let keepOpen = preview.isKeyWindow
                         || self.panel?.isKeyWindow == true
-                        || self.detailPanel?.isKeyWindow == true
                         || FloatingWindow.ownsKeyPopup(of: preview)
                         || self.panel.map { FloatingWindow.ownsKeyPopup(of: $0) } == true
                     if !keepOpen, preview.attachedSheet == nil, self.panel?.attachedSheet == nil, NSApp.modalWindow == nil {
@@ -459,62 +356,19 @@ import UniformTypeIdentifiers
         preview.setFrameOrigin(origin)
     }
     private func refreshWindowFocus() {
-        isWindowFocused = (panel?.isKeyWindow == true) || (detailPanel?.isKeyWindow == true) || (imagePreviewPanel?.isKeyWindow == true)
-    }
-    /// Places the detail popup to the right of the list window at the same size, falling back to the left when the right edge has no room.
-    private func positionDetailPanel() {
-        guard let panel, let detailPanel else { return }
-        let gap: CGFloat = 8
-        let mainFrame = panel.frame
-        let size = mainFrame.size
-        var origin = NSPoint(x: mainFrame.maxX + gap, y: mainFrame.minY)
-        if let screen = panel.screen ?? NSScreen.main {
-            let visible = screen.visibleFrame
-            if mainFrame.maxX + gap + size.width > visible.maxX {
-                origin.x = mainFrame.minX - gap - size.width
-                if origin.x < visible.minX { origin.x = visible.minX }
-            }
-            origin.y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
-        }
-        let targetFrame = NSRect(origin: origin, size: size)
-        guard detailPanel.frame != targetFrame else { return }
-        syncingPanelSize = true
-        defer { syncingPanelSize = false }
-        detailPanel.setFrame(targetFrame, display: detailPanel.isVisible)
-    }
-    private func syncListPanelSizeToDetail() {
-        guard let panel, let detailPanel, !shuttingDown else { return }
-        let targetSize = detailPanel.frame.size
-        if panel.frame.size != targetSize {
-            var mainFrame = panel.frame
-            let top = mainFrame.maxY
-            mainFrame.size = targetSize
-            mainFrame.origin.y = top - targetSize.height
-            if let screen = panel.screen ?? NSScreen.main {
-                let visible = screen.visibleFrame
-                mainFrame.origin.x = min(max(mainFrame.origin.x, visible.minX), max(visible.minX, visible.maxX - mainFrame.width))
-                mainFrame.origin.y = min(max(mainFrame.origin.y, visible.minY), max(visible.minY, visible.maxY - mainFrame.height))
-            }
-            syncingPanelSize = true
-            defer { syncingPanelSize = false }
-            panel.setFrame(mainFrame, display: panel.isVisible)
-        }
-        positionDetailPanel()
+        isWindowFocused = (panel?.isKeyWindow == true) || (imagePreviewPanel?.isKeyWindow == true)
     }
     var showsDetail: Bool { controller.selectedEntry != nil }
-    var isDetailPanelBuilt: Bool { detailPanel != nil }
-    var detailPanelForTesting: NSPanel? { detailPanel }
     var storagePath: String {
         storageDirectory.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
     }
     func refreshTitle() {
         panel?.title = L("剪贴板")
-        detailPanel?.title = L("剪贴板详情")
         imagePreviewPanel?.title = L("图片预览")
     }
-    func shutdown() { shuttingDown = true; imageEditing.cancel(); controller.stop(); imagePreviewPanel?.close(); detailPanel?.close(); panel?.close(); Task { await awaitPendingMutations(); await controller.shutdown() } }
+    func shutdown() { shuttingDown = true; imageEditing.cancel(); controller.stop(); imagePreviewPanel?.close(); panel?.close(); Task { await awaitPendingMutations(); await controller.shutdown() } }
     func shutdownAndWait() async {
-        shuttingDown = true; imageEditing.cancel(); controller.stop(); imagePreviewPanel?.close(); detailPanel?.close(); panel?.close()
+        shuttingDown = true; imageEditing.cancel(); controller.stop(); imagePreviewPanel?.close(); panel?.close()
         await awaitPendingMutations()
         await controller.shutdown()
     }
@@ -551,108 +405,28 @@ extension ClipboardKindFilter {
     @State private var confirmDelete = false
     init(feature: ClipboardFeature) { self.feature = feature; controller = feature.controller; imageEditing = feature.imageEditing }
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                if imageEditing.isPreparing {
-                    ProgressView().controlSize(.small).accessibilityLabel(L("正在准备图片…"))
-                    Button(L("取消")) { imageEditing.cancel() }
-                }
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary).accessibilityHidden(true)
-                    ClipboardSearchField(feature: feature)
-                    if !controller.query.isEmpty {
-                        Button { controller.query = "" } label: {
-                            Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
-                        }
-                        .buttonStyle(.plain).help(L("清除搜索")).accessibilityLabel(L("清除搜索"))
-                    }
-                }
-                .padding(.horizontal, 10).frame(height: 30)
-                .v2GlassBackground(in: Capsule(), interactive: true)
-                Button {
-                    controller.favoritesOnly.toggle()
-                } label: {
-                    Image(systemName: controller.favoritesOnly ? "star.fill" : "star")
-                        .foregroundStyle(controller.favoritesOnly ? Color.yellow : Color.secondary)
-                        .frame(width: Design.iconButton, height: Design.iconButton)
-                        .background(controller.favoritesOnly ? Color.yellow.opacity(0.16) : Color.clear, in: Circle())
-                        .v2GlassBackground(in: Circle(), interactive: true)
-                }
-                .buttonStyle(.plain).help(L("仅收藏")).accessibilityLabel(L("仅收藏"))
-                if controller.ignoringNextCopy {
-                    Button { controller.setIgnoringNextCopy(false) } label: {
-                        Image(systemName: "eye.slash.fill")
-                            .frame(width: Design.iconButton, height: Design.iconButton)
-                            .v2GlassBackground(in: Circle(), interactive: true)
-                    }
-                        .buttonStyle(.plain).help(L("取消忽略下一次复制")).accessibilityLabel(L("取消忽略下一次复制"))
-                }
-                Menu {
-                    Toggle(L("忽略下一次复制"), isOn: Binding(get: { controller.ignoringNextCopy }, set: controller.setIgnoringNextCopy))
-                        .disabled(!controller.enabled)
-                    if controller.canRetryFavoritesLoading {
-                        Button(L("重试加载收藏")) { Task { await controller.retryFavoritesLoading() } }
-                    }
-                    if let entry = controller.selectedEntry, entry.imageData != nil {
-                        Button(L("预览图片")) { feature.openImagePreview(entry.id) }
-                    }
-                    if let entry = controller.selectedEntry {
-                        let display = controller.display(entry)
-                        if display.kind == .text, !display.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            Button(L("翻译")) { feature.translateText(entry.id) }
-                        }
-                        if display.kind == .link, display.linkURL != nil {
-                            Button(L("在默认浏览器中打开")) { feature.openLink(entry.id) }
-                        }
-                        if !display.text.isEmpty {
-                            Button(L("复制纯文本")) { controller.copy(entry.id, format: .plainText) }
-                        }
-                        imageOCRActions(entry)
-                        imageRecognitionActions(entry)
-                        imageEditActions(entry)
-                        if entry.favorite { favoriteMoveActions(entry) }
-                    }
+        GeometryReader { geometry in
+            if geometry.size.width >= 520 {
+                HStack(spacing: 0) {
+                    sidebarColumn
+                        .frame(width: geometry.size.width < 680 ? 250 : Design.Layout.clipboardSidebarWidth)
+                        .mac27SidebarSurface()
                     Divider()
-                    Button(L("清空"), role: .destructive) { confirmClear = true }
-                    Button(L("删除所有收藏…"), role: .destructive) { confirmDeleteFavorites = true }.disabled(!controller.hasFavorites)
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .frame(width: Design.iconButton, height: Design.iconButton)
-                        .v2GlassBackground(in: Circle(), interactive: true)
+                    ClipboardDetailView(feature: feature)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .mac27ContentSurface()
                 }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help(L("更多")).accessibilityLabel(L("更多"))
-            }.padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 6)
-            categoryBar
-            Divider()
-            if let message = activeMessage {
-                Text(message).font(.caption).foregroundStyle(.orange).lineLimit(2)
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Divider()
+            } else {
+                sidebarColumn
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .mac27SidebarSurface()
             }
-            Group {
-                if controller.kindFilter == .image {
-                    imageGrid
-                } else {
-                    historyList
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Divider()
-            HStack(spacing: 8) {
-                Text(String(format: L("%d / %d 条 · 保留 %d 天"), controller.entries.count, controller.settings.maximumCount, controller.settings.retentionDays))
-                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-                Spacer(minLength: 8)
-                HStack(spacing: 8) {
-                    Text(L("↵ 复制"))
-                    Text(L("Esc 关闭"))
-                }
-                .font(.caption2).foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 10).padding(.vertical, 6)
         }
         .environment(\.controlActiveState, feature.isWindowFocused ? .key : .inactive)
-        .onExitCommand { feature.dismiss() }
+        .onExitCommand {
+            if feature.isImagePreviewOpen { feature.closeImagePreview() }
+            else { feature.dismiss() }
+        }
         .background {
             Group {
                 Button {
@@ -660,7 +434,11 @@ extension ClipboardKindFilter {
                 } label: { EmptyView() }
                     .keyboardShortcut("c", modifiers: [.command, .shift])
                 Button {
-                    feature.openSelectedImagePreview()
+                    if feature.isImagePreviewOpen {
+                        feature.closeImagePreview()
+                    } else {
+                        feature.openSelectedImagePreview()
+                    }
                 } label: { EmptyView() }
                     .keyboardShortcut("y", modifiers: [.command])
             }
@@ -682,8 +460,121 @@ extension ClipboardKindFilter {
             Button(L("删除"), role: .destructive) { feature.runMutation { await controller.confirmDeletion() } }
         } message: { Text(L("同时删除本机保存的这一项（含收藏），不修改当前系统剪贴板。")) }
     }
+
+    private var sidebarColumn: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                if imageEditing.isPreparing {
+                    ProgressView().controlSize(.small).accessibilityLabel(L("正在准备图片…"))
+                    Button(L("取消")) { imageEditing.cancel() }.controlSize(.small)
+                }
+                Spacer(minLength: 4)
+                Mac27GlassCapsule(spacing: 2, horizontalPadding: 4) {
+                    WorkspaceIconButton(
+                        symbol: controller.favoritesOnly ? "star.fill" : "star",
+                        label: "仅收藏",
+                        tint: controller.favoritesOnly ? Color.orange : Color.primary
+                    ) {
+                        controller.favoritesOnly.toggle()
+                    }
+                    WorkspaceIconButton(
+                        symbol: controller.ignoringNextCopy ? "eye.slash.fill" : "eye",
+                        label: controller.ignoringNextCopy ? "取消忽略下一次复制" : "忽略下一次复制",
+                        tint: controller.ignoringNextCopy ? Color.orange : Color.primary,
+                        disabled: !controller.enabled
+                    ) {
+                        controller.setIgnoringNextCopy(!controller.ignoringNextCopy)
+                    }
+                    Menu {
+                        Toggle(L("忽略下一次复制"), isOn: Binding(get: { controller.ignoringNextCopy }, set: controller.setIgnoringNextCopy))
+                            .disabled(!controller.enabled)
+                        if controller.canRetryFavoritesLoading {
+                            Button(L("重试加载收藏")) { Task { await controller.retryFavoritesLoading() } }
+                        }
+                        if let entry = controller.selectedEntry, entry.imageData != nil {
+                            Button(L("预览图片")) { feature.openImagePreview(entry.id) }
+                        }
+                        if let entry = controller.selectedEntry {
+                            let display = controller.display(entry)
+                            if display.kind == .text, !display.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Button(L("翻译")) { feature.translateText(entry.id) }
+                            }
+                            if display.kind == .link, display.linkURL != nil {
+                                Button(L("在默认浏览器中打开")) { feature.openLink(entry.id) }
+                            }
+                            if !display.text.isEmpty {
+                                Button(L("复制纯文本")) { controller.copy(entry.id, format: .plainText) }
+                            }
+                            imageOCRActions(entry)
+                            imageRecognitionActions(entry)
+                            imageEditActions(entry)
+                            if entry.favorite { favoriteMoveActions(entry) }
+                        }
+                        Divider()
+                        Button(L("清空"), role: .destructive) { confirmClear = true }
+                        Button(L("删除所有收藏…"), role: .destructive) { confirmDeleteFavorites = true }.disabled(!controller.hasFavorites)
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.primary)
+                            .frame(width: Design.iconButton, height: Design.iconButton)
+                            .contentShape(Circle())
+                    }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help(L("更多")).accessibilityLabel(L("更多"))
+                }
+            }
+            .padding(.leading, Design.Layout.trafficLightsClearance)
+            .padding(.trailing, 10)
+            .frame(height: Design.Layout.toolbarHeight)
+
+            VStack(spacing: 8) {
+                Mac27GlassCapsule(spacing: 6, horizontalPadding: 12) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(.secondary).accessibilityHidden(true)
+                    ClipboardSearchField(feature: feature)
+                    if !controller.query.isEmpty {
+                        Button { controller.query = "" } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                        }
+                        .buttonStyle(.plain).help(L("清除搜索")).accessibilityLabel(L("清除搜索"))
+                    }
+                }
+                categoryBar
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
+
+            Divider()
+
+            if let message = activeMessage {
+                Text(message).font(.caption).foregroundStyle(.orange).lineLimit(2)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Divider()
+            }
+
+            Group {
+                if controller.kindFilter == .image {
+                    imageGrid
+                } else {
+                    historyList
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Divider()
+
+            HStack {
+                Text(String(format: L("%d / %d 条 · 保留 %d 天"), controller.entries.count, controller.settings.maximumCount, controller.settings.retentionDays))
+                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 34)
+        }
+    }
+
     private var categoryBar: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 3) {
             ForEach(ClipboardKindFilter.allCases) { filter in
                 let selected = controller.kindFilter == filter
                 Button {
@@ -691,27 +582,22 @@ extension ClipboardKindFilter {
                 } label: {
                     Text(filter.title)
                         .font(.caption.weight(selected ? .semibold : .regular))
-                        .foregroundStyle(selected ? Color.accentColor : Color.secondary)
-                        .padding(.horizontal, 10)
+                        .foregroundStyle(selected ? Color.primary : Color.secondary)
+                        .frame(maxWidth: .infinity)
                         .frame(height: 24)
                         .background(
-                            selected ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.05),
-                            in: Capsule()
+                            selected ? Color(nsColor: .controlBackgroundColor) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 6)
                         )
-                        .overlay {
-                            if selected {
-                                Capsule().strokeBorder(Color.accentColor.opacity(0.35), lineWidth: 0.5)
-                            }
-                        }
-                        .contentShape(Capsule())
+                        .shadow(color: selected ? .black.opacity(0.08) : .clear, radius: 1, y: 0.5)
+                        .contentShape(RoundedRectangle(cornerRadius: 6))
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 10)
-        .padding(.bottom, 8)
+        .padding(3)
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
     }
     /// Every row has the same base layout; image rows expand slightly to display a clear thumbnail.
     private var historyList: some View {
@@ -750,7 +636,7 @@ extension ClipboardKindFilter {
                 ForEach(recentEntries) { entry in historyRow(entry) }
             }
         }
-        .listStyle(.plain).scrollContentBackground(.hidden).environment(\.defaultMinListRowHeight, 34)
+        .listStyle(.sidebar).scrollContentBackground(.hidden).environment(\.defaultMinListRowHeight, 34)
         .onKeyPress(.space) {
             guard controller.selectedEntry?.imageData != nil else { return .ignored }
             feature.openSelectedImagePreview()
@@ -766,7 +652,7 @@ extension ClipboardKindFilter {
     private var imageGrid: some View {
         let favoriteEntries = controller.filteredEntries.filter(\.favorite)
         let recentEntries = controller.filteredEntries.filter { !$0.favorite }
-        let columns = [GridItem(.adaptive(minimum: 150), spacing: 10)]
+        let columns = [GridItem(.adaptive(minimum: 120), spacing: 8)]
         return ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 10) {
@@ -945,8 +831,7 @@ extension ClipboardKindFilter {
     }
 }
 
-/// Full clipboard content in a separate popup beside the list window. It shows only the content
-/// and its source application; copy/delete/favorite actions stay in the list window.
+/// Full clipboard content inside the macOS 27 master-detail split pane.
 @MainActor struct ClipboardDetailView: View {
     @ObservedObject private var feature: ClipboardFeature
     @ObservedObject private var controller: ClipboardController
@@ -956,172 +841,147 @@ extension ClipboardKindFilter {
             if let entry = controller.selectedEntry {
                 let display = controller.display(entry)
                 VStack(spacing: 0) {
-                    sourceHeader(entry: entry, display: display)
-                        .padding(.horizontal, 12).padding(.vertical, 10)
-                    Divider()
+                    sourceToolbar(entry: entry, display: display)
                     content(entry: entry, display: display)
-                    if hasDetailActions(entry: entry, display: display) {
-                        Divider()
-                        detailActionBar(entry: entry, display: display)
-                            .padding(.horizontal, 12).padding(.vertical, 6)
-                    }
                     Divider()
                     detailFooter(entry: entry, display: display)
                 }
+                .id(entry.id)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
-                Text(L("未选择内容"))
-                    .font(.callout).foregroundStyle(.secondary)
+                VStack(spacing: 0) {
+                    Mac27ToolbarBar {
+                        Text(L("剪贴板详情"))
+                            .font(.system(size: 13, weight: .bold))
+                        Spacer(minLength: 0)
+                    }
+                    VStack(spacing: 8) {
+                        Image(systemName: "doc.on.clipboard")
+                            .font(.system(size: 26))
+                            .foregroundStyle(.tertiary)
+                        Text(L("选择一条历史记录"))
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        Text(L("在此查看内容、复制、收藏或删除。"))
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    Divider()
+                    HStack {
+                        Spacer(minLength: 0)
+                        Text(L("Esc 关闭"))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(height: 36)
+                }
             }
         }
-        .background {
-            Group {
-                Button {
-                    if let entry = controller.selectedEntry { controller.copy(entry.id) }
-                } label: { EmptyView() }
-                    .keyboardShortcut("c", modifiers: [.command, .shift])
-                Button {
-                    if feature.isImagePreviewOpen {
-                        feature.closeImagePreview()
-                    } else {
-                        feature.openSelectedImagePreview()
-                    }
-                } label: { EmptyView() }
-                    .keyboardShortcut(.space, modifiers: [])
-                Button {
-                    if feature.isImagePreviewOpen {
-                        feature.closeImagePreview()
-                    } else {
-                        feature.openSelectedImagePreview()
-                    }
-                } label: { EmptyView() }
-                    .keyboardShortcut("y", modifiers: [.command])
-            }
-            .frame(width: 0, height: 0)
-            .opacity(0)
-            .accessibilityHidden(true)
-        }
-        .environment(\.controlActiveState, feature.isWindowFocused ? .key : .inactive)
-        .onExitCommand {
+        .onKeyPress(.space) {
+            guard controller.selectedEntry?.imageData != nil else { return .ignored }
             if feature.isImagePreviewOpen { feature.closeImagePreview() }
-            else { feature.dismiss() }
+            else { feature.openSelectedImagePreview() }
+            return .handled
         }
     }
-    private func sourceHeader(entry: ClipboardEntry, display: ClipboardDisplay) -> some View {
-        let tint: Color = display.kind == .image ? .indigo : (display.kind == .link ? .teal : .accentColor)
-        return HStack(spacing: 10) {
-            Image(systemName: display.kind.symbol)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(width: 28, height: 28)
-                .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: Design.Radius.badge))
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(entry.application).font(.callout.weight(.semibold)).lineLimit(1).truncationMode(.middle)
-                    StatusPill(text: display.kind.title, tint: tint)
-                }
+
+    private func sourceToolbar(entry: ClipboardEntry, display: ClipboardDisplay) -> some View {
+        let tint: Color = display.kind == .image ? .purple : (display.kind == .link ? .teal : .accentColor)
+        let imageIndices = ClipboardImageEditing.imageIndices(in: entry)
+        return Mac27ToolbarBar {
+            HStack(spacing: 8) {
+                Text(entry.application)
+                    .font(.system(size: 13, weight: .bold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                StatusPill(text: display.kind.title, tint: tint)
                 Text(entry.capturedAt.formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            Spacer(minLength: 10)
-            HStack(spacing: 2) {
-                if entry.imageData != nil {
-                    WorkspaceIconButton(
-                        symbol: "eye",
-                        label: "预览",
-                        help: "预览图片",
-                        size: 26,
-                        iconSize: 12
-                    ) {
-                        feature.openImagePreview(entry.id)
-                    }
-                }
+            Spacer(minLength: 8)
+            Mac27GlassCapsule(spacing: 2, horizontalPadding: 4) {
                 WorkspaceIconButton(
                     symbol: entry.favorite ? "star.fill" : "star",
                     label: entry.favorite ? "取消收藏" : "收藏",
-                    tint: entry.favorite ? .yellow : nil,
-                    size: 26,
-                    iconSize: 12
+                    tint: entry.favorite ? .orange : nil
                 ) {
                     feature.runMutation { await controller.toggleFavorite(entry.id) }
                 }
-                CopyIconButton(label: "复制", size: 26, iconSize: 12) {
+                if display.kind == .text, !display.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    WorkspaceIconButton(
+                        symbol: "character.bubble",
+                        label: "翻译",
+                        help: "翻译"
+                    ) {
+                        feature.translateText(entry.id)
+                    }
+                }
+                if display.kind == .link, display.linkURL != nil {
+                    WorkspaceIconButton(
+                        symbol: "safari",
+                        label: "在默认浏览器中打开",
+                        help: "在默认浏览器中打开"
+                    ) {
+                        feature.openLink(entry.id)
+                    }
+                }
+                if !imageIndices.isEmpty {
+                    if entry.imageData != nil {
+                        WorkspaceIconButton(
+                            symbol: "eye",
+                            label: "预览",
+                            help: "预览图片"
+                        ) {
+                            feature.openImagePreview(entry.id)
+                        }
+                    }
+                    detailImageIconAction(
+                        symbol: "text.viewfinder",
+                        label: "OCR 识别",
+                        help: "OCR 识别",
+                        indices: imageIndices
+                    ) { index in
+                        feature.openOCRImage(entry.id, itemIndex: index)
+                    }
+                    detailImageIconAction(
+                        symbol: "character.bubble",
+                        label: "截图翻译",
+                        help: "截图翻译",
+                        indices: imageIndices
+                    ) { index in
+                        feature.recognizeImage(entry.id, itemIndex: index)
+                    }
+                    detailImageIconAction(
+                        symbol: "pencil",
+                        label: "编辑图片",
+                        help: "编辑副本，保留历史原件",
+                        indices: imageIndices
+                    ) { index in
+                        feature.editImage(entry.id, itemIndex: index)
+                    }
+                }
+                CopyIconButton(label: "复制") {
                     controller.copy(entry.id)
                 }
             }
         }
     }
+
     @ViewBuilder private func content(entry: ClipboardEntry, display: ClipboardDisplay) -> some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 12) {
                 if entry.imageData != nil { ClipboardPreviewImage(entry: entry) { feature.openImagePreview(entry.id) } }
                 if !display.text.isEmpty { ClipboardPreviewText(entryID: entry.id, text: display.text, singleLine: display.singleLine) }
             }
-            .padding(14)
+            .padding(20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-    private func hasDetailActions(entry: ClipboardEntry, display: ClipboardDisplay) -> Bool {
-        if !ClipboardImageEditing.imageIndices(in: entry).isEmpty { return true }
-        if display.kind == .link && display.linkURL != nil { return true }
-        if display.kind == .text && !display.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
-        return false
-    }
-    @ViewBuilder private func detailActionBar(entry: ClipboardEntry, display: ClipboardDisplay) -> some View {
-        let imageIndices = ClipboardImageEditing.imageIndices(in: entry)
-        HStack(spacing: 6) {
-            if display.kind == .text, !display.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                WorkspaceIconButton(
-                    symbol: "character.bubble",
-                    label: "翻译",
-                    help: "翻译",
-                    size: 28,
-                    iconSize: 13
-                ) {
-                    feature.translateText(entry.id)
-                }
-            }
-            if display.kind == .link, display.linkURL != nil {
-                WorkspaceIconButton(
-                    symbol: "safari",
-                    label: "在默认浏览器中打开",
-                    help: "在默认浏览器中打开",
-                    size: 28,
-                    iconSize: 13
-                ) {
-                    feature.openLink(entry.id)
-                }
-            }
-            if !imageIndices.isEmpty {
-                detailImageIconAction(
-                    symbol: "text.viewfinder",
-                    label: "OCR 识别",
-                    help: "OCR 识别",
-                    indices: imageIndices
-                ) { index in
-                    feature.openOCRImage(entry.id, itemIndex: index)
-                }
-                detailImageIconAction(
-                    symbol: "character.bubble",
-                    label: "截图翻译",
-                    help: "截图翻译",
-                    indices: imageIndices
-                ) { index in
-                    feature.recognizeImage(entry.id, itemIndex: index)
-                }
-                detailImageIconAction(
-                    symbol: "pencil",
-                    label: "编辑图片",
-                    help: "编辑副本，保留历史原件",
-                    indices: imageIndices
-                ) { index in
-                    feature.editImage(entry.id, itemIndex: index)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-    }
+
     @ViewBuilder private func detailImageIconAction(
         symbol: String,
         label: String,
@@ -1134,8 +994,6 @@ extension ClipboardKindFilter {
                 symbol: symbol,
                 label: label,
                 help: help,
-                size: 28,
-                iconSize: 13,
                 disabled: feature.imageEditing.isPreparing
             ) {
                 action(index)
@@ -1148,7 +1006,7 @@ extension ClipboardKindFilter {
             } label: {
                 Image(systemName: symbol)
                     .font(.system(size: 13, weight: .regular))
-                    .frame(width: 28, height: 28)
+                    .frame(width: Design.iconButton, height: Design.iconButton)
                     .contentShape(Circle())
             }
             .menuStyle(.borderlessButton)
@@ -1160,6 +1018,7 @@ extension ClipboardKindFilter {
             .accessibilityLabel(L(label))
         }
     }
+
     private func detailFooter(entry: ClipboardEntry, display: ClipboardDisplay) -> some View {
         let sizeText = ByteCountFormatter.string(fromByteCount: Int64(entry.byteCount), countStyle: .file)
         return HStack(spacing: 10) {
@@ -1171,11 +1030,17 @@ extension ClipboardKindFilter {
                 Text("·")
                 Text(String(format: L("%d 行"), lineCount))
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
+            HStack(spacing: 8) {
+                Text(L("↵ 复制"))
+                Text(L("Esc 关闭"))
+            }
+            .foregroundStyle(.tertiary)
         }
         .font(.caption2.monospacedDigit())
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 12).padding(.vertical, 7)
+        .padding(.horizontal, 16)
+        .frame(height: 36)
     }
 }
 
