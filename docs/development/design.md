@@ -7,9 +7,9 @@
 
 ## 材质与无障碍回退
 
-- **macOS 26+ 双层桌面层级**：主工作窗口（设置、剪贴板、OCR）采用全高半透明 Liquid Glass 边栏（`224pt`–`300pt`）+ `52pt` 一体化无边标题栏（承载 `36pt` 胶囊控件）+ 干净不透明的主内容画布（`.textBackgroundColor`）；翻译窗保留 `40pt` 紧凑无边标题栏与三段式纯底文字区；浮窗工具栏与独立胶囊采用 `.glassEffect` / `NSGlassEffectView`，避免玻璃叠玻璃。
+- **macOS 26+ 双层桌面层级**：主工作窗口（设置、OCR、剪贴板、大图预览、翻译）采用 `NSHostingView.safeAreaRegions = []` + `.ignoresSafeArea(.container, edges: .top)` 与 `titlebarSeparatorStyle = .none` 的一体化无边顶栏（标准 `44pt`、紧凑 `38pt`，承载 `32pt` 胶囊控件），使红黄绿窗口控制按钮与顶栏控件同排对齐、不再单独占据独立头部；设置与 OCR 配备全高半透明 Liquid Glass 边栏（`224pt`–`300pt`）搭配干净主内容画布。
 - **macOS 15–25**：边栏与浮动胶囊使用系统 `.regularMaterial` 与细高光描边作为平滑降级。
-- **实底回退**：当用户在「设置 → 通用」关闭“启用玻璃效果”，或系统开启「减少透明度」「提高对比度」时，所有容器自动回退为不透明语义背景（`.underPageBackgroundColor` 边栏与 `.textBackgroundColor` 内容面）与清晰描边，布局尺寸保持不变。
+- **实底回退（低对比柔灰中性色板）**：当用户在「设置 → 通用」关闭“启用玻璃效果”，或系统开启「减少透明度」「提高对比度」时，所有容器自动回退为低对比度的温和中性实底（浅色主内容 `#F7F7F8` / 边栏 `#EFEFF1` / 纯白控件胶囊与细描边；深色主内容 `#1E1E20` / 边栏 `#252528` / `#2C2C30` 胶囊），避免高对比色块割裂并保持布局尺寸一致。
 - **减少动态**：尊重 `@Environment(\.accessibilityReduceMotion)`，关闭按钮按压缩放、色板放大等位移形变效果。
 
 ## 交互与布局约束

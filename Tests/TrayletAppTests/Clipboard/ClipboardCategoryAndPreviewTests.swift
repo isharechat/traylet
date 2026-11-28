@@ -191,6 +191,50 @@ import TrayletCore
         #expect(ClipboardImageZoom.scale(1.0).displayPercentage() == 100)
     }
 
+    @Test func previewWindowSizesToNaturalDimensionsAndClampsPanOffsets() {
+        let screen = NSRect(x: 0, y: 0, width: 1440, height: 900)
+        // Normal Retina screenshot (800x600 px @ 2x -> 400x300 pt) displays at 1:1 natural size + chrome.
+        let natural = ClipboardFeature.preferredPreviewSize(
+            forPixelSize: CGSize(width: 800, height: 600),
+            backingScale: 2.0,
+            screenVisibleFrame: screen
+        )
+        #expect(natural == NSSize(width: 424, height: 406))
+
+        // Tiny icon clamps safely to minimum window size so controls remain usable.
+        let tiny = ClipboardFeature.preferredPreviewSize(
+            forPixelSize: CGSize(width: 100, height: 80),
+            backingScale: 2.0,
+            screenVisibleFrame: screen
+        )
+        #expect(tiny == NSSize(width: 360, height: 260))
+
+        // Oversized image scales down proportionally within screen budget while preserving aspect ratio.
+        let oversized = ClipboardFeature.preferredPreviewSize(
+            forPixelSize: CGSize(width: 6000, height: 3000),
+            backingScale: 1.0,
+            screenVisibleFrame: screen
+        )
+        #expect(oversized.width <= floor(screen.width * 0.88))
+        #expect(oversized.height <= floor(screen.height * 0.86))
+
+        // Zoomed-in image can pan across its full overflow plus 16pt breathing room.
+        let pannedIn = ClipboardImageZoom.clampedPanOffset(
+            proposed: CGSize(width: 500, height: -400),
+            imageSize: CGSize(width: 1000, height: 800),
+            viewportSize: CGSize(width: 600, height: 400)
+        )
+        #expect(pannedIn == CGSize(width: 216, height: -216))
+
+        // Zoomed-out image can still be dragged cleanly within the viewport bounds without leaving screen.
+        let pannedOut = ClipboardImageZoom.clampedPanOffset(
+            proposed: CGSize(width: 300, height: -300),
+            imageSize: CGSize(width: 200, height: 150),
+            viewportSize: CGSize(width: 500, height: 450)
+        )
+        #expect(pannedOut == CGSize(width: 150, height: -150))
+    }
+
     @Test func textLinkageOpensTranslationAndSubmitsAndRejectsBlankEntries() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-clipboard-text-link-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }

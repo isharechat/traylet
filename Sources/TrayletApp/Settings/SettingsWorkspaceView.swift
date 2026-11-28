@@ -61,6 +61,7 @@ import SwiftUI
                 .mac27ContentSurface()
             }
         }
+        .ignoresSafeArea(.container, edges: .top)
         .background(ShortcutRecordingResponder(manager: shortcuts).frame(width: 0, height: 0))
         .preferredColorScheme(preferences.value.appearance == .system ? nil : preferences.value.appearance == .dark ? .dark : .light)
         .environment(\.locale, Locale(identifier: english ? "en" : "zh-Hans"))

@@ -116,6 +116,30 @@ struct TranslationLanguagePackTests {
         #expect(TranslationSystemSessionFailure.classify(CocoaError(.userCancelled)) == .cancelled)
         #expect(TranslationSystemSessionFailure.classify(NSError(domain: NSCocoaErrorDomain, code: NSUserCancelledError)) == .cancelled)
     }
+
+    @Test func languagePackStatusPresentationMapsStatesOntoButtonAndNotice() {
+        let unknown = TranslationLanguagePackStatusPresentation(state: .unknown)
+        #expect(unknown.symbol == "questionmark.circle" && !unknown.isSpinner && unknown.inlineNotice == nil)
+        #expect(unknown.label == "检查状态" && unknown.helpText == "尚未检查，点击检查当前语言对状态")
+
+        let checking = TranslationLanguagePackStatusPresentation(state: .checking)
+        #expect(checking.symbol == nil && checking.isSpinner && checking.label == "正在检查…")
+
+        let installed = TranslationLanguagePackStatusPresentation(state: .installed)
+        #expect(installed.symbol == "checkmark.circle.fill" && !installed.isSpinner && installed.inlineNotice == nil)
+
+        let downloadable = TranslationLanguagePackStatusPresentation(state: .downloadable)
+        #expect(downloadable.symbol == "arrow.down.circle.fill" && !downloadable.isSpinner && downloadable.inlineNotice == nil)
+
+        let unsupported = TranslationLanguagePackStatusPresentation(state: .unsupported)
+        #expect(unsupported.symbol == "xmark.circle.fill" && unsupported.inlineNotice == "当前语言对不受支持")
+
+        let preparing = TranslationLanguagePackStatusPresentation(state: .preparing)
+        #expect(preparing.isSpinner && preparing.label == "检查状态")
+
+        let failed = TranslationLanguagePackStatusPresentation(state: .failed("无法检查"))
+        #expect(failed.symbol == "exclamationmark.triangle.fill" && failed.inlineNotice == "无法检查")
+    }
 }
 
 private enum TranslationPackAvailabilityError: Error, Sendable { case unavailable }

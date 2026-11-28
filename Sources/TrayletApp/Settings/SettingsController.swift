@@ -56,7 +56,7 @@ import Combine
             let created = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 580), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
             created.title = windowTitle; created.minSize = NSSize(width: 600, height: 440)
             created.isReleasedWhenClosed = false; created.hidesOnDeactivate = false; created.level = .normal; created.delegate = self
-            let hosting = NSHostingView(rootView: SettingsWorkspaceView(preferences: preferences, shortcuts: shortcuts, ocr: ocr, translation: translation, languagePacks: languagePacks, clipboard: clipboard, navigation: navigation, actions: actions, updater: updater, onRequestQuitForUpdate: onRequestQuitForUpdate, localization: localization))
+            let hosting = GlassWindowBacking.hostingView(SettingsWorkspaceView(preferences: preferences, shortcuts: shortcuts, ocr: ocr, translation: translation, languagePacks: languagePacks, clipboard: clipboard, navigation: navigation, actions: actions, updater: updater, onRequestQuitForUpdate: onRequestQuitForUpdate, localization: localization), fullBleed: true)
             created.appearance = Self.appearance(preferences.value.appearance)
             backing = GlassWindowBacking(window: created, content: hosting, fullBleedTitlebar: true)
             created.center(); window = created

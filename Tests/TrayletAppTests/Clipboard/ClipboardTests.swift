@@ -54,7 +54,7 @@ import Testing
         #expect(reopened.entries.map(\.plainText) == ["persist without a setting"])
         await reopened.shutdown()
     }
-    @Test func detailPaneUpdatesSynchronouslyForEachSelection() async throws {
+    @Test func detailPopupIsPrebuiltAndReRendersForEachSelection() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-clipboard-detail-stale-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         _ = NSApplication.shared
@@ -69,21 +69,17 @@ import Testing
         let first = try #require(feature.controller.entries.last?.id)
         let second = try #require(feature.controller.entries.first?.id)
         feature.present()
-        let mainPanel = try #require(feature.mainPanelForTesting)
-        #expect(mainPanel.frame.size == NSSize(width: ClipboardFeature.windowWidth, height: ClipboardFeature.windowHeight))
-        #expect(!feature.showsDetail)
-        #expect(feature.renderedDetailID == nil)
+        // The companion popup is built before the first selection, so the first click never pays construction cost.
+        #expect(feature.isDetailPanelBuilt)
         feature.controller.selectedID = first
         try await Task.sleep(for: .milliseconds(20))
-        #expect(feature.showsDetail)
         #expect(feature.renderedDetailID == first)
         feature.controller.selectedID = second
         try await Task.sleep(for: .milliseconds(20))
-        // The single-window detail pane re-renders synchronously for the new selection instead of showing the previous entry.
+        // The popup re-renders synchronously for the new selection instead of showing the previous entry.
         #expect(feature.renderedDetailID == second)
         feature.controller.selectedID = nil
         try await Task.sleep(for: .milliseconds(20))
-        #expect(!feature.showsDetail)
         #expect(feature.renderedDetailID == nil)
         await feature.shutdownAndWait()
     }
@@ -167,8 +163,8 @@ import Testing
         #expect(!display(prose).singleLine)
     }
 
-    @Test func mainWindowMatchesMasterDetailStyleAndCloseAction() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-clipboard-master-detail-style-" + UUID().uuidString)
+    @Test func detailPanelMatchesListWindowStyleAndCloseAction() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-clipboard-detail-style-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         _ = NSApplication.shared
         var dismissals = 0
@@ -181,26 +177,33 @@ import Testing
         feature.present()
         #expect(feature.isWindowFocused)
         let mainPanel = try #require(feature.mainPanelForTesting)
-        #expect(mainPanel.styleMask.contains(.titled))
-        #expect(mainPanel.styleMask.contains(.closable))
-        #expect(mainPanel.styleMask.contains(.resizable))
         #expect(mainPanel.styleMask.contains(.fullSizeContentView))
         #expect(mainPanel.titleVisibility == .hidden)
         #expect(mainPanel.titlebarAppearsTransparent)
-        #expect(mainPanel.title == L("剪贴板"))
-        #expect(mainPanel.minSize == NSSize(width: ClipboardFeature.minimumWidth, height: ClipboardFeature.minimumHeight))
-        mainPanel.close()
+        #expect(mainPanel.titlebarSeparatorStyle == .none)
+        let detail = try #require(feature.detailPanelForTesting)
+        #expect(detail.styleMask.contains(.titled))
+        #expect(!detail.styleMask.contains(.closable))
+        #expect(detail.styleMask.contains(.resizable))
+        #expect(detail.styleMask.contains(.nonactivatingPanel))
+        #expect(detail.becomesKeyOnlyIfNeeded)
+        #expect(detail.standardWindowButton(.closeButton)?.isHidden == true)
+        #expect(detail.standardWindowButton(.miniaturizeButton)?.isHidden == true)
+        #expect(detail.standardWindowButton(.zoomButton)?.isHidden == true)
+        #expect(detail.title == L("剪贴板详情"))
+        #expect(detail.minSize == NSSize(width: ClipboardFeature.minimumWidth, height: ClipboardFeature.minimumHeight))
+        detail.close()
         #expect(dismissals == 1)
         #expect(!feature.isWindowFocused)
         await feature.shutdownAndWait()
     }
 
-    @Test func mainWindowMatchesMasterDetailSizeInitiallyAndOnResize() async throws {
-        #expect(ClipboardFeature.windowWidth == 840)
-        #expect(ClipboardFeature.windowHeight == 540)
-        #expect(ClipboardFeature.minimumWidth == 620)
-        #expect(ClipboardFeature.minimumHeight == 400)
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-clipboard-master-detail-size-" + UUID().uuidString)
+    @Test func detailPanelMatchesListWindowSizeInitiallyAndOnResize() async throws {
+        #expect(ClipboardFeature.windowWidth == 380)
+        #expect(ClipboardFeature.windowHeight == 520)
+        #expect(ClipboardFeature.detailWidth == ClipboardFeature.windowWidth)
+        #expect(ClipboardFeature.detailHeight == ClipboardFeature.windowHeight)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-clipboard-detail-size-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         _ = NSApplication.shared
         var capturedMainPanel: NSPanel?
@@ -213,15 +216,17 @@ import Testing
         let id = try #require(feature.controller.entries.first?.id)
         feature.present()
         let mainPanel = try #require(capturedMainPanel)
-        #expect(mainPanel.frame.size == NSSize(width: 840, height: 540))
+        let detail = try #require(feature.detailPanelForTesting)
+        #expect(detail.frame.size == mainPanel.frame.size)
         feature.controller.selectedID = id
         try await Task.sleep(for: .milliseconds(20))
-        #expect(feature.showsDetail)
-        #expect(mainPanel.frame.size == NSSize(width: 840, height: 540))
-        mainPanel.setFrame(NSRect(origin: mainPanel.frame.origin, size: NSSize(width: 960, height: 620)), display: false)
-        #expect(mainPanel.frame.size == NSSize(width: 960, height: 620))
-        mainPanel.setFrame(NSRect(origin: mainPanel.frame.origin, size: NSSize(width: 620, height: 400)), display: false)
-        #expect(mainPanel.frame.size == NSSize(width: 620, height: 400))
+        #expect(detail.frame.size == mainPanel.frame.size)
+        mainPanel.setFrame(NSRect(origin: mainPanel.frame.origin, size: NSSize(width: 460, height: 580)), display: false)
+        #expect(detail.frame.size == mainPanel.frame.size)
+        #expect(detail.frame.size == NSSize(width: 460, height: 580))
+        detail.setFrame(NSRect(origin: detail.frame.origin, size: NSSize(width: 420, height: 540)), display: false)
+        #expect(mainPanel.frame.size == detail.frame.size)
+        #expect(mainPanel.frame.size == NSSize(width: 420, height: 540))
         await feature.shutdownAndWait()
     }
 

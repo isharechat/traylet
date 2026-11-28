@@ -536,5 +536,6 @@ enum English {
         "更多标注工具": "More Annotation Tools",
         "更多操作": "More Actions",
         "保存 PNG": "Save PNG",
+        "尚未检查，点击检查当前语言对状态": "Not checked yet. Click to check the current language pair status.",
     ]
 }

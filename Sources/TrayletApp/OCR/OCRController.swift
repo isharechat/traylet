@@ -356,7 +356,7 @@ import TrayletCore
         created.hidesOnDeactivate = false
         backing = GlassWindowBacking(
             window: created,
-            content: NSHostingView(rootView: OCRWorkspaceView(controller: self)),
+            content: GlassWindowBacking.hostingView(OCRWorkspaceView(controller: self), fullBleed: true),
             fullBleedTitlebar: true
         )
         created.delegate = self

@@ -20,6 +20,7 @@ struct OCRWorkspaceView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .mac27ContentSurface()
         }
+        .ignoresSafeArea(.container, edges: .top)
         .background {
             Button {
                 if !controller.text.isEmpty && controller.phase != .recognizing {

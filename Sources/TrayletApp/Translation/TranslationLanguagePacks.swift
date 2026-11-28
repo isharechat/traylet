@@ -140,11 +140,75 @@ struct TranslationLanguagePackPair: Equatable, Sendable {
     }
 }
 
+struct TranslationLanguagePackStatusPresentation: Equatable {
+    let symbol: String?
+    let isSpinner: Bool
+    let tint: Color
+    let label: String
+    let helpText: String
+    let inlineNotice: String?
+
+    init(state: TranslationLanguagePackState) {
+        switch state {
+        case .unknown:
+            symbol = "questionmark.circle"
+            isSpinner = false
+            tint = .secondary
+            label = "检查状态"
+            helpText = "尚未检查，点击检查当前语言对状态"
+            inlineNotice = nil
+        case .checking:
+            symbol = nil
+            isSpinner = true
+            tint = .secondary
+            label = "正在检查…"
+            helpText = "正在检查…"
+            inlineNotice = nil
+        case .installed:
+            symbol = "checkmark.circle.fill"
+            isSpinner = false
+            tint = .green
+            label = "检查状态"
+            helpText = "已安装"
+            inlineNotice = nil
+        case .downloadable:
+            symbol = "arrow.down.circle.fill"
+            isSpinner = false
+            tint = .orange
+            label = "检查状态"
+            helpText = "可下载"
+            inlineNotice = nil
+        case .unsupported:
+            symbol = "xmark.circle.fill"
+            isSpinner = false
+            tint = .red
+            label = "检查状态"
+            helpText = "当前语言对不受支持"
+            inlineNotice = "当前语言对不受支持"
+        case .preparing:
+            symbol = nil
+            isSpinner = true
+            tint = .secondary
+            label = "检查状态"
+            helpText = "正在下载…"
+            inlineNotice = nil
+        case .failed(let message):
+            symbol = "exclamationmark.triangle.fill"
+            isSpinner = false
+            tint = .red
+            label = "检查状态"
+            helpText = message
+            inlineNotice = message
+        }
+    }
+}
+
 @MainActor
 struct TranslationLanguagePackSettings: View {
     @ObservedObject var controller: TranslationLanguagePackController
 
     var body: some View {
+        let presentation = TranslationLanguagePackStatusPresentation(state: controller.state)
         Section(L("系统语言包")) {
             Picker(L("原文语言"), selection: $controller.source) {
                 ForEach(languages, id: \.0) { Text(L($0.1)).tag($0.0) }
@@ -154,25 +218,15 @@ struct TranslationLanguagePackSettings: View {
             }
             LabeledContent(L("状态")) {
                 HStack(spacing: 8) {
-                    status
-                    Spacer(minLength: 8)
-                    Button(L("检查状态")) { controller.check() }
-                        .controlSize(.small)
-                        .disabled(controller.state == .checking || controller.state == .preparing)
-                    Button { controller.download() } label: {
-                        if controller.state == .preparing {
-                            HStack(spacing: 5) {
-                                ProgressView().controlSize(.small)
-                                Text(L("正在下载…"))
-                            }
-                        } else {
-                            Text(L("下载语言包"))
-                        }
-                    }
-                    .controlSize(.small)
-                    .disabled(!controller.canDownload)
-                    .help(L("语言包由 macOS 按系统批准流程下载并安装到本机；不会上传原文、截图或剪贴板。"))
+                    checkStatusButton(presentation)
+                    downloadButton
                 }
+            }
+            if let notice = presentation.inlineNotice {
+                Label(L(notice), systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -181,25 +235,38 @@ struct TranslationLanguagePackSettings: View {
         TranslationWorkspaceView.languages.filter { $0.0 != "auto" }
     }
 
-    @ViewBuilder private var status: some View {
-        switch controller.state {
-        case .unknown: StatusPill(text: L("尚未检查"), tint: .secondary)
-        case .checking:
+    private func checkStatusButton(_ presentation: TranslationLanguagePackStatusPresentation) -> some View {
+        Button { controller.check() } label: {
             HStack(spacing: 5) {
-                ProgressView().controlSize(.small)
-                Text(L("正在检查…"))
+                if presentation.isSpinner {
+                    ProgressView().controlSize(.mini)
+                } else if let symbol = presentation.symbol {
+                    Image(systemName: symbol)
+                        .foregroundStyle(presentation.tint)
+                }
+                Text(L(presentation.label))
             }
-        case .installed: StatusPill(text: L("已安装"), symbol: "checkmark.circle.fill", tint: .green)
-        case .downloadable: StatusPill(text: L("可下载"), symbol: "arrow.down.circle", tint: .orange)
-        case .unsupported: StatusPill(text: L("当前语言对不受支持"), symbol: "xmark.circle", tint: .red)
-        case .preparing:
-            HStack(spacing: 5) {
-                ProgressView().controlSize(.small)
-                Text(L("正在下载…"))
-            }
-        case .failed(let message):
-            Label(L(message), systemImage: "exclamationmark.triangle").foregroundStyle(.red)
         }
+        .controlSize(.small)
+        .disabled(controller.state == .checking || controller.state == .preparing)
+        .help(L(presentation.helpText))
+        .accessibilityValue(L(presentation.helpText))
+    }
+
+    private var downloadButton: some View {
+        Button { controller.download() } label: {
+            if controller.state == .preparing {
+                HStack(spacing: 5) {
+                    ProgressView().controlSize(.mini)
+                    Text(L("正在下载…"))
+                }
+            } else {
+                Text(L("下载语言包"))
+            }
+        }
+        .controlSize(.small)
+        .disabled(!controller.canDownload)
+        .help(L("语言包由 macOS 按系统批准流程下载并安装到本机；不会上传原文、截图或剪贴板。"))
     }
 }
 

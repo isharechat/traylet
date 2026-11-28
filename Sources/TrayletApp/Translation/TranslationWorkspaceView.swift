@@ -10,6 +10,7 @@ struct TranslationWorkspaceView: View {
     @ObservedObject private var appearance = AppearanceState.shared
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.colorScheme) private var colorScheme
     @FocusState private var inputFocused: Bool
     static let languages = [("auto", "自动检测"), ("zh-Hans", "简体中文"), ("zh-Hant", "繁體中文"), ("en", "English"), ("ja", "日本語"), ("ko", "한국어"), ("fr", "Français"), ("de", "Deutsch"), ("es", "Español"), ("it", "Italiano"), ("pt", "Português"), ("ru", "Русский"), ("ar", "العربية"), ("hi", "हिन्दी"), ("vi", "Tiếng Việt"), ("th", "ไทย"), ("id", "Bahasa Indonesia"), ("tr", "Türkçe"), ("pl", "Polski"), ("uk", "Українська"), ("nl", "Nederlands")]
 
@@ -23,6 +24,7 @@ struct TranslationWorkspaceView: View {
             textBand(input: false)
         }
         .mac27ContentSurface()
+        .ignoresSafeArea(.container, edges: .top)
         .background { if let work = controller.systemWork { TranslationSystemTaskHost(work: work, prepare: controller.preparingResources, completed: controller.finishSystem, failed: controller.failSystem).id(work.id) } }
         .onDisappear { controller.cancel() }
     }
@@ -42,13 +44,13 @@ struct TranslationWorkspaceView: View {
             if usesGlass {
                 Rectangle().fill(.bar)
             } else {
-                Rectangle().fill(Color(nsColor: .windowBackgroundColor))
+                Rectangle().fill(Design.SolidSurface.toolbar(for: colorScheme))
             }
         }
         .overlay(alignment: .bottom) { Divider() }
     }
 
-    /// Middle control band: unified macOS 27 36pt Liquid Glass capsules separating source and translation bands.
+    /// Middle control band: unified macOS 27 32pt capsules separating source and translation bands.
     private var controlBand: some View {
         VStack(spacing: 0) {
             Divider()
@@ -75,7 +77,7 @@ struct TranslationWorkspaceView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color.primary.opacity(0.03))
+            .background(usesGlass ? Color.primary.opacity(0.03) : Design.SolidSurface.bandTint(for: colorScheme))
             Divider()
         }
     }

@@ -26,14 +26,14 @@ import Testing
             let view = SettingsWorkspaceView(preferences: preferences, shortcuts: shortcuts, translation: translation,
                 languagePacks: TranslationLanguagePackController(), clipboard: clipboard, navigation: navigation, actions: actions, localization: Localization(languageCode: "zh-Hans"))
                 .environment(\.colorScheme, scheme).transaction { $0.disablesAnimations = true }
-            let host = NSHostingView(rootView: view)
+            let host = GlassWindowBacking.hostingView(view, fullBleed: true)
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 650),
                 styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             let originalWindowShadow = window.hasShadow
             window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
             AppearanceState.shared.glassEnabled = false
-            let backing = GlassWindowBacking(window: window, content: host)
+            let backing = GlassWindowBacking(window: window, content: host, fullBleedTitlebar: true)
             for (step, enabled) in [false, true, false, true, false].enumerated() {
                 var value = preferences.value; value.glassEnabled = enabled; try preferences.save(value)
                 AppearanceState.shared.glassEnabled = enabled
@@ -76,6 +76,10 @@ import Testing
                             let contentDelta = max(abs(contentA.redComponent - contentB.redComponent), abs(contentA.greenComponent - contentB.greenComponent), abs(contentA.blueComponent - contentB.blueComponent))
                             #expect(contentDelta < 1.0 / 255, "Solid content plane has an internal edge: \(name), row \(y), delta \(contentDelta)")
                         }
+                        let seamSidebar = try #require(bitmap.colorAt(x: Int(200 * scale), y: Int(420 * scale))?.usingColorSpace(.deviceRGB))
+                        let seamContent = try #require(bitmap.colorAt(x: Int(232 * scale), y: Int(420 * scale))?.usingColorSpace(.deviceRGB))
+                        let seamContrast = max(abs(seamSidebar.redComponent - seamContent.redComponent), abs(seamSidebar.greenComponent - seamContent.greenComponent), abs(seamSidebar.blueComponent - seamContent.blueComponent))
+                        #expect(seamContrast > 0.01 && seamContrast < 0.08, "Solid sidebar/content contrast should be subtle and harmonious: \(name), delta \(seamContrast)")
                     }
                     var colors: [String] = []
                     for x in [220, 222, 224, 225, 226, 228, 232] {

@@ -39,8 +39,14 @@ struct GlassSurface<S: InsettableShape>: ViewModifier {
                             radius: elevated ? 10 : 0, y: elevated ? 4 : 0)
             }
         } else {
-            content.background(Color(nsColor: .controlBackgroundColor), in: shape)
-                .overlay(shape.strokeBorder(Color(nsColor: .separatorColor), lineWidth: contrast == .increased ? 2 : 1))
+            content.background(Design.SolidSurface.capsuleFill(for: colorScheme), in: shape)
+                .overlay(
+                    shape.strokeBorder(
+                        Design.SolidSurface.capsuleStroke(for: colorScheme, highContrast: contrast == .increased),
+                        lineWidth: contrast == .increased ? 2 : 0.75
+                    )
+                )
+                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.18 : 0.04), radius: 2, y: 0.5)
         }
     }
     private var specularStroke: LinearGradient {
@@ -115,13 +121,14 @@ struct Mac27GlassCircleButton: View {
     }
 }
 
-/// 52pt macOS 27 integrated unified toolbar with subtle translucent edge and bottom hairline.
+/// Integrated unified toolbar with subtle translucent edge and bottom hairline.
 struct Mac27ToolbarBar<Content: View>: View {
     var leadingPadding: CGFloat = 16
     var trailingPadding: CGFloat = 14
     @ObservedObject private var appearance = AppearanceState.shared
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.colorScheme) private var colorScheme
     @ViewBuilder var content: () -> Content
 
     private var usesGlass: Bool { appearance.glassActive && !reduceTransparency && contrast != .increased }
@@ -136,7 +143,7 @@ struct Mac27ToolbarBar<Content: View>: View {
                 if usesGlass {
                     Rectangle().fill(.bar)
                 } else {
-                    Rectangle().fill(Color(nsColor: .windowBackgroundColor))
+                    Rectangle().fill(Design.SolidSurface.toolbar(for: colorScheme))
                 }
             }
             .overlay(alignment: .bottom) {
@@ -145,18 +152,19 @@ struct Mac27ToolbarBar<Content: View>: View {
     }
 }
 
-/// Full-height translucent macOS 27 sidebar surface (transparent over window glass, solid neutral plane in solid mode).
+/// Full-height translucent macOS 27 sidebar surface (transparent over window glass, harmonious soft neutral plane in solid mode).
 struct Mac27SidebarSurface: ViewModifier {
     @ObservedObject private var appearance = AppearanceState.shared
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.colorScheme) private var colorScheme
 
     private var usesGlass: Bool { appearance.glassActive && !reduceTransparency && contrast != .increased }
 
     func body(content: Content) -> some View {
         content.background {
             if !usesGlass {
-                Color(nsColor: .underPageBackgroundColor)
+                Design.SolidSurface.sidebar(for: colorScheme)
             }
         }
     }
@@ -164,12 +172,25 @@ struct Mac27SidebarSurface: ViewModifier {
 
 /// Clean readable primary content surface for right/main window panes (no glass-on-glass nesting).
 struct Mac27ContentSurface: ViewModifier {
+    @ObservedObject private var appearance = AppearanceState.shared
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var usesGlass: Bool { appearance.glassActive && !reduceTransparency && contrast != .increased }
+
     func body(content: Content) -> some View {
-        content.background(Color(nsColor: .textBackgroundColor))
+        content.background {
+            if usesGlass {
+                Color(nsColor: .textBackgroundColor)
+            } else {
+                Design.SolidSurface.content(for: colorScheme)
+            }
+        }
     }
 }
 
-/// 36pt macOS 27 Liquid Glass capsule segmented control with 28pt inner pills and subtle separators.
+/// 32pt macOS 27 capsule segmented control with 24pt inner pills and subtle separators.
 struct Mac27SegmentedControl<Option: Hashable & Identifiable>: View {
     let options: [Option]
     @Binding var selection: Option
@@ -186,7 +207,7 @@ struct Mac27SegmentedControl<Option: Hashable & Identifiable>: View {
                     let prevSelected = selection == options[index - 1]
                     Rectangle()
                         .fill(Color(nsColor: .separatorColor).opacity(selected || prevSelected ? 0 : 0.65))
-                        .frame(width: 1, height: 18)
+                        .frame(width: 1, height: 14)
                 }
                 Button {
                     if reduceMotion {
@@ -200,7 +221,7 @@ struct Mac27SegmentedControl<Option: Hashable & Identifiable>: View {
                         .foregroundStyle(selected ? Color.primary : Color.secondary)
                         .lineLimit(1)
                         .padding(.horizontal, 12)
-                        .frame(height: 28)
+                        .frame(height: 24)
                         .background(
                             selected ? Color.primary.opacity(colorScheme == .dark ? 0.16 : 0.09) : Color.clear,
                             in: Capsule()
@@ -335,6 +356,14 @@ extension View {
 /// Puts a window's SwiftUI content on system glass (or a solid window background) and follows the setting live.
 /// `cornerRadius` rounds the surface for borderless panels; 0 keeps the native full-window look.
 @MainActor final class GlassWindowBacking {
+    static func hostingView<Content: View>(_ rootView: Content, fullBleed: Bool = true) -> NSHostingView<Content> {
+        let hosting = NSHostingView(rootView: rootView)
+        if fullBleed {
+            hosting.safeAreaRegions = []
+        }
+        return hosting
+    }
+
     private weak var window: NSWindow?
     private var content: NSView
     private let cornerRadius: CGFloat
@@ -359,6 +388,7 @@ extension View {
         window.titlebarAppearsTransparent = true
         if fullBleedTitlebar {
             window.titleVisibility = .hidden
+            window.titlebarSeparatorStyle = .none
         }
         let contentContainer: NSView
         if AppearanceState.shared.glassActive {
@@ -381,7 +411,7 @@ extension View {
             contentContainer = solid
             window.contentView = solid
         } else {
-            window.isOpaque = true; window.backgroundColor = .windowBackgroundColor
+            window.isOpaque = true; window.backgroundColor = Design.SolidSurface.windowNSColor
             let container = NSView()
             contentContainer = container
             window.contentView = container
@@ -427,7 +457,7 @@ private final class RoundedSolidView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        NSColor.windowBackgroundColor.setFill()
+        Design.SolidSurface.windowNSColor.setFill()
         NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius).fill()
     }
     override func viewDidChangeEffectiveAppearance() {

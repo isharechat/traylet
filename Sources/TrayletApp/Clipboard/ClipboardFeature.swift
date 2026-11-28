@@ -5,10 +5,12 @@ import ImageIO
 import UniformTypeIdentifiers
 
 @MainActor final class ClipboardFeature: ObservableObject {
-    static let windowWidth: CGFloat = 840
-    static let windowHeight: CGFloat = 540
-    static let minimumWidth: CGFloat = 620
-    static let minimumHeight: CGFloat = 400
+    static let windowWidth: CGFloat = 380
+    static let windowHeight: CGFloat = 520
+    static let minimumWidth: CGFloat = 340
+    static let minimumHeight: CGFloat = 380
+    static let detailWidth: CGFloat = windowWidth
+    static let detailHeight: CGFloat = windowHeight
     let controller: ClipboardController
     let imageEditing: ClipboardImageEditing
     let storageDirectory: URL
@@ -32,16 +34,26 @@ import UniformTypeIdentifiers
     private var backing: GlassWindowBacking?
     private var dismissal: NSObjectProtocol?
     private var closeObservation: NSObjectProtocol?
+    private var mainMoveObservation: NSObjectProtocol?
+    private var mainResizeObservation: NSObjectProtocol?
     private var appResignObservation: NSObjectProtocol?
+    private var detailPanel: NSPanel?
+    private var detailBacking: GlassWindowBacking?
+    private var detailHosting: NSHostingView<AnyView>?
+    private var detailDismissal: NSObjectProtocol?
+    private var detailResignObservation: NSObjectProtocol?
+    private var detailResizeObservation: NSObjectProtocol?
+    private var detailEndLiveResizeObservation: NSObjectProtocol?
     private var imagePreviewPanel: NSPanel?
     private var imagePreviewBacking: GlassWindowBacking?
     private var imagePreviewHosting: NSHostingView<AnyView>?
     private var imagePreviewCloseObservation: NSObjectProtocol?
     private var imagePreviewResignObservation: NSObjectProtocol?
     private var focusObservations: [NSObjectProtocol] = []
+    private var syncingPanelSize = false
     @Published private(set) var isWindowFocused = false
     @Published private(set) var previewedImageEntryID: UUID?
-    @Published private(set) var renderedDetailID: UUID?
+    private(set) var renderedDetailID: UUID?
     private let preferences: Task<Void, Never>
     private var pendingMutations: [UUID: Task<Void, Never>] = [:]
     private var dismissing = false
@@ -65,13 +77,13 @@ import UniformTypeIdentifiers
         controller.$selectedID.removeDuplicates().dropFirst().sink { [weak imageEditing] _ in imageEditing?.cancel() }.store(in: &imageObservations)
         controller.$selectedID.removeDuplicates().dropFirst().sink { [weak self] _ in
             // `@Published` fires during `willSet`, before `selectedID` is stored, so read the new selection on the next actor turn.
-            Task { @MainActor [weak self] in self?.syncDetailSelection() }
+            Task { @MainActor [weak self] in self?.syncDetailPanel() }
         }.store(in: &imageObservations)
         controller.$entries.sink { [weak self, weak imageEditing] entries in
             imageEditing?.validate(entries: entries)
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.syncDetailSelection()
+                self.syncDetailPanel()
                 guard let previewID = self.previewedImageEntryID,
                       !self.controller.entries.contains(where: { $0.id == previewID }) else { return }
                 self.closeImagePreview(restoreListFocus: false)
@@ -102,13 +114,16 @@ import UniformTypeIdentifiers
         defer { dismissing = false }
         imageEditing.cancel()
         closeImagePreview(restoreListFocus: false)
+        hideDetailPanel()
         isWindowFocused = false
         if let panel { dismissWindow(panel) }
         controller.kindFilter = .all
     }
     var isImagePreviewOpen: Bool { previewedImageEntryID != nil }
     var imagePreviewPanelForTesting: NSPanel? { imagePreviewPanel }
-    func canDismissOnResignKey() -> Bool { !isImagePreviewOpen }
+    func canDismissOnResignKey() -> Bool {
+        !isImagePreviewOpen && !(detailPanel?.isKeyWindow == true)
+    }
     func openImagePreview(_ id: UUID) {
         guard !shuttingDown,
               let entry = controller.filteredEntries.first(where: { $0.id == id }),
@@ -118,10 +133,8 @@ import UniformTypeIdentifiers
         ensureImagePreviewPanel()
         guard let preview = imagePreviewPanel else { return }
         let targetSize = Self.preferredPreviewSize(for: data, relativeTo: panel)
-        if !preview.isVisible {
-            preview.setContentSize(targetSize)
-            Self.centerPreviewPanel(preview, relativeTo: panel)
-        }
+        preview.setContentSize(targetSize)
+        Self.centerPreviewPanel(preview, relativeTo: panel)
         imagePreviewHosting?.rootView = AnyView(ClipboardImagePreviewView(feature: self, entry: entry).id(entry.id))
         imagePreviewHosting?.layoutSubtreeIfNeeded()
         refreshTitle()
@@ -229,7 +242,7 @@ import UniformTypeIdentifiers
             let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: Self.windowWidth, height: Self.windowHeight), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
             window.title = L("剪贴板"); window.minSize = NSSize(width: Self.minimumWidth, height: Self.minimumHeight)
             window.isReleasedWhenClosed = false
-            backing = GlassWindowBacking(window: window, content: NSHostingView(rootView: ClipboardFeatureView(feature: self)), fullBleedTitlebar: true)
+            backing = GlassWindowBacking(window: window, content: GlassWindowBacking.hostingView(ClipboardFeatureView(feature: self), fullBleed: true), fullBleedTitlebar: true)
             window.center(); panel = window
             dismissal = FloatingWindow.hideOnResignKey(
                 window,
@@ -240,6 +253,7 @@ import UniformTypeIdentifiers
                     guard let self, !self.shuttingDown,
                           self.panel?.isVisible == true || self.imagePreviewPanel?.isVisible == true,
                           self.panel?.attachedSheet == nil,
+                          self.detailPanel?.attachedSheet == nil,
                           self.imagePreviewPanel?.attachedSheet == nil,
                           NSApp.modalWindow == nil else { return }
                     self.dismiss()
@@ -251,6 +265,18 @@ import UniformTypeIdentifiers
                     self.dismiss()
                 }
             }
+            mainMoveObservation = NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, !self.syncingPanelSize else { return }
+                    self.positionDetailPanel()
+                }
+            }
+            mainResizeObservation = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, !self.syncingPanelSize else { return }
+                    self.positionDetailPanel()
+                }
+            }
             for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
                 focusObservations.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
                     MainActor.assumeIsolated { self?.refreshWindowFocus() }
@@ -258,15 +284,18 @@ import UniformTypeIdentifiers
             }
         }
         refreshTitle()
+        ensureDetailPanel()
         if let panel {
             panel.contentView?.layoutSubtreeIfNeeded()
             presentWindow(panel)
             isWindowFocused = true
             focusSearchIfNeeded()
-            syncDetailSelection()
+            syncDetailPanel()
         }
     }
     var mainPanelForTesting: NSPanel? { panel }
+    var isDetailPanelBuilt: Bool { detailPanel != nil }
+    var detailPanelForTesting: NSPanel? { detailPanel }
     func attachSearchField(_ field: NSTextField) {
         searchField = field
         focusSearchIfNeeded()
@@ -275,8 +304,87 @@ import UniformTypeIdentifiers
         guard wantsSearchFocus, let panel, let searchField, searchField.window === panel else { return }
         if panel.makeFirstResponder(searchField) { wantsSearchFocus = false }
     }
-    private func syncDetailSelection() {
-        renderedDetailID = controller.selectedEntry?.id
+    /// Builds the companion popup once with the same glass backing as the list window, without titlebar buttons.
+    private func ensureDetailPanel() {
+        guard detailPanel == nil, let mainPanel = panel else { return }
+        let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: Self.detailWidth, height: Self.detailHeight), styleMask: [.titled, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
+        window.title = L("剪贴板详情")
+        window.minSize = NSSize(width: Self.minimumWidth, height: Self.minimumHeight)
+        window.becomesKeyOnlyIfNeeded = true
+        window.hasShadow = true
+        window.isReleasedWhenClosed = false
+        let hosting = GlassWindowBacking.hostingView(AnyView(ClipboardDetailView(feature: self)), fullBleed: true)
+        detailBacking = GlassWindowBacking(window: window, content: hosting, fullBleedTitlebar: true)
+        for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
+            window.standardWindowButton(button)?.isHidden = true
+        }
+        hosting.layoutSubtreeIfNeeded()
+        detailHosting = hosting
+        detailPanel = window
+        if window.frame.size != mainPanel.frame.size {
+            window.setFrame(NSRect(origin: window.frame.origin, size: mainPanel.frame.size), display: false)
+        }
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            focusObservations.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshWindowFocus() }
+            })
+        }
+        detailResizeObservation = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { [weak self, weak window] _ in
+            MainActor.assumeIsolated {
+                guard let self, let window, !self.syncingPanelSize, !window.inLiveResize else { return }
+                self.syncListPanelSizeToDetail()
+            }
+        }
+        detailEndLiveResizeObservation = NotificationCenter.default.addObserver(forName: NSWindow.didEndLiveResizeNotification, object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.syncingPanelSize else { return }
+                self.syncListPanelSizeToDetail()
+            }
+        }
+        detailDismissal = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.shuttingDown else { return }
+                self.dismiss()
+            }
+        }
+        detailResignObservation = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, let detailPanel = self.detailPanel, let mainPanel = self.panel,
+                          detailPanel.isVisible, !self.shuttingDown else { return }
+                    let keepOpen = NSApp.keyWindow === mainPanel
+                        || self.imagePreviewPanel?.isKeyWindow == true
+                        || FloatingWindow.ownsKeyPopup(of: mainPanel)
+                        || FloatingWindow.ownsKeyPopup(of: detailPanel)
+                    if !keepOpen, mainPanel.isVisible, detailPanel.attachedSheet == nil, NSApp.modalWindow == nil {
+                        self.dismiss()
+                    }
+                }
+            }
+        }
+    }
+    /// The full content lives in a companion popup instead of the list window.
+    private func syncDetailPanel() {
+        guard !shuttingDown, let entry = controller.selectedEntry else {
+            renderedDetailID = nil
+            hideDetailPanel()
+            return
+        }
+        ensureDetailPanel()
+        syncingPanelSize = true
+        // Re-render synchronously for the current selection before the popup appears, so it can never show an empty or stale frame.
+        detailHosting?.rootView = AnyView(ClipboardDetailView(feature: self).id(entry.id))
+        renderedDetailID = entry.id
+        detailHosting?.layoutSubtreeIfNeeded()
+        syncingPanelSize = false
+        positionDetailPanel()
+        if let panel, let detailPanel, detailPanel.parent !== panel {
+            panel.addChildWindow(detailPanel, ordered: .above)
+        }
+        detailPanel?.orderFront(nil)
+    }
+    private func hideDetailPanel() {
+        detailPanel?.orderOut(nil)
     }
     private func ensureImagePreviewPanel() {
         guard imagePreviewPanel == nil else { return }
@@ -287,11 +395,11 @@ import UniformTypeIdentifiers
             defer: false
         )
         window.title = L("图片预览")
-        window.minSize = NSSize(width: 420, height: 340)
+        window.minSize = NSSize(width: 360, height: 260)
         window.hidesOnDeactivate = false
         window.isReleasedWhenClosed = false
-        let hosting = NSHostingView(rootView: AnyView(EmptyView()))
-        imagePreviewBacking = GlassWindowBacking(window: window, content: hosting)
+        let hosting = GlassWindowBacking.hostingView(AnyView(EmptyView()), fullBleed: true)
+        imagePreviewBacking = GlassWindowBacking(window: window, content: hosting, fullBleedTitlebar: true)
         hosting.layoutSubtreeIfNeeded()
         imagePreviewHosting = hosting
         imagePreviewPanel = window
@@ -312,9 +420,10 @@ import UniformTypeIdentifiers
                     guard let self, let preview = self.imagePreviewPanel, preview.isVisible, !self.shuttingDown else { return }
                     let keepOpen = preview.isKeyWindow
                         || self.panel?.isKeyWindow == true
+                        || self.detailPanel?.isKeyWindow == true
                         || FloatingWindow.ownsKeyPopup(of: preview)
                         || self.panel.map { FloatingWindow.ownsKeyPopup(of: $0) } == true
-                    if !keepOpen, preview.attachedSheet == nil, self.panel?.attachedSheet == nil, NSApp.modalWindow == nil {
+                    if !keepOpen, preview.attachedSheet == nil, self.panel?.attachedSheet == nil, self.detailPanel?.attachedSheet == nil, NSApp.modalWindow == nil {
                         self.dismiss()
                     }
                 }
@@ -330,17 +439,43 @@ import UniformTypeIdentifiers
         refreshWindowFocus()
     }
     private static func preferredPreviewSize(for data: Data, relativeTo panel: NSPanel?) -> NSSize {
-        let fallback = NSSize(width: 720, height: 540)
+        let screen = panel?.screen ?? NSScreen.main
+        let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
+        let scale = screen?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
         guard let pixelSize = ClipboardEntry.imagePixelSize(for: data), pixelSize.width > 0, pixelSize.height > 0 else {
-            return fallback
+            return NSSize(width: 720, height: 540)
         }
-        let logicalWidth = max(420, pixelSize.width / 2)
-        let logicalHeight = max(340, pixelSize.height / 2 + 96)
-        let screenFrame = (panel?.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
-        let maxWidth = max(480, screenFrame.width * 0.75)
-        let maxHeight = max(380, screenFrame.height * 0.75)
-        let width = min(maxWidth, max(480, logicalWidth))
-        let height = min(maxHeight, max(380, logicalHeight))
+        return preferredPreviewSize(forPixelSize: pixelSize, backingScale: scale, screenVisibleFrame: visible)
+    }
+    static func preferredPreviewSize(
+        forPixelSize pixelSize: CGSize,
+        backingScale: CGFloat,
+        screenVisibleFrame: NSRect
+    ) -> NSSize {
+        guard pixelSize.width > 0, pixelSize.height > 0 else {
+            return NSSize(width: 720, height: 540)
+        }
+        let scale = backingScale.isFinite && backingScale >= 1.0 ? backingScale : 2.0
+        let naturalWidth = pixelSize.width / scale
+        let naturalHeight = pixelSize.height / scale
+        let chromeHeight: CGFloat = 82
+        let chromePadding: CGFloat = 24
+        let maxWindowWidth = max(360, floor(screenVisibleFrame.width * 0.88))
+        let maxWindowHeight = max(260, floor(screenVisibleFrame.height * 0.86))
+        let availableImageWidth = max(1, maxWindowWidth - chromePadding)
+        let availableImageHeight = max(1, maxWindowHeight - chromeHeight - chromePadding)
+        let imageWidth: CGFloat
+        let imageHeight: CGFloat
+        if naturalWidth <= availableImageWidth && naturalHeight <= availableImageHeight {
+            imageWidth = naturalWidth
+            imageHeight = naturalHeight
+        } else {
+            let ratio = min(availableImageWidth / naturalWidth, availableImageHeight / naturalHeight)
+            imageWidth = floor(naturalWidth * ratio)
+            imageHeight = floor(naturalHeight * ratio)
+        }
+        let width = min(maxWindowWidth, max(360, ceil(imageWidth + chromePadding)))
+        let height = min(maxWindowHeight, max(260, ceil(imageHeight + chromeHeight + chromePadding)))
         return NSSize(width: width, height: height)
     }
     private static func centerPreviewPanel(_ preview: NSPanel, relativeTo panel: NSPanel?) {
@@ -356,7 +491,47 @@ import UniformTypeIdentifiers
         preview.setFrameOrigin(origin)
     }
     private func refreshWindowFocus() {
-        isWindowFocused = (panel?.isKeyWindow == true) || (imagePreviewPanel?.isKeyWindow == true)
+        isWindowFocused = (panel?.isKeyWindow == true) || (detailPanel?.isKeyWindow == true) || (imagePreviewPanel?.isKeyWindow == true)
+    }
+    /// Places the detail popup to the right of the list window at the same size, falling back to the left when the right edge has no room.
+    private func positionDetailPanel() {
+        guard let panel, let detailPanel else { return }
+        let gap: CGFloat = 8
+        let mainFrame = panel.frame
+        let size = mainFrame.size
+        var origin = NSPoint(x: mainFrame.maxX + gap, y: mainFrame.minY)
+        if let screen = panel.screen ?? NSScreen.main {
+            let visible = screen.visibleFrame
+            if mainFrame.maxX + gap + size.width > visible.maxX {
+                origin.x = mainFrame.minX - gap - size.width
+                if origin.x < visible.minX { origin.x = visible.minX }
+            }
+            origin.y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
+        }
+        let targetFrame = NSRect(origin: origin, size: size)
+        guard detailPanel.frame != targetFrame else { return }
+        syncingPanelSize = true
+        defer { syncingPanelSize = false }
+        detailPanel.setFrame(targetFrame, display: detailPanel.isVisible)
+    }
+    private func syncListPanelSizeToDetail() {
+        guard let panel, let detailPanel, !shuttingDown else { return }
+        let targetSize = detailPanel.frame.size
+        if panel.frame.size != targetSize {
+            var mainFrame = panel.frame
+            let top = mainFrame.maxY
+            mainFrame.size = targetSize
+            mainFrame.origin.y = top - targetSize.height
+            if let screen = panel.screen ?? NSScreen.main {
+                let visible = screen.visibleFrame
+                mainFrame.origin.x = min(max(mainFrame.origin.x, visible.minX), max(visible.minX, visible.maxX - mainFrame.width))
+                mainFrame.origin.y = min(max(mainFrame.origin.y, visible.minY), max(visible.minY, visible.maxY - mainFrame.height))
+            }
+            syncingPanelSize = true
+            defer { syncingPanelSize = false }
+            panel.setFrame(mainFrame, display: panel.isVisible)
+        }
+        positionDetailPanel()
     }
     var showsDetail: Bool { controller.selectedEntry != nil }
     var storagePath: String {
@@ -364,11 +539,12 @@ import UniformTypeIdentifiers
     }
     func refreshTitle() {
         panel?.title = L("剪贴板")
+        detailPanel?.title = L("剪贴板详情")
         imagePreviewPanel?.title = L("图片预览")
     }
-    func shutdown() { shuttingDown = true; imageEditing.cancel(); controller.stop(); imagePreviewPanel?.close(); panel?.close(); Task { await awaitPendingMutations(); await controller.shutdown() } }
+    func shutdown() { shuttingDown = true; imageEditing.cancel(); controller.stop(); imagePreviewPanel?.close(); detailPanel?.close(); panel?.close(); Task { await awaitPendingMutations(); await controller.shutdown() } }
     func shutdownAndWait() async {
-        shuttingDown = true; imageEditing.cancel(); controller.stop(); imagePreviewPanel?.close(); panel?.close()
+        shuttingDown = true; imageEditing.cancel(); controller.stop(); imagePreviewPanel?.close(); detailPanel?.close(); panel?.close()
         await awaitPendingMutations()
         await controller.shutdown()
     }
@@ -405,24 +581,11 @@ extension ClipboardKindFilter {
     @State private var confirmDelete = false
     init(feature: ClipboardFeature) { self.feature = feature; controller = feature.controller; imageEditing = feature.imageEditing }
     var body: some View {
-        GeometryReader { geometry in
-            if geometry.size.width >= 520 {
-                HStack(spacing: 0) {
-                    sidebarColumn
-                        .frame(width: geometry.size.width < 680 ? 250 : Design.Layout.clipboardSidebarWidth)
-                        .mac27SidebarSurface()
-                    Divider()
-                    ClipboardDetailView(feature: feature)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .mac27ContentSurface()
-                }
-            } else {
-                sidebarColumn
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .mac27SidebarSurface()
-            }
-        }
-        .environment(\.controlActiveState, feature.isWindowFocused ? .key : .inactive)
+        sidebarColumn
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .mac27SidebarSurface()
+            .ignoresSafeArea(.container, edges: .top)
+            .environment(\.controlActiveState, feature.isWindowFocused ? .key : .inactive)
         .onExitCommand {
             if feature.isImagePreviewOpen { feature.closeImagePreview() }
             else { feature.dismiss() }
@@ -831,7 +994,7 @@ extension ClipboardKindFilter {
     }
 }
 
-/// Full clipboard content inside the macOS 27 master-detail split pane.
+/// Full clipboard content inside the companion detail popup.
 @MainActor struct ClipboardDetailView: View {
     @ObservedObject private var feature: ClipboardFeature
     @ObservedObject private var controller: ClipboardController
@@ -850,7 +1013,7 @@ extension ClipboardKindFilter {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
                 VStack(spacing: 0) {
-                    Mac27ToolbarBar {
+                    Mac27ToolbarBar(leadingPadding: 14) {
                         Text(L("剪贴板详情"))
                             .font(.system(size: 13, weight: .bold))
                         Spacer(minLength: 0)
@@ -879,6 +1042,13 @@ extension ClipboardKindFilter {
                 }
             }
         }
+        .mac27ContentSurface()
+        .ignoresSafeArea(.container, edges: .top)
+        .environment(\.controlActiveState, feature.isWindowFocused ? .key : .inactive)
+        .onExitCommand {
+            if feature.isImagePreviewOpen { feature.closeImagePreview() }
+            else { feature.dismiss() }
+        }
         .onKeyPress(.space) {
             guard controller.selectedEntry?.imageData != nil else { return .ignored }
             if feature.isImagePreviewOpen { feature.closeImagePreview() }
@@ -890,7 +1060,7 @@ extension ClipboardKindFilter {
     private func sourceToolbar(entry: ClipboardEntry, display: ClipboardDisplay) -> some View {
         let tint: Color = display.kind == .image ? .purple : (display.kind == .link ? .teal : .accentColor)
         let imageIndices = ClipboardImageEditing.imageIndices(in: entry)
-        return Mac27ToolbarBar {
+        return Mac27ToolbarBar(leadingPadding: 14) {
             HStack(spacing: 8) {
                 Text(entry.application)
                     .font(.system(size: 13, weight: .bold))

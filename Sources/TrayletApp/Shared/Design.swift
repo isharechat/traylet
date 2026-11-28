@@ -21,13 +21,49 @@ enum Design {
     }
     /// macOS 27 window chrome & split-view metrics.
     enum Layout {
-        static let toolbarHeight: CGFloat = 52
-        static let compactTitlebarHeight: CGFloat = 40
-        static let capsuleHeight: CGFloat = 36
-        static let trafficLightsClearance: CGFloat = 76
+        static let toolbarHeight: CGFloat = 44
+        static let compactTitlebarHeight: CGFloat = 38
+        static let capsuleHeight: CGFloat = 32
+        static let trafficLightsClearance: CGFloat = 78
         static let settingsSidebarWidth: CGFloat = 224
         static let clipboardSidebarWidth: CGFloat = 300
         static let ocrSidebarWidth: CGFloat = 300
+    }
+    /// Low-contrast harmonious neutral surfaces used when Liquid Glass is turned off or reduced transparency is active.
+    enum SolidSurface {
+        static func content(for scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color(red: 0.118, green: 0.118, blue: 0.125)
+                : Color(red: 0.969, green: 0.969, blue: 0.973)
+        }
+        static func sidebar(for scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color(red: 0.145, green: 0.145, blue: 0.157)
+                : Color(red: 0.937, green: 0.937, blue: 0.945)
+        }
+        static func toolbar(for scheme: ColorScheme) -> Color {
+            content(for: scheme)
+        }
+        static func capsuleFill(for scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color(red: 0.173, green: 0.173, blue: 0.188)
+                : Color.white
+        }
+        static func capsuleStroke(for scheme: ColorScheme, highContrast: Bool) -> Color {
+            if highContrast { return Color(nsColor: .separatorColor) }
+            return scheme == .dark ? Color.white.opacity(0.11) : Color.black.opacity(0.09)
+        }
+        static func bandTint(for scheme: ColorScheme) -> Color {
+            scheme == .dark ? Color.white.opacity(0.03) : Color.black.opacity(0.025)
+        }
+        static var windowNSColor: NSColor {
+            NSColor(name: nil) { appearance in
+                let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                return isDark
+                    ? NSColor(srgbRed: 0.118, green: 0.118, blue: 0.125, alpha: 1)
+                    : NSColor(srgbRed: 0.969, green: 0.969, blue: 0.973, alpha: 1)
+            }
+        }
     }
     enum Animation {
         static let snappy = SwiftUI.Animation.snappy(duration: 0.2)

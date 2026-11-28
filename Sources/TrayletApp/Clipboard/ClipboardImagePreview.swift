@@ -33,6 +33,26 @@ enum ClipboardImageZoom: Equatable, Sendable {
     func displayPercentage(currentFitScale: CGFloat = 1.0) -> Int {
         max(1, Int((effectiveScale(currentFitScale: currentFitScale) * 100).rounded()))
     }
+
+    static func clampedPanOffset(
+        proposed: CGSize,
+        imageSize: CGSize,
+        viewportSize: CGSize
+    ) -> CGSize {
+        func clampAxis(_ offset: CGFloat, imageSpan: CGFloat, viewportSpan: CGFloat) -> CGFloat {
+            guard offset.isFinite, imageSpan.isFinite, viewportSpan.isFinite else { return 0 }
+            let limit: CGFloat = if imageSpan > viewportSpan {
+                (imageSpan - viewportSpan) / 2 + 16
+            } else {
+                max(0, (viewportSpan - imageSpan) / 2)
+            }
+            return min(limit, max(-limit, offset))
+        }
+        return CGSize(
+            width: clampAxis(proposed.width, imageSpan: imageSize.width, viewportSpan: viewportSize.width),
+            height: clampAxis(proposed.height, imageSpan: imageSize.height, viewportSpan: viewportSize.height)
+        )
+    }
 }
 
 /// Thumbnail grid card used when the Clipboard window is filtered to the Images category.
@@ -149,6 +169,8 @@ enum ClipboardImageZoom: Equatable, Sendable {
     @State private var pixelSize: CGSize?
     @State private var zoom: ClipboardImageZoom = .fit
     @State private var viewportSize: CGSize = .zero
+    @State private var panOffset: CGSize = .zero
+    @State private var dragBaseOffset: CGSize?
 
     init(feature: ClipboardFeature, entry: ClipboardEntry) {
         self.feature = feature
@@ -157,33 +179,46 @@ enum ClipboardImageZoom: Equatable, Sendable {
         self.entry = entry
     }
 
+    private var naturalImageSize: CGSize {
+        if let pixelSize, pixelSize.width > 0, pixelSize.height > 0 {
+            let scale = max(1.0, NSScreen.main?.backingScaleFactor ?? 2.0)
+            return CGSize(width: pixelSize.width / scale, height: pixelSize.height / scale)
+        }
+        return image?.size ?? .zero
+    }
+
     private var fitScale: CGFloat {
-        guard let image, image.size.width > 0, image.size.height > 0,
-              viewportSize.width > 32, viewportSize.height > 32 else { return 1.0 }
-        let maxW = viewportSize.width - 32
-        let maxH = viewportSize.height - 32
-        return min(1.0, min(maxW / image.size.width, maxH / image.size.height))
+        let base = naturalImageSize
+        guard base.width > 0, base.height > 0,
+              viewportSize.width > 24, viewportSize.height > 24 else { return 1.0 }
+        let maxW = viewportSize.width - 24
+        let maxH = viewportSize.height - 24
+        return min(1.0, min(maxW / base.width, maxH / base.height))
     }
 
     private var currentScale: CGFloat {
         zoom.effectiveScale(currentFitScale: fitScale)
     }
 
+    private var renderedImageSize: CGSize {
+        let base = naturalImageSize
+        return CGSize(width: max(1, base.width * currentScale), height: max(1, base.height * currentScale))
+    }
+
     var body: some View {
         let currentEntry = controller.entries.first(where: { $0.id == entry.id }) ?? entry
         VStack(spacing: 0) {
             header(entry: currentEntry)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-            Divider()
             canvas
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
             footer
                 .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .frame(height: 36)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .mac27ContentSurface()
+        .ignoresSafeArea(.container, edges: .top)
         .environment(\.controlActiveState, feature.isWindowFocused ? .key : .inactive)
         .onExitCommand { feature.closeImagePreview() }
         .background {
@@ -194,13 +229,13 @@ enum ClipboardImageZoom: Equatable, Sendable {
                     .keyboardShortcut("y", modifiers: [.command])
                 Button { controller.copy(currentEntry.id) } label: { EmptyView() }
                     .keyboardShortcut("c", modifiers: [.command, .shift])
-                Button { zoom = zoom.zoomIn(currentFitScale: fitScale) } label: { EmptyView() }
+                Button { setZoom(zoom.zoomIn(currentFitScale: fitScale)) } label: { EmptyView() }
                     .keyboardShortcut("=", modifiers: [.command])
-                Button { zoom = zoom.zoomOut(currentFitScale: fitScale) } label: { EmptyView() }
+                Button { setZoom(zoom.zoomOut(currentFitScale: fitScale)) } label: { EmptyView() }
                     .keyboardShortcut("-", modifiers: [.command])
-                Button { zoom = .fit } label: { EmptyView() }
+                Button { setZoom(.fit, resetPan: true) } label: { EmptyView() }
                     .keyboardShortcut("0", modifiers: [.command])
-                Button { zoom = .scale(1.0) } label: { EmptyView() }
+                Button { setZoom(.scale(1.0), resetPan: true) } label: { EmptyView() }
                     .keyboardShortcut("1", modifiers: [.command])
             }
             .frame(width: 0, height: 0)
@@ -210,50 +245,61 @@ enum ClipboardImageZoom: Equatable, Sendable {
         .task(id: entry.id) {
             image = nil
             zoom = .fit
+            panOffset = .zero
+            dragBaseOffset = nil
             guard let data = currentEntry.imageData else { pixelSize = nil; return }
             pixelSize = ClipboardEntry.imagePixelSize(for: data)
             image = await ClipboardThumbnails.fullImage(data, key: currentEntry.digest)
         }
     }
 
+    private func setZoom(_ next: ClipboardImageZoom, resetPan: Bool = false) {
+        zoom = next
+        if resetPan {
+            panOffset = .zero
+            dragBaseOffset = nil
+        } else {
+            let base = naturalImageSize
+            let nextScale = next.effectiveScale(currentFitScale: fitScale)
+            let nextImageSize = CGSize(width: max(1, base.width * nextScale), height: max(1, base.height * nextScale))
+            panOffset = ClipboardImageZoom.clampedPanOffset(proposed: panOffset, imageSize: nextImageSize, viewportSize: viewportSize)
+        }
+    }
+
     private func header(entry: ClipboardEntry) -> some View {
         let indices = ClipboardImageEditing.imageIndices(in: entry)
         let sizeText = ByteCountFormatter.string(fromByteCount: Int64(entry.byteCount), countStyle: .file)
-        return HStack(spacing: 10) {
-            Image(systemName: ClipboardKind.image.symbol)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.indigo)
-                .frame(width: 28, height: 28)
-                .background(Color.indigo.opacity(0.14), in: RoundedRectangle(cornerRadius: Design.Radius.badge))
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(entry.application)
-                        .font(.callout.weight(.semibold))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    StatusPill(text: L("图片"), tint: .indigo)
-                }
-                HStack(spacing: 6) {
-                    Text(entry.capturedAt.formatted(date: .abbreviated, time: .shortened))
-                    if let pixelSize {
-                        Text("·")
-                        Text("\(Int(pixelSize.width)) × \(Int(pixelSize.height)) px")
+        return Mac27ToolbarBar(leadingPadding: Design.Layout.trafficLightsClearance, trailingPadding: 12) {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Text(entry.application)
+                            .font(.system(size: 13, weight: .bold))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        StatusPill(text: L("图片"), tint: .purple)
                     }
-                    Text("·")
-                    Text(sizeText)
+                    HStack(spacing: 5) {
+                        Text(entry.capturedAt.formatted(date: .abbreviated, time: .shortened))
+                        if let pixelSize {
+                            Text("·")
+                            Text("\(Int(pixelSize.width)) × \(Int(pixelSize.height)) px")
+                        }
+                        Text("·")
+                        Text(sizeText)
+                    }
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 }
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
             }
-            Spacer(minLength: 10)
-            HStack(spacing: 2) {
+            Spacer(minLength: 8)
+            Mac27GlassCapsule(spacing: 2, horizontalPadding: 4) {
                 if indices.count == 1, let index = indices.first {
                     WorkspaceIconButton(
                         symbol: "text.viewfinder",
                         label: "OCR 识别",
                         help: "OCR 识别",
-                        size: 26,
-                        iconSize: 12,
                         disabled: imageEditing.isPreparing
                     ) {
                         feature.openOCRImage(entry.id, itemIndex: index)
@@ -262,8 +308,6 @@ enum ClipboardImageZoom: Equatable, Sendable {
                         symbol: "character.bubble",
                         label: "截图翻译",
                         help: "截图翻译",
-                        size: 26,
-                        iconSize: 12,
                         disabled: imageEditing.isPreparing
                     ) {
                         feature.recognizeImage(entry.id, itemIndex: index)
@@ -272,8 +316,6 @@ enum ClipboardImageZoom: Equatable, Sendable {
                         symbol: "pencil",
                         label: "编辑图片",
                         help: "编辑副本，保留历史原件",
-                        size: 26,
-                        iconSize: 12,
                         disabled: imageEditing.isPreparing
                     ) {
                         feature.editImage(entry.id, itemIndex: index)
@@ -292,13 +334,11 @@ enum ClipboardImageZoom: Equatable, Sendable {
                 WorkspaceIconButton(
                     symbol: entry.favorite ? "star.fill" : "star",
                     label: entry.favorite ? "取消收藏" : "收藏",
-                    tint: entry.favorite ? .yellow : nil,
-                    size: 26,
-                    iconSize: 12
+                    tint: entry.favorite ? .orange : nil
                 ) {
                     feature.runMutation { await controller.toggleFavorite(entry.id) }
                 }
-                CopyIconButton(label: "复制", size: 26, iconSize: 12) {
+                CopyIconButton(label: "复制") {
                     controller.copy(entry.id)
                 }
             }
@@ -318,8 +358,8 @@ enum ClipboardImageZoom: Equatable, Sendable {
             }
         } label: {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .regular))
-                .frame(width: 26, height: 26)
+                .font(.system(size: 13, weight: .regular))
+                .frame(width: Design.iconButton, height: Design.iconButton)
                 .contentShape(Circle())
         }
         .menuStyle(.borderlessButton)
@@ -333,49 +373,78 @@ enum ClipboardImageZoom: Equatable, Sendable {
 
     private var canvas: some View {
         GeometryReader { geometry in
-            let availableWidth = max(1, geometry.size.width - 32)
-            let availableHeight = max(1, geometry.size.height - 32)
-            Group {
+            let imageSize = renderedImageSize
+            let effectiveOffset = ClipboardImageZoom.clampedPanOffset(
+                proposed: panOffset,
+                imageSize: imageSize,
+                viewportSize: geometry.size
+            )
+            ZStack {
+                Color.clear
                 if let image {
-                    switch zoom {
-                    case .fit:
-                        Image(nsImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: availableWidth, maxHeight: availableHeight)
-                            .clipShape(RoundedRectangle(cornerRadius: Design.Radius.control))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: Design.Radius.control)
-                                    .strokeBorder(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 0.5)
-                            )
-                            .frame(width: geometry.size.width, height: geometry.size.height)
-                    case .scale(let scale):
-                        let scaledWidth = max(1, image.size.width * scale)
-                        let scaledHeight = max(1, image.size.height * scale)
-                        ScrollView([.horizontal, .vertical]) {
-                            Image(nsImage: image)
-                                .resizable()
-                                .frame(width: scaledWidth, height: scaledHeight)
-                                .clipShape(RoundedRectangle(cornerRadius: Design.Radius.control))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: Design.Radius.control)
-                                        .strokeBorder(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 0.5)
-                                )
-                                .padding(16)
-                                .frame(
-                                    minWidth: geometry.size.width,
-                                    minHeight: geometry.size.height,
-                                    alignment: .center
-                                )
-                        }
-                    }
+                    Image(nsImage: image)
+                        .resizable()
+                        .frame(width: imageSize.width, height: imageSize.height)
+                        .clipShape(RoundedRectangle(cornerRadius: Design.Radius.control))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Design.Radius.control)
+                                .strokeBorder(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 0.5)
+                        )
+                        .offset(effectiveOffset)
+                        .modifier(GrabCursorModifier(dragging: dragBaseOffset != nil))
                 } else {
                     ProgressView()
-                        .frame(width: geometry.size.width, height: geometry.size.height)
+                }
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .clipped()
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        guard image != nil else { return }
+                        let base = dragBaseOffset ?? effectiveOffset
+                        if dragBaseOffset == nil { dragBaseOffset = base }
+                        panOffset = ClipboardImageZoom.clampedPanOffset(
+                            proposed: CGSize(
+                                width: base.width + value.translation.width,
+                                height: base.height + value.translation.height
+                            ),
+                            imageSize: renderedImageSize,
+                            viewportSize: geometry.size
+                        )
+                    }
+                    .onEnded { value in
+                        guard image != nil else { dragBaseOffset = nil; return }
+                        let base = dragBaseOffset ?? effectiveOffset
+                        panOffset = ClipboardImageZoom.clampedPanOffset(
+                            proposed: CGSize(
+                                width: base.width + value.translation.width,
+                                height: base.height + value.translation.height
+                            ),
+                            imageSize: renderedImageSize,
+                            viewportSize: geometry.size
+                        )
+                        dragBaseOffset = nil
+                    }
+            )
+            .onTapGesture(count: 2) {
+                guard image != nil else { return }
+                if zoom == .fit {
+                    setZoom(fitScale < 0.98 ? .scale(1.0) : .scale(1.5), resetPan: true)
+                } else {
+                    setZoom(.fit, resetPan: true)
                 }
             }
             .onAppear { viewportSize = geometry.size }
-            .onChange(of: geometry.size) { _, newValue in viewportSize = newValue }
+            .onChange(of: geometry.size) { _, newValue in
+                viewportSize = newValue
+                panOffset = ClipboardImageZoom.clampedPanOffset(
+                    proposed: panOffset,
+                    imageSize: renderedImageSize,
+                    viewportSize: newValue
+                )
+            }
         }
     }
 
@@ -388,13 +457,13 @@ enum ClipboardImageZoom: Equatable, Sendable {
                 iconSize: 12,
                 disabled: image == nil || currentScale <= ClipboardImageZoom.minScale + 0.001
             ) {
-                zoom = zoom.zoomOut(currentFitScale: fitScale)
+                setZoom(zoom.zoomOut(currentFitScale: fitScale))
             }
             zoomModeButton(title: L("适应"), active: zoom == .fit) {
-                zoom = .fit
+                setZoom(.fit, resetPan: true)
             }
             zoomModeButton(title: L("实际大小"), active: zoom == .scale(1.0)) {
-                zoom = .scale(1.0)
+                setZoom(.scale(1.0), resetPan: true)
             }
             WorkspaceIconButton(
                 symbol: "plus.magnifyingglass",
@@ -403,7 +472,7 @@ enum ClipboardImageZoom: Equatable, Sendable {
                 iconSize: 12,
                 disabled: image == nil || currentScale >= ClipboardImageZoom.maxScale - 0.001
             ) {
-                zoom = zoom.zoomIn(currentFitScale: fitScale)
+                setZoom(zoom.zoomIn(currentFitScale: fitScale))
             }
             Text("\(zoom.displayPercentage(currentFitScale: fitScale))%")
                 .font(.caption2.monospacedDigit())
@@ -427,5 +496,16 @@ enum ClipboardImageZoom: Equatable, Sendable {
         }
         .buttonStyle(.plain)
         .disabled(image == nil)
+    }
+}
+
+private struct GrabCursorModifier: ViewModifier {
+    let dragging: Bool
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(macOS 15, *) {
+            content.pointerStyle(dragging ? .grabActive : .grabIdle)
+        } else {
+            content
+        }
     }
 }

@@ -112,7 +112,7 @@ import TrayletCore
         if panel == nil {
             let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 580, height: 580), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
             panel.title = windowTitle; panel.isReleasedWhenClosed = false; panel.hidesOnDeactivate = false
-            backing = GlassWindowBacking(window: panel, content: NSHostingView(rootView: TranslationWorkspaceView(controller: self, flow: flow, configuration: configuration)), fullBleedTitlebar: true)
+            backing = GlassWindowBacking(window: panel, content: GlassWindowBacking.hostingView(TranslationWorkspaceView(controller: self, flow: flow, configuration: configuration), fullBleed: true), fullBleedTitlebar: true)
             panel.delegate = self; panel.center(); self.panel = panel; updateMinimumSize()
             dismissal = FloatingWindow.hideOnResignKey(panel, canHide: { [weak self] in self?.preparingResources != true }) { [weak self] in self?.close() }
         }
