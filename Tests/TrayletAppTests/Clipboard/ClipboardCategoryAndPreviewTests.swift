@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Testing
+import TrayletCore
 @testable import TrayletApp
 
 @Suite("Clipboard Category and Image Preview") @MainActor struct ClipboardCategoryAndPreviewTests {
@@ -190,6 +191,226 @@ import Testing
         #expect(ClipboardImageZoom.scale(1.0).displayPercentage() == 100)
     }
 
+    @Test func textLinkageOpensTranslationAndSubmitsAndRejectsBlankEntries() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-clipboard-text-link-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        _ = NSApplication.shared
+
+        var clipboardDismissals = 0
+        var translationPresentations = 0
+        var canPresent = true
+
+        let source = MemoryClipboardSource()
+        let feature = ClipboardFeature(
+            directory: directory,
+            source: source,
+            writer: MemoryClipboardWriter(),
+            presentWindow: { _ in },
+            dismissWindow: { _ in clipboardDismissals += 1 },
+            presentPreviewWindow: { _ in },
+            dismissPreviewWindow: { _ in }
+        )
+        let client = RecordingTranslationAI()
+        let translationConfig = TranslationConfiguration(client: client)
+        translationConfig.engine = .ai
+        translationConfig.model = "synthetic-model"
+        let translation = TranslationController(
+            configuration: translationConfig,
+            writer: TranslationFakeWriter(),
+            availability: TranslationFakeAvailability(),
+            speech: TranslationFakeSpeech(),
+            presentWindow: { _ in translationPresentations += 1 }
+        )
+        let bridge = ClipboardTranslationBridge(
+            clipboard: feature,
+            translation: translation,
+            canPresent: { canPresent }
+        )
+        defer { withExtendedLifetime(bridge) {} }
+
+        await feature.start(poll: false)
+        feature.present()
+        source.value = .init(generation: 1, items: [.text("   \n  ")], application: "com.example.Notes")
+        await feature.controller.refresh()
+        source.value = .init(generation: 2, items: [.text("Translate this sentence")], application: "com.example.Notes")
+        await feature.controller.refresh()
+
+        let blankID = try #require(feature.controller.entries.first { $0.plainText == "   \n  " }?.id)
+        let textID = try #require(feature.controller.entries.first { $0.plainText == "Translate this sentence" }?.id)
+
+        // Blank text or unavailable bridge must not open translation or dismiss clipboard.
+        #expect(!feature.translateText(blankID))
+        canPresent = false
+        #expect(!feature.translateText(textID))
+        #expect(translationPresentations == 0 && clipboardDismissals == 0)
+
+        canPresent = true
+        #expect(feature.translateText(textID))
+        #expect(translationPresentations == 1)
+        #expect(clipboardDismissals == 1)
+        #expect(translation.flow.input == "Translate this sentence")
+
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while await client.calls == 0 && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(await client.calls == 1)
+        #expect(translation.flow.output == "你好。")
+
+        // Filtered-out entry cannot be linked.
+        feature.controller.query = "no-match"
+        #expect(!feature.translateText(textID))
+
+        translation.close()
+        await feature.shutdownAndWait()
+    }
+
+    @Test func linkActionValidatesSchemeAndRespectsOpenResult() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-clipboard-open-link-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        _ = NSApplication.shared
+
+        var clipboardDismissals = 0
+        var openedURLs: [URL] = []
+        var openShouldSucceed = false
+
+        let source = MemoryClipboardSource()
+        let feature = ClipboardFeature(
+            directory: directory,
+            source: source,
+            writer: MemoryClipboardWriter(),
+            presentWindow: { _ in },
+            dismissWindow: { _ in clipboardDismissals += 1 },
+            presentPreviewWindow: { _ in },
+            dismissPreviewWindow: { _ in }
+        )
+        feature.openURL = { url in
+            openedURLs.append(url)
+            return openShouldSucceed
+        }
+
+        await feature.start(poll: false)
+        feature.present()
+        source.value = .init(generation: 1, items: [.text("file:///etc/passwd")], application: "com.example.Notes")
+        await feature.controller.refresh()
+        source.value = .init(generation: 2, items: [.text("https://example.com/guide?tab=1")], application: "com.example.Safari")
+        await feature.controller.refresh()
+
+        let fileEntry = try #require(feature.controller.entries.first { $0.plainText == "file:///etc/passwd" })
+        let linkEntry = try #require(feature.controller.entries.first { $0.plainText == "https://example.com/guide?tab=1" })
+
+        #expect(ClipboardDisplay(fileEntry).kind == .text)
+        #expect(ClipboardDisplay(fileEntry).linkURL == nil)
+        #expect(!feature.openLink(fileEntry.id))
+        #expect(openedURLs.isEmpty)
+
+        #expect(ClipboardDisplay(linkEntry).kind == .link)
+        #expect(ClipboardDisplay(linkEntry).linkURL == URL(string: "https://example.com/guide?tab=1"))
+
+        // If openURL fails, clipboard stays open.
+        openShouldSucceed = false
+        #expect(!feature.openLink(linkEntry.id))
+        #expect(openedURLs.count == 1)
+        #expect(clipboardDismissals == 0)
+
+        // When openURL succeeds, clipboard dismisses cleanly.
+        openShouldSucceed = true
+        #expect(feature.openLink(linkEntry.id))
+        #expect(openedURLs.last == URL(string: "https://example.com/guide?tab=1"))
+        #expect(clipboardDismissals == 1)
+
+        await feature.shutdownAndWait()
+    }
+
+    @Test func imageLinkageRoutesStandaloneOCRAndScreenshotTranslationIndependently() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-clipboard-image-linkage-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        _ = NSApplication.shared
+
+        var clipboardDismissals = 0
+        var translationPresentations = 0
+        var ocrPresentations = 0
+        var canPresent = true
+
+        let imageBytes = try makePNG(width: 64, height: 48)
+        let prepared = try await ClipboardImageDecoder.prepare(imageBytes)
+
+        let source = MemoryClipboardSource()
+        let feature = ClipboardFeature(
+            directory: directory,
+            source: source,
+            writer: MemoryClipboardWriter(),
+            imageEditing: ClipboardImageEditing(prepare: { _ in prepared }),
+            presentWindow: { _ in },
+            dismissWindow: { _ in clipboardDismissals += 1 },
+            presentPreviewWindow: { _ in },
+            dismissPreviewWindow: { _ in }
+        )
+
+        let translationConfig = TranslationConfiguration(client: RecordingTranslationAI())
+        let translation = TranslationController(
+            configuration: translationConfig,
+            writer: TranslationFakeWriter(),
+            availability: TranslationFakeAvailability(),
+            recognizer: LinkageVisionRecognizer(result: "Translated OCR Text"),
+            speech: TranslationFakeSpeech(),
+            presentWindow: { _ in translationPresentations += 1 }
+        )
+        let ocr = OCRController(
+            configuration: OCRConfiguration(),
+            visionRecognizer: LinkageVisionRecognizer(result: "Standalone OCR Result"),
+            aiRecognizer: LinkageAIRecognizer(result: "AI"),
+            writer: LinkageOCRWriter(),
+            speech: TranslationFakeSpeech(),
+            presentWindow: { _ in ocrPresentations += 1 }
+        )
+        let bridge = ClipboardTranslationBridge(
+            clipboard: feature,
+            translation: translation,
+            ocr: ocr,
+            canPresent: { canPresent }
+        )
+        defer { withExtendedLifetime(bridge) {} }
+
+        await feature.start(poll: false)
+        feature.present()
+        source.value = .init(generation: 1, items: [ClipboardContent(representations: ["public.png": imageBytes])], application: "com.example.Preview")
+        await feature.controller.refresh()
+        let imageID = try #require(feature.controller.entries.first?.id)
+
+        // When canPresent is false, OCR linkage reports unavailable and does not run.
+        canPresent = false
+        #expect(feature.openOCRImage(imageID, itemIndex: 0) == nil)
+        #expect(feature.imageEditing.message != nil)
+        #expect(ocrPresentations == 0 && translationPresentations == 0)
+
+        // Standalone OCR route.
+        canPresent = true
+        let ocrTask = try #require(feature.openOCRImage(imageID, itemIndex: 0))
+        await ocrTask.value
+        await ocr.recognitionTaskHandle?.value
+        #expect(ocrPresentations == 1)
+        #expect(translationPresentations == 0)
+        #expect(clipboardDismissals == 1)
+        #expect(ocr.text == "Standalone OCR Result")
+
+        // Screenshot translation route.
+        feature.present()
+        let translateTask = try #require(feature.recognizeImage(imageID, itemIndex: 0))
+        await translateTask.value
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while translation.flow.input != "Translated OCR Text" && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(translationPresentations == 1)
+        #expect(clipboardDismissals == 2)
+        #expect(translation.flow.input == "Translated OCR Text")
+
+        ocr.close()
+        translation.close()
+        await feature.shutdownAndWait()
+    }
+
     private func makePNG(width: Int, height: Int) throws -> Data {
         let rep = try #require(NSBitmapImageRep(
             bitmapDataPlanes: nil,
@@ -207,4 +428,18 @@ import Testing
         memset(ptr, 180, rep.bytesPerRow * height)
         return try #require(rep.representation(using: .png, properties: [:]))
     }
+}
+
+private struct LinkageVisionRecognizer: TranslationRecognizing {
+    let result: String
+    func recognize(_ image: RasterImage) async throws -> String { result }
+}
+
+private struct LinkageAIRecognizer: OCRAIRecognizing {
+    let result: String
+    func recognize(_ request: OCRAIRequest) async throws -> String { result }
+}
+
+@MainActor private final class LinkageOCRWriter: TextOutputWriting {
+    func copyText(_ text: String) -> CopyOutcome { .copied }
 }

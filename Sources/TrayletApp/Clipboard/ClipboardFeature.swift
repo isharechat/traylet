@@ -18,6 +18,11 @@ import UniformTypeIdentifiers
     var onEditImage: ((ClipboardPreparedImage) -> Bool)?
     var canRecognizeImage: (() -> Bool)?
     var onRecognizeImage: ((ClipboardPreparedImage) -> Bool)?
+    var canOpenOCRImage: (() -> Bool)?
+    var onOpenOCRImage: ((ClipboardPreparedImage) -> Bool)?
+    var canTranslateText: (() -> Bool)?
+    var onTranslateText: ((String) -> Bool)?
+    var openURL: (URL) -> Bool = { NSWorkspace.shared.open($0) }
     private var imageObservations: Set<AnyCancellable> = []
     private let presentWindow: (NSPanel) -> Void
     private let dismissWindow: (NSPanel) -> Void
@@ -151,32 +156,56 @@ import UniformTypeIdentifiers
     }
     /// Explicit image action, separate from Return/double-click's original-format copy.
     @discardableResult func editImage(_ id: UUID, itemIndex: Int) -> Task<Void, Never>? {
+        prepareAndOpenImage(id, itemIndex: itemIndex, canOpen: canEditImage, open: onEditImage)
+    }
+    /// Opens the history image in Translation (screenshot translation with editable OCR text).
+    @discardableResult func recognizeImage(_ id: UUID, itemIndex: Int) -> Task<Void, Never>? {
+        prepareAndOpenImage(id, itemIndex: itemIndex, canOpen: canRecognizeImage, open: onRecognizeImage)
+    }
+    /// Opens the history image directly in the standalone OCR window.
+    @discardableResult func openOCRImage(_ id: UUID, itemIndex: Int) -> Task<Void, Never>? {
+        prepareAndOpenImage(id, itemIndex: itemIndex, canOpen: canOpenOCRImage, open: onOpenOCRImage)
+    }
+    private func prepareAndOpenImage(
+        _ id: UUID,
+        itemIndex: Int,
+        canOpen: (() -> Bool)?,
+        open: ((ClipboardPreparedImage) -> Bool)?
+    ) -> Task<Void, Never>? {
         guard !shuttingDown, !imageEditing.isPreparing,
               let entry = controller.filteredEntries.first(where: { $0.id == id }),
               ClipboardImageEditing.imageIndices(in: entry).contains(itemIndex) else { return nil }
         controller.selectedID = id
-        guard canEditImage?() == true else { imageEditing.reportUnavailable(); return nil }
+        guard canOpen?() == true else { imageEditing.reportUnavailable(); return nil }
         return imageEditing.begin(entry: entry, itemIndex: itemIndex, isCurrent: { [weak self] in
             guard let self, !self.shuttingDown, let current = self.controller.selectedEntry else { return false }
             return current.id == id && current.digest == entry.digest
         }, open: { [weak self] result in
-            guard let self, !self.shuttingDown, self.onEditImage?(result) == true else { return false }
+            guard let self, !self.shuttingDown, open?(result) == true else { return false }
             self.dismiss(); return true
         })
     }
-    @discardableResult func recognizeImage(_ id: UUID, itemIndex: Int) -> Task<Void, Never>? {
-        guard !shuttingDown, !imageEditing.isPreparing,
-              let entry = controller.filteredEntries.first(where: { $0.id == id }),
-              ClipboardImageEditing.imageIndices(in: entry).contains(itemIndex) else { return nil }
+    @discardableResult func translateText(_ id: UUID) -> Bool {
+        guard !shuttingDown,
+              let entry = controller.filteredEntries.first(where: { $0.id == id }) else { return false }
+        let text = controller.display(entry).text
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         controller.selectedID = id
-        guard canRecognizeImage?() == true else { imageEditing.reportUnavailable(); return nil }
-        return imageEditing.begin(entry: entry, itemIndex: itemIndex, isCurrent: { [weak self] in
-            guard let self, !self.shuttingDown, let current = self.controller.selectedEntry else { return false }
-            return current.id == id && current.digest == entry.digest
-        }, open: { [weak self] result in
-            guard let self, !self.shuttingDown, self.onRecognizeImage?(result) == true else { return false }
-            self.dismiss(); return true
-        })
+        guard canTranslateText?() == true, onTranslateText?(text) == true else { return false }
+        dismiss()
+        return true
+    }
+    @discardableResult func openLink(_ id: UUID) -> Bool {
+        guard !shuttingDown,
+              let entry = controller.filteredEntries.first(where: { $0.id == id }),
+              let url = controller.display(entry).linkURL,
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url.host != nil else { return false }
+        controller.selectedID = id
+        guard openURL(url) else { return false }
+        dismiss()
+        return true
     }
     @discardableResult func moveFavorites(from offsets: IndexSet, to destination: Int) async -> Bool {
         var ids = controller.orderedFavoriteIDs
@@ -567,12 +596,20 @@ extension ClipboardKindFilter {
                     if let entry = controller.selectedEntry, entry.imageData != nil {
                         Button(L("预览图片")) { feature.openImagePreview(entry.id) }
                     }
-                    if let entry = controller.selectedEntry, !controller.display(entry).text.isEmpty {
-                        Button(L("复制纯文本")) { controller.copy(entry.id, format: .plainText) }
-                    }
                     if let entry = controller.selectedEntry {
-                        imageEditActions(entry)
+                        let display = controller.display(entry)
+                        if display.kind == .text, !display.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Button(L("翻译")) { feature.translateText(entry.id) }
+                        }
+                        if display.kind == .link, display.linkURL != nil {
+                            Button(L("在默认浏览器中打开")) { feature.openLink(entry.id) }
+                        }
+                        if !display.text.isEmpty {
+                            Button(L("复制纯文本")) { controller.copy(entry.id, format: .plainText) }
+                        }
+                        imageOCRActions(entry)
                         imageRecognitionActions(entry)
+                        imageEditActions(entry)
                         if entry.favorite { favoriteMoveActions(entry) }
                     }
                     Divider()
@@ -783,14 +820,22 @@ extension ClipboardKindFilter {
         .id(entry.id)
     }
     @ViewBuilder private func entryContextMenu(_ entry: ClipboardEntry) -> some View {
+        let display = controller.display(entry)
         if entry.imageData != nil {
             Button(L("预览图片")) { feature.openImagePreview(entry.id) }
         }
+        if display.kind == .text, !display.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Button(L("翻译")) { feature.translateText(entry.id) }
+        }
+        if display.kind == .link, display.linkURL != nil {
+            Button(L("在默认浏览器中打开")) { feature.openLink(entry.id) }
+        }
         Button(L("复制")) { controller.copy(entry.id) }
-        Button(L("复制纯文本")) { controller.copy(entry.id, format: .plainText) }.disabled(controller.display(entry).text.isEmpty)
+        Button(L("复制纯文本")) { controller.copy(entry.id, format: .plainText) }.disabled(display.text.isEmpty)
         Button(L(entry.favorite ? "取消收藏" : "收藏")) { feature.runMutation { await controller.toggleFavorite(entry.id) } }
-        imageEditActions(entry)
+        imageOCRActions(entry)
         imageRecognitionActions(entry)
+        imageEditActions(entry)
         if entry.favorite { favoriteMoveActions(entry) }
         Button(L("删除"), role: .destructive) { requestDeletion(entry.id) }
     }
@@ -850,29 +895,35 @@ extension ClipboardKindFilter {
         controller.requestDeletion(id)
         confirmDelete = controller.pendingDeletionID != nil
     }
-    @ViewBuilder private func imageEditActions(_ entry: ClipboardEntry, compact: Bool = false) -> some View {
-        let indices = ClipboardImageEditing.imageIndices(in: entry)
-        if indices.count == 1, let index = indices.first {
-            Button { feature.editImage(entry.id, itemIndex: index) } label: {
-                if compact { Image(systemName: "pencil") } else { Text(L("编辑图片")) }
-            }.disabled(imageEditing.isPreparing).help(L("编辑副本，保留历史原件")).accessibilityLabel(L("编辑图片"))
-        } else if !indices.isEmpty {
-            Menu(L("编辑图片")) {
-                ForEach(Array(indices.enumerated()), id: \.element) { offset, index in
-                    Button(String(format: L("图片 %d"), offset + 1)) { feature.editImage(entry.id, itemIndex: index) }
-                }
-            }.disabled(imageEditing.isPreparing)
+    @ViewBuilder private func imageOCRActions(_ entry: ClipboardEntry) -> some View {
+        imageItemActionMenu(title: "OCR 识别", help: "OCR 识别", indices: ClipboardImageEditing.imageIndices(in: entry)) { index in
+            feature.openOCRImage(entry.id, itemIndex: index)
+        }
+    }
+    @ViewBuilder private func imageEditActions(_ entry: ClipboardEntry) -> some View {
+        imageItemActionMenu(title: "编辑图片", help: "编辑副本，保留历史原件", indices: ClipboardImageEditing.imageIndices(in: entry)) { index in
+            feature.editImage(entry.id, itemIndex: index)
         }
     }
     @ViewBuilder private func imageRecognitionActions(_ entry: ClipboardEntry) -> some View {
-        let indices = ClipboardImageEditing.imageIndices(in: entry)
+        imageItemActionMenu(title: "截图翻译", help: "截图翻译", indices: ClipboardImageEditing.imageIndices(in: entry)) { index in
+            feature.recognizeImage(entry.id, itemIndex: index)
+        }
+    }
+    @ViewBuilder private func imageItemActionMenu(
+        title: String,
+        help: String,
+        indices: [Int],
+        action: @escaping (Int) -> Void
+    ) -> some View {
         if indices.count == 1, let index = indices.first {
-            Button(L("识别文字")) { feature.recognizeImage(entry.id, itemIndex: index) }
-                .disabled(imageEditing.isPreparing).help(L("本机识别，校正后再翻译"))
+            Button(L(title)) { action(index) }
+                .disabled(imageEditing.isPreparing)
+                .help(L(help))
         } else if !indices.isEmpty {
-            Menu(L("识别文字")) {
+            Menu(L(title)) {
                 ForEach(Array(indices.enumerated()), id: \.element) { offset, index in
-                    Button(String(format: L("图片 %d"), offset + 1)) { feature.recognizeImage(entry.id, itemIndex: index) }
+                    Button(String(format: L("图片 %d"), offset + 1)) { action(index) }
                 }
             }.disabled(imageEditing.isPreparing)
         }
@@ -909,6 +960,11 @@ extension ClipboardKindFilter {
                         .padding(.horizontal, 12).padding(.vertical, 10)
                     Divider()
                     content(entry: entry, display: display)
+                    if hasDetailActions(entry: entry, display: display) {
+                        Divider()
+                        detailActionBar(entry: entry, display: display)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                    }
                     Divider()
                     detailFooter(entry: entry, display: display)
                 }
@@ -981,29 +1037,6 @@ extension ClipboardKindFilter {
                         feature.openImagePreview(entry.id)
                     }
                 }
-                let imageIndices = ClipboardImageEditing.imageIndices(in: entry)
-                if imageIndices.count == 1, let index = imageIndices.first {
-                    WorkspaceIconButton(
-                        symbol: "pencil",
-                        label: "编辑图片",
-                        help: "编辑副本，保留历史原件",
-                        size: 26,
-                        iconSize: 12,
-                        disabled: feature.imageEditing.isPreparing
-                    ) {
-                        feature.editImage(entry.id, itemIndex: index)
-                    }
-                    WorkspaceIconButton(
-                        symbol: "text.viewfinder",
-                        label: "识别文字",
-                        help: "本机识别，校正后再翻译",
-                        size: 26,
-                        iconSize: 12,
-                        disabled: feature.imageEditing.isPreparing
-                    ) {
-                        feature.recognizeImage(entry.id, itemIndex: index)
-                    }
-                }
                 WorkspaceIconButton(
                     symbol: entry.favorite ? "star.fill" : "star",
                     label: entry.favorite ? "取消收藏" : "收藏",
@@ -1028,6 +1061,104 @@ extension ClipboardKindFilter {
             .padding(14)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    private func hasDetailActions(entry: ClipboardEntry, display: ClipboardDisplay) -> Bool {
+        if !ClipboardImageEditing.imageIndices(in: entry).isEmpty { return true }
+        if display.kind == .link && display.linkURL != nil { return true }
+        if display.kind == .text && !display.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        return false
+    }
+    @ViewBuilder private func detailActionBar(entry: ClipboardEntry, display: ClipboardDisplay) -> some View {
+        let imageIndices = ClipboardImageEditing.imageIndices(in: entry)
+        HStack(spacing: 6) {
+            if display.kind == .text, !display.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                WorkspaceIconButton(
+                    symbol: "character.bubble",
+                    label: "翻译",
+                    help: "翻译",
+                    size: 28,
+                    iconSize: 13
+                ) {
+                    feature.translateText(entry.id)
+                }
+            }
+            if display.kind == .link, display.linkURL != nil {
+                WorkspaceIconButton(
+                    symbol: "safari",
+                    label: "在默认浏览器中打开",
+                    help: "在默认浏览器中打开",
+                    size: 28,
+                    iconSize: 13
+                ) {
+                    feature.openLink(entry.id)
+                }
+            }
+            if !imageIndices.isEmpty {
+                detailImageIconAction(
+                    symbol: "text.viewfinder",
+                    label: "OCR 识别",
+                    help: "OCR 识别",
+                    indices: imageIndices
+                ) { index in
+                    feature.openOCRImage(entry.id, itemIndex: index)
+                }
+                detailImageIconAction(
+                    symbol: "character.bubble",
+                    label: "截图翻译",
+                    help: "截图翻译",
+                    indices: imageIndices
+                ) { index in
+                    feature.recognizeImage(entry.id, itemIndex: index)
+                }
+                detailImageIconAction(
+                    symbol: "pencil",
+                    label: "编辑图片",
+                    help: "编辑副本，保留历史原件",
+                    indices: imageIndices
+                ) { index in
+                    feature.editImage(entry.id, itemIndex: index)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+    @ViewBuilder private func detailImageIconAction(
+        symbol: String,
+        label: String,
+        help: String,
+        indices: [Int],
+        action: @escaping (Int) -> Void
+    ) -> some View {
+        if indices.count == 1, let index = indices.first {
+            WorkspaceIconButton(
+                symbol: symbol,
+                label: label,
+                help: help,
+                size: 28,
+                iconSize: 13,
+                disabled: feature.imageEditing.isPreparing
+            ) {
+                action(index)
+            }
+        } else {
+            Menu {
+                ForEach(Array(indices.enumerated()), id: \.element) { offset, index in
+                    Button(String(format: L("图片 %d"), offset + 1)) { action(index) }
+                }
+            } label: {
+                Image(systemName: symbol)
+                    .font(.system(size: 13, weight: .regular))
+                    .frame(width: 28, height: 28)
+                    .contentShape(Circle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .disabled(feature.imageEditing.isPreparing)
+            .opacity(feature.imageEditing.isPreparing ? 0.4 : 1)
+            .help(L(help))
+            .accessibilityLabel(L(label))
+        }
     }
     private func detailFooter(entry: ClipboardEntry, display: ClipboardDisplay) -> some View {
         let sizeText = ByteCountFormatter.string(fromByteCount: Int64(entry.byteCount), countStyle: .file)

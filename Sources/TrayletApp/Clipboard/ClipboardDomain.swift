@@ -135,6 +135,8 @@ enum ClipboardKindFilter: String, CaseIterable, Identifiable, Sendable {
 /// What the list shows for an entry, computed once instead of decoding the body on every render.
 struct ClipboardDisplay {
     let kind: ClipboardKind
+    /// Validated `http` or `https` URL when `kind == .link`, otherwise `nil`.
+    let linkURL: URL?
     /// Full plain text for search and preview; empty for images.
     let text: String
     /// One line of at most 200 characters for the row.
@@ -146,15 +148,17 @@ struct ClipboardDisplay {
         let text = entry.plainText ?? ""
         self.text = text
         line = text.isEmpty ? nil : String(text.prefix(200)).replacingOccurrences(of: "\n", with: " ")
-        if entry.imageData != nil { kind = .image; singleLine = false; return }
+        if entry.imageData != nil { kind = .image; linkURL = nil; singleLine = false; return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // Normal text usually has a space near the start. Reject it before walking every grapheme
         // just to measure a long body that cannot be a standalone URL.
-        var looksLikeLink = false
+        var validatedLink: URL?
         if !trimmed.isEmpty, !trimmed.contains(where: \.isWhitespace), trimmed.count < 2048,
            let url = URL(string: trimmed), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil {
-            looksLikeLink = true
+            validatedLink = url
         }
+        linkURL = validatedLink
+        let looksLikeLink = validatedLink != nil
         kind = looksLikeLink ? .link : .text
         let hasWhitespace = text.contains(where: \.isWhitespace)
         let hasCJKBreak = text.contains(where: \.breaksLikeCJK)

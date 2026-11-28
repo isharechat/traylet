@@ -78,7 +78,7 @@ import TrayletCore
         clipboardEditing = ClipboardEditorBridge(clipboard: clipboard, editor: editor, canPresent: {
             editor.discardHiddenSession(); return !capture.isBusy
         })
-        clipboardTranslation = ClipboardTranslationBridge(clipboard: clipboard, translation: translation, canPresent: {
+        clipboardTranslation = ClipboardTranslationBridge(clipboard: clipboard, translation: translation, ocr: ocr, canPresent: {
             editor.discardHiddenSession(); return !capture.isBusy && !editor.isOpen
         })
         let settingsActions = SettingsActions(preferences: preferences, login: SystemLoginItem())

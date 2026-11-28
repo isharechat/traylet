@@ -249,6 +249,26 @@ enum ClipboardImageZoom: Equatable, Sendable {
             HStack(spacing: 2) {
                 if indices.count == 1, let index = indices.first {
                     WorkspaceIconButton(
+                        symbol: "text.viewfinder",
+                        label: "OCR 识别",
+                        help: "OCR 识别",
+                        size: 26,
+                        iconSize: 12,
+                        disabled: imageEditing.isPreparing
+                    ) {
+                        feature.openOCRImage(entry.id, itemIndex: index)
+                    }
+                    WorkspaceIconButton(
+                        symbol: "character.bubble",
+                        label: "截图翻译",
+                        help: "截图翻译",
+                        size: 26,
+                        iconSize: 12,
+                        disabled: imageEditing.isPreparing
+                    ) {
+                        feature.recognizeImage(entry.id, itemIndex: index)
+                    }
+                    WorkspaceIconButton(
                         symbol: "pencil",
                         label: "编辑图片",
                         help: "编辑副本，保留历史原件",
@@ -258,15 +278,15 @@ enum ClipboardImageZoom: Equatable, Sendable {
                     ) {
                         feature.editImage(entry.id, itemIndex: index)
                     }
-                    WorkspaceIconButton(
-                        symbol: "text.viewfinder",
-                        label: "识别文字",
-                        help: "本机识别，校正后再翻译",
-                        size: 26,
-                        iconSize: 12,
-                        disabled: imageEditing.isPreparing
-                    ) {
+                } else if !indices.isEmpty {
+                    previewMultiImageActionMenu(symbol: "text.viewfinder", label: "OCR 识别", help: "OCR 识别", indices: indices) { index in
+                        feature.openOCRImage(entry.id, itemIndex: index)
+                    }
+                    previewMultiImageActionMenu(symbol: "character.bubble", label: "截图翻译", help: "截图翻译", indices: indices) { index in
                         feature.recognizeImage(entry.id, itemIndex: index)
+                    }
+                    previewMultiImageActionMenu(symbol: "pencil", label: "编辑图片", help: "编辑副本，保留历史原件", indices: indices) { index in
+                        feature.editImage(entry.id, itemIndex: index)
                     }
                 }
                 WorkspaceIconButton(
@@ -283,6 +303,32 @@ enum ClipboardImageZoom: Equatable, Sendable {
                 }
             }
         }
+    }
+
+    private func previewMultiImageActionMenu(
+        symbol: String,
+        label: String,
+        help: String,
+        indices: [Int],
+        action: @escaping (Int) -> Void
+    ) -> some View {
+        Menu {
+            ForEach(Array(indices.enumerated()), id: \.element) { offset, index in
+                Button(String(format: L("图片 %d"), offset + 1)) { action(index) }
+            }
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .regular))
+                .frame(width: 26, height: 26)
+                .contentShape(Circle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(imageEditing.isPreparing)
+        .opacity(imageEditing.isPreparing ? 0.4 : 1)
+        .help(L(help))
+        .accessibilityLabel(L(label))
     }
 
     private var canvas: some View {
