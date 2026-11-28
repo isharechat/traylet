@@ -32,15 +32,7 @@ struct TranslationConfigurationView: View {
     }
     var body: some View {
         Form {
-            Section(L("翻译引擎")) {
-                engineRow(configuration.engine)
-                configurationRows(configuration.engine)
-                ForEach(configuration.sortableEngines) { engine in
-                    engineRow(engine)
-                        .onDrop(of: [.text], delegate: EngineDropDelegate(target: engine, configuration: configuration, dragging: $dragging))
-                    configurationRows(engine)
-                }
-            }
+            TranslationLanguagePackSettings(controller: languagePacks)
             Section(L("翻译窗口")) {
                 LabeledContent(L("显示引擎图标")) {
                     HStack(spacing: 6) {
@@ -50,7 +42,15 @@ struct TranslationConfigurationView: View {
                     .help(L("翻译窗口会按此数量加宽最小宽度，保证最小窗口下图标全部可见；超出个数的引擎不显示。"))
                 }
             }
-            TranslationLanguagePackSettings(controller: languagePacks)
+            Section(L("翻译引擎")) {
+                engineRow(configuration.engine)
+                configurationRows(configuration.engine)
+                ForEach(configuration.sortableEngines) { engine in
+                    engineRow(engine)
+                        .onDrop(of: [.text], delegate: EngineDropDelegate(target: engine, configuration: configuration, dragging: $dragging))
+                    configurationRows(engine)
+                }
+            }
             if configuration.storageIssue != nil || configuration.storageRecoveryNotice != nil {
                 Section {
                     if let issue = configuration.storageIssue {
@@ -83,7 +83,7 @@ struct TranslationConfigurationView: View {
             Button(L("取消"), role: .cancel) { configuration.cancelStorageRecovery() }
             Button(L("备份并恢复")) { configuration.confirmStorageRecovery() }
         } message: {
-            Text(L("将保留当前 v2 配置文件的独立备份，恢复系统翻译默认值，并清除钥匙串中的 API Key。不会读取或修改旧版本配置或其他数据。"))
+            Text(L("将保留当前 v2 配置文件的独立备份，恢复系统翻译默认值，并清除本机加密保存的 API Key。不会读取或修改旧版本配置或其他数据。"))
         }
     }
     /// Checkbox, icon and name, then the configure pill and a drag handle; the pinned default shows a badge instead of the handle.
@@ -166,7 +166,7 @@ struct TranslationConfigurationView: View {
         .onChange(of: configuration.feedback(for: .models)) { _, feedback in
             if case .success? = feedback, !configuration.models.isEmpty { showsModelPicker = true }
         }
-        SecureField(L("API Key"), text: debouncedBinding($credentialDraft), prompt: Text(L("保存在 macOS 钥匙串")))
+        SecureField(L("API Key"), text: debouncedBinding($credentialDraft), prompt: Text(L("本机加密保存")))
             .onSubmit { flushDrafts() }
         DisclosureGroup(L("自定义提示词"), isExpanded: $promptExpanded) {
             VStack(alignment: .leading, spacing: 6) {
@@ -219,7 +219,7 @@ struct TranslationConfigurationView: View {
         }
     }
     @ViewBuilder private var deeplConfiguration: some View {
-        SecureField(L("API Key"), text: debouncedBinding($deeplKeyDraft), prompt: Text(L("保存在 macOS 钥匙串")))
+        SecureField(L("API Key"), text: debouncedBinding($deeplKeyDraft), prompt: Text(L("本机加密保存")))
             .onSubmit { flushDrafts() }
         HStack {
             Spacer()

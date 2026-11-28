@@ -20,5 +20,5 @@
 | [架构与模块](development/architecture.md) | 代码结构、模块职责、共享边界与本地测试命令 |
 | [原生界面与设计规范](development/design.md) | SwiftUI / AppKit 原生交互、Liquid Glass 材质与无障碍规范 |
 | [交互原型](prototype/index.html) | 1:1 展示当前 6 大功能界面的可交互 HTML 原型 |
-| [数据与隐私](development/privacy.md) | 本机离线处理、外部请求边界、钥匙串凭据与系统权限 |
+| [数据与隐私](development/privacy.md) | 本机离线处理、外部请求边界、本机加密凭据与系统权限 |
 | [构建、打包与发布](development/packaging.md) | 源码构建、签名公证、双通道 CI、本地交付与自动更新 |

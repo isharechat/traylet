@@ -106,7 +106,7 @@ enum TranslationActionFeedback: Equatable, Sendable {
                 }
             } catch { storageIssue = "新版本翻译设置无法读取；当前使用默认值，原文件保留。" }
         }
-        // Secrets are intentionally kept out of the preferences JSON; the Keychain holds them when a store is supplied.
+        // Secrets are intentionally kept out of the preferences JSON; the local encrypted credential store holds them when supplied.
         if let credentialStore {
             credential = credentialStore.read(.aiAPIKey) ?? ""
             deeplKey = credentialStore.read(.deeplAPIKey) ?? ""
@@ -231,7 +231,7 @@ enum TranslationActionFeedback: Equatable, Sendable {
         } catch { storageIssue = "翻译设置保存失败；当前更改仅保留在内存。" }
     }
 
-    /// Writes only when a secret actually changed, so typing a key does not hit the Keychain per keystroke.
+    /// Writes only when a secret actually changed, so typing a key does not hit the local encrypted credential store per keystroke.
     private func persistCredentials() {
         guard let credentialStore else { return }
         if credential != lastPersistedCredential {

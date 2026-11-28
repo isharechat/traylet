@@ -193,10 +193,45 @@ import Testing
         await feature.shutdownAndWait()
     }
 
+    @Test func detailPanelMatchesListWindowSizeInitiallyAndOnResize() async throws {
+        #expect(ClipboardFeature.detailWidth == ClipboardFeature.windowWidth)
+        #expect(ClipboardFeature.detailHeight == ClipboardFeature.windowHeight)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("traylet-clipboard-detail-size-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        _ = NSApplication.shared
+        var capturedMainPanel: NSPanel?
+        let source = MemoryClipboardSource()
+        let feature = ClipboardFeature(directory: directory, source: source, writer: MemoryClipboardWriter(),
+                                       presentWindow: { capturedMainPanel = $0 }, dismissWindow: { _ in })
+        await feature.start(poll: false)
+        source.value = .init(generation: 1, items: [.text("detail size sample")], application: "test.app")
+        await feature.controller.refresh()
+        let id = try #require(feature.controller.entries.first?.id)
+        feature.present()
+        let mainPanel = try #require(capturedMainPanel)
+        let detail = try #require(feature.detailPanelForTesting)
+        #expect(detail.frame.size == mainPanel.frame.size)
+        feature.controller.selectedID = id
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(detail.frame.size == mainPanel.frame.size)
+        mainPanel.setFrame(NSRect(origin: mainPanel.frame.origin, size: NSSize(width: 460, height: 580)), display: false)
+        #expect(detail.frame.size == mainPanel.frame.size)
+        #expect(detail.frame.size == NSSize(width: 460, height: 580))
+        detail.setFrame(NSRect(origin: detail.frame.origin, size: NSSize(width: 420, height: 540)), display: false)
+        #expect(mainPanel.frame.size == detail.frame.size)
+        #expect(mainPanel.frame.size == NSSize(width: 420, height: 540))
+        await feature.shutdownAndWait()
+    }
+
     @Test func clipboardStorageCopyRemovesEncryptionWording() {
         #expect(English.strings["历史始终保存在本机"] == "History is always saved locally")
         #expect(English.strings["按设置的数量与期限清理。"] == "Pruned by the configured count and retention period.")
-        for (source, translation) in English.strings {
+        let allowedEncryptedCredentialCopy: Set<String> = [
+            "本机加密保存",
+            "将保留当前 v2 配置文件的独立备份，恢复系统翻译默认值，并清除本机加密保存的 API Key。不会读取或修改旧版本配置或其他数据。",
+            "将保留当前 v2 配置文件的独立备份，恢复默认 OCR 设置，并清除本机加密保存的 OCR API Key。"
+        ]
+        for (source, translation) in English.strings where !allowedEncryptedCredentialCopy.contains(source) {
             #expect(!source.contains("加密"))
             #expect(!translation.localizedCaseInsensitiveContains("encrypt"))
         }

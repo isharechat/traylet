@@ -16,7 +16,7 @@
 
 ## 凭据与本地存储
 
-- **钥匙串存储**：AI 翻译、DeepL 与 AI OCR 的 API Key 均存储在 macOS 钥匙串中，不写入明文配置文件；在设置中恢复默认设置时一并清除。
+- **本机加密凭据库**：AI 翻译、DeepL 与 AI OCR 的 API Key 使用 AES-256-GCM 加密保存在 `~/Library/Application Support/Traylet/v2/credentials.enc`（密钥由随机密钥材料经 HKDF-SHA256 绑定本机硬件 UUID 与当前用户 UID 派生，文件权限限制为 `0600`），不写入明文配置文件；在设置中恢复默认设置时一并清除。
 - **应用数据目录**：所有本机配置与归档统一存放于 `~/Library/Application Support/Traylet/v2/`（包括剪贴板归档 `clipboard` 与独立 OCR 配置 `ocr.json`）。
 - **剪贴板采集边界**：应用启动时建立 `changeCount` 基线，仅记录运行期间新复制的受支持内容，不补录启动前内容，退出应用即停止；普通历史与收藏以未加密形式保存在本机归档中。
 

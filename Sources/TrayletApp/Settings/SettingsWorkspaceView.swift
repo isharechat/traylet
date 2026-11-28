@@ -101,41 +101,20 @@ import SwiftUI
             // plane in solid mode); the Divider is the only seam between them.
     }
     private var detail: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Image(systemName: navigation.current.symbol)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 26, height: 26)
-                    .background(navigation.current.tint.gradient, in: RoundedRectangle(cornerRadius: Design.Radius.badge + 1))
-                    .shadow(color: navigation.current.tint.opacity(0.25), radius: 3, y: 1)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(navigation.current.title(english: english))
-                        .font(.title3.weight(.semibold))
-                        .accessibilityAddTraits(.isHeader)
-                    Text(navigation.current.subtitle(english: english))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
+        Group {
+            switch navigation.current {
+            case .general: general
+            case .shortcuts: shortcutSettings
+            case .ocr: OCRConfigurationView(configuration: ocr)
+            case .translation: TranslationConfigurationView(configuration: translation, languagePacks: languagePacks)
+            case .clipboard: ClipboardFeatureSettingsView(feature: clipboard)
+            case .permissions: PermissionsSettingsView(status: permissionStatus, actions: actions)
+            case .about: about
             }
-            .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 6)
-            Group {
-                switch navigation.current {
-                case .general: general
-                case .shortcuts: shortcutSettings
-                case .ocr: OCRConfigurationView(configuration: ocr)
-                case .translation: TranslationConfigurationView(configuration: translation, languagePacks: languagePacks)
-                case .clipboard: ClipboardFeatureSettingsView(feature: clipboard)
-                case .permissions: PermissionsSettingsView(status: permissionStatus, actions: actions)
-                case .about: about
-                }
-            }
-            .formStyle(.grouped).scrollContentBackground(.hidden).toggleStyle(.switch)
-            .id(navigation.current)
-        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .formStyle(.grouped).scrollContentBackground(.hidden).toggleStyle(.switch)
+        .id(navigation.current)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     private var general: some View {
         Form {

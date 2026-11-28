@@ -23,17 +23,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .about: english ? "About" : "关于"
         }
     }
-    func subtitle(english: Bool) -> String {
-        switch self {
-        case .general: english ? "Language, appearance, and window surface" : "语言、外观与窗口材质"
-        case .shortcuts: english ? "Global keyboard shortcuts for quick capture and tools" : "全局快捷键与触发组合"
-        case .ocr: english ? "Local Vision and AI text recognition" : "本机文本识别与 AI 模式配置"
-        case .translation: english ? "Default engine, credentials, and offline language packs" : "翻译引擎、凭据与离线语言包"
-        case .clipboard: english ? "History retention, capture types, and excluded apps" : "历史容量、记录类型与排除应用"
-        case .permissions: english ? "Screen recording, accessibility, and launch at login" : "屏幕录制、辅助功能与开机启动"
-        case .about: english ? "Version details, updates, and notices" : "版本信息、软件更新与声明"
-        }
-    }
 }
 
 enum SettingsSectionGroup: CaseIterable, Identifiable {

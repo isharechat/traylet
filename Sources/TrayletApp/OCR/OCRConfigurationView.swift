@@ -75,7 +75,7 @@ struct OCRConfigurationView: View {
             Button(L("取消"), role: .cancel) { configuration.cancelStorageRecovery() }
             Button(L("备份并恢复")) { configuration.confirmStorageRecovery() }
         } message: {
-            Text(L("将保留当前 v2 配置文件的独立备份，恢复默认 OCR 设置，并清除钥匙串中的 OCR API Key。"))
+            Text(L("将保留当前 v2 配置文件的独立备份，恢复默认 OCR 设置，并清除本机加密保存的 OCR API Key。"))
         }
     }
 
@@ -142,7 +142,7 @@ struct OCRConfigurationView: View {
         .onChange(of: configuration.feedback(for: .models)) { _, feedback in
             if case .success? = feedback, !configuration.models.isEmpty { showsModelPicker = true }
         }
-        SecureField(L("API Key"), text: debouncedBinding($credentialDraft), prompt: Text(L("保存在 macOS 钥匙串")))
+        SecureField(L("API Key"), text: debouncedBinding($credentialDraft), prompt: Text(L("本机加密保存")))
             .onSubmit { flushDrafts() }
         Picker(L("默认模式"), selection: $configuration.preset) {
             ForEach(OCRAIPreset.allCases) { preset in

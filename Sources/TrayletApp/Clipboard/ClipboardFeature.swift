@@ -9,8 +9,8 @@ import UniformTypeIdentifiers
     static let windowHeight: CGFloat = 500
     static let minimumWidth: CGFloat = 340
     static let minimumHeight: CGFloat = 380
-    static let detailWidth: CGFloat = 380
-    static let detailHeight: CGFloat = 460
+    static let detailWidth: CGFloat = windowWidth
+    static let detailHeight: CGFloat = windowHeight
     let controller: ClipboardController
     let imageEditing: ClipboardImageEditing
     let storageDirectory: URL
@@ -34,7 +34,10 @@ import UniformTypeIdentifiers
     private var detailHosting: NSHostingView<AnyView>?
     private var detailDismissal: NSObjectProtocol?
     private var detailResignObservation: NSObjectProtocol?
+    private var detailResizeObservation: NSObjectProtocol?
+    private var detailEndLiveResizeObservation: NSObjectProtocol?
     private var focusObservations: [NSObjectProtocol] = []
+    private var syncingPanelSize = false
     @Published private(set) var isWindowFocused = false
     private(set) var renderedDetailID: UUID?
     private let preferences: Task<Void, Never>
@@ -159,10 +162,16 @@ import UniformTypeIdentifiers
                 }
             }
             mainMoveObservation = NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: window, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.positionDetailPanel() }
+                MainActor.assumeIsolated {
+                    guard let self, !self.syncingPanelSize else { return }
+                    self.positionDetailPanel()
+                }
             }
             mainResizeObservation = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.positionDetailPanel() }
+                MainActor.assumeIsolated {
+                    guard let self, !self.syncingPanelSize else { return }
+                    self.positionDetailPanel()
+                }
             }
             for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
                 focusObservations.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
@@ -190,7 +199,7 @@ import UniformTypeIdentifiers
     }
     /// Builds the companion popup once with the same glass backing as the list window, without titlebar buttons.
     private func ensureDetailPanel() {
-        guard detailPanel == nil, panel != nil else { return }
+        guard detailPanel == nil, let mainPanel = panel else { return }
         let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: Self.detailWidth, height: Self.detailHeight), styleMask: [.titled, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
         window.title = L("剪贴板详情")
         window.minSize = NSSize(width: Self.minimumWidth, height: Self.minimumHeight)
@@ -205,10 +214,25 @@ import UniformTypeIdentifiers
         hosting.layoutSubtreeIfNeeded()
         detailHosting = hosting
         detailPanel = window
+        if window.frame.size != mainPanel.frame.size {
+            window.setFrame(NSRect(origin: window.frame.origin, size: mainPanel.frame.size), display: false)
+        }
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
             focusObservations.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refreshWindowFocus() }
             })
+        }
+        detailResizeObservation = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { [weak self, weak window] _ in
+            MainActor.assumeIsolated {
+                guard let self, let window, !self.syncingPanelSize, !window.inLiveResize else { return }
+                self.syncListPanelSizeToDetail()
+            }
+        }
+        detailEndLiveResizeObservation = NotificationCenter.default.addObserver(forName: NSWindow.didEndLiveResizeNotification, object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.syncingPanelSize else { return }
+                self.syncListPanelSizeToDetail()
+            }
         }
         detailDismissal = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -237,10 +261,12 @@ import UniformTypeIdentifiers
             return
         }
         ensureDetailPanel()
+        syncingPanelSize = true
         // Re-render synchronously for the current selection before the popup appears, so it can never show an empty or stale frame.
         detailHosting?.rootView = AnyView(ClipboardDetailView(feature: self).id(entry.id))
         renderedDetailID = entry.id
         detailHosting?.layoutSubtreeIfNeeded()
+        syncingPanelSize = false
         positionDetailPanel()
         if let panel, let detailPanel, detailPanel.parent !== panel {
             panel.addChildWindow(detailPanel, ordered: .above)
@@ -253,13 +279,13 @@ import UniformTypeIdentifiers
     private func refreshWindowFocus() {
         isWindowFocused = (panel?.isKeyWindow == true) || (detailPanel?.isKeyWindow == true)
     }
-    /// Places the detail popup to the right of the list window, falling back to the left when the right edge has no room.
+    /// Places the detail popup to the right of the list window at the same size, falling back to the left when the right edge has no room.
     private func positionDetailPanel() {
         guard let panel, let detailPanel else { return }
         let gap: CGFloat = 8
-        let size = detailPanel.frame.size
         let mainFrame = panel.frame
-        var origin = NSPoint(x: mainFrame.maxX + gap, y: mainFrame.midY - size.height / 2)
+        let size = mainFrame.size
+        var origin = NSPoint(x: mainFrame.maxX + gap, y: mainFrame.minY)
         if let screen = panel.screen ?? NSScreen.main {
             let visible = screen.visibleFrame
             if mainFrame.maxX + gap + size.width > visible.maxX {
@@ -268,7 +294,30 @@ import UniformTypeIdentifiers
             }
             origin.y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
         }
-        detailPanel.setFrameOrigin(origin)
+        let targetFrame = NSRect(origin: origin, size: size)
+        guard detailPanel.frame != targetFrame else { return }
+        syncingPanelSize = true
+        defer { syncingPanelSize = false }
+        detailPanel.setFrame(targetFrame, display: detailPanel.isVisible)
+    }
+    private func syncListPanelSizeToDetail() {
+        guard let panel, let detailPanel, !shuttingDown else { return }
+        let targetSize = detailPanel.frame.size
+        if panel.frame.size != targetSize {
+            var mainFrame = panel.frame
+            let top = mainFrame.maxY
+            mainFrame.size = targetSize
+            mainFrame.origin.y = top - targetSize.height
+            if let screen = panel.screen ?? NSScreen.main {
+                let visible = screen.visibleFrame
+                mainFrame.origin.x = min(max(mainFrame.origin.x, visible.minX), max(visible.minX, visible.maxX - mainFrame.width))
+                mainFrame.origin.y = min(max(mainFrame.origin.y, visible.minY), max(visible.minY, visible.maxY - mainFrame.height))
+            }
+            syncingPanelSize = true
+            defer { syncingPanelSize = false }
+            panel.setFrame(mainFrame, display: panel.isVisible)
+        }
+        positionDetailPanel()
     }
     var showsDetail: Bool { controller.selectedEntry != nil }
     var isDetailPanelBuilt: Bool { detailPanel != nil }

@@ -5,6 +5,7 @@ import Darwin
 struct TranslationConfigurationStore {
     let url: URL
     var maxBytes: Int = 64 * 1024
+    var temporaryPrefix: String = ".translation-"
     private enum StorageFailure: Error { case unsafePath, io }
 
     func read() throws -> Data? {
@@ -26,7 +27,7 @@ struct TranslationConfigurationStore {
         guard let directory = try directory(create: true) else { throw StorageFailure.io }
         defer { Darwin.close(directory) }
         _ = try hasRegularFile(directory, name: url.lastPathComponent)
-        let temporary = ".translation-\(UUID().uuidString).tmp"
+        let temporary = "\(temporaryPrefix)\(UUID().uuidString).tmp"
         let file = openat(directory, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
         guard file >= 0 else { throw StorageFailure.io }
         defer { Darwin.close(file); unlinkat(directory, temporary, 0) }
@@ -56,6 +57,15 @@ struct TranslationConfigurationStore {
             throw StorageFailure.io // Original is restored when possible; otherwise its unique backup remains.
         }
         return backup.map { url.deletingLastPathComponent().appendingPathComponent($0) }
+    }
+
+    func remove() throws {
+        guard let directory = try directory(create: false) else { return }
+        defer { Darwin.close(directory) }
+        guard try hasRegularFile(directory, name: url.lastPathComponent) else { return }
+        if unlinkat(directory, url.lastPathComponent, 0) != 0 && errno != ENOENT {
+            throw StorageFailure.io
+        }
     }
 
     private func hasRegularFile(_ directory: Int32, name: String) throws -> Bool {

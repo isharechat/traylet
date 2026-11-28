@@ -1,5 +1,4 @@
 import Foundation
-import Security
 
 @MainActor protocol OCRCredentialStoring: AnyObject {
     func read() -> String?
@@ -7,24 +6,30 @@ import Security
     func remove()
 }
 
-/// macOS Keychain backing for OCR-specific AI API keys.
-final class KeychainOCRCredentialStore: OCRCredentialStoring {
-    private let storage: KeychainGenericPassword
+/// Local AES-256-GCM encrypted credential store for OCR-specific AI API keys.
+@MainActor final class LocalOCRCredentialStore: OCRCredentialStoring {
+    private let vault: LocalEncryptedCredentialVault
+    private let service: String
     private let account = "ocr-ai-api-key"
 
-    init(service: String = "local.traylet.app.ocr") {
-        self.storage = KeychainGenericPassword(service: service)
+    convenience init(directory: URL, service: String = "local.traylet.app.ocr") {
+        self.init(vault: LocalEncryptedCredentialVault(directory: directory), service: service)
+    }
+
+    init(vault: LocalEncryptedCredentialVault, service: String = "local.traylet.app.ocr") {
+        self.vault = vault
+        self.service = service
     }
 
     func read() -> String? {
-        storage.read(account: account)
+        vault.read(service: service, account: account)
     }
 
     func write(_ value: String) {
-        storage.write(value, account: account)
+        vault.write(value, service: service, account: account)
     }
 
     func remove() {
-        storage.remove(account: account)
+        vault.remove(service: service, account: account)
     }
 }

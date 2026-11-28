@@ -34,7 +34,7 @@ assets/brand/      应用图标与品牌矢量资产
 
 - **Application**：管理状态栏菜单、全局快捷键、权限失效重授权提醒与 GitHub Releases SHA-256 更新检查，负责各功能模块的桥接跳转。
 - **Capture & Editing**：捕获区域或整屏图像后交由 `EditingSession` 维护选区、标注对象与撤销栈。预览与导出共用同一合成管线，仅由明确用户动作触发复制、保存、翻译、OCR 或悬浮置顶。
-- **OCR**：独立管理识别结果与原图预览，支持本机 Vision 与 OpenAI 兼容 AI OCR（配置独立存于 `~/Library/Application Support/Traylet/v2/ocr.json` 与钥匙串），切换引擎时自动清空旧结果并重新识别。
+- **OCR**：独立管理识别结果与原图预览，支持本机 Vision 与 OpenAI 兼容 AI OCR（配置独立存于 `~/Library/Application Support/Traylet/v2/ocr.json`，凭据经 AES-256-GCM 加密存于同目录 `credentials.enc`），切换引擎时自动清空旧结果并重新识别。
 - **Translation**：维护输入版本、语种方向、服务配置与请求身份；输入或配置变更立即使在途请求失效。Apple 系统翻译会话绑定于对应 SwiftUI `translationTask` 宿主生命周期。
 - **Clipboard**：启动时记录系统剪贴板 `changeCount` 基线，仅采集运行期间的新内容并写入 `~/Library/Application Support/Traylet/v2/clipboard`，退出时停止。
 - **Shared & Settings**：提供 `Design` 尺寸令牌、`GlassSurface` / `GlassWindowBacking` 材质适配以及基于 macOS 原生流程的权限检查与引导。

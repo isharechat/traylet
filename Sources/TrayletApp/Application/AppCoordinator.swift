@@ -42,8 +42,9 @@ import TrayletCore
     }
     init(directory: URL = AppCoordinator.dataRoot) {
         let preferences = PreferencesStore(file: directory.appendingPathComponent("preferences.json"))
+        let credentialVault = LocalEncryptedCredentialVault(directory: directory)
         let configuration = TranslationConfiguration(storageURL: directory.appendingPathComponent("translation.json"),
-                                                     credentialStore: KeychainTranslationCredentialStore())
+                                                     credentialStore: LocalTranslationCredentialStore(vault: credentialVault))
         let shortcuts = ShortcutManager(preferences: preferences, driver: TransactionalShortcutDriver(), unavailable: KeyChord.unavailableReason)
         // Recording is always on for the whole run; there is no user on/off or pause. It stops only on quit.
         let clipboard = ClipboardFeature(directory: directory.appendingPathComponent("clipboard", isDirectory: true), autoStart: true)
@@ -60,7 +61,7 @@ import TrayletCore
         self.translation = translation
         let ocrConfiguration = OCRConfiguration(
             storageURL: directory.appendingPathComponent("ocr.json"),
-            credentialStore: KeychainOCRCredentialStore()
+            credentialStore: LocalOCRCredentialStore(vault: credentialVault)
         )
         let ocr = OCRController(configuration: ocrConfiguration)
         self.ocr = ocr
