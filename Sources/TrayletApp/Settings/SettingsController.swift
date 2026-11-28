@@ -13,7 +13,8 @@ import Combine
     private let translation: TranslationConfiguration
     private let clipboard: ClipboardFeature
     private let localization: Localization
-    private let presentWindow: (NSWindow) -> Void
+    private let regularWindows: RegularWindowSession?
+    private let presentWindow: @MainActor (NSWindow) -> Void
     private let onRequestQuitForUpdate: @MainActor () -> Void
     private var window: NSWindow?
     private var backing: GlassWindowBacking?
@@ -26,9 +27,11 @@ import Combine
          login: any LoginItemManaging = SystemLoginItem(),
          actions: SettingsActions? = nil,
          updater: UpdateController? = nil,
+         regularWindows: RegularWindowSession? = nil,
          onRequestQuitForUpdate: @MainActor @escaping () -> Void = { NSApp.terminate(nil) },
-         presentWindow: @escaping (NSWindow) -> Void = { window in window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }) {
+         presentWindow: @MainActor @escaping (NSWindow) -> Void = RegularWindowSession.showStandardWindow) {
         self.preferences = preferences; self.shortcuts = shortcuts; self.ocr = ocr; self.translation = translation; self.clipboard = clipboard; self.localization = localization
+        self.regularWindows = regularWindows
         self.presentWindow = presentWindow
         self.onRequestQuitForUpdate = onRequestQuitForUpdate
         let resolvedActions = actions ?? SettingsActions(preferences: preferences, login: login)
@@ -52,7 +55,7 @@ import Combine
         if window == nil {
             let created = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 650), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
             created.title = windowTitle; created.minSize = NSSize(width: 560, height: 420)
-            created.isReleasedWhenClosed = false; created.hidesOnDeactivate = false; created.delegate = self
+            created.isReleasedWhenClosed = false; created.hidesOnDeactivate = false; created.level = .normal; created.delegate = self
             let hosting = NSHostingView(rootView: SettingsWorkspaceView(preferences: preferences, shortcuts: shortcuts, ocr: ocr, translation: translation, languagePacks: languagePacks, clipboard: clipboard, navigation: navigation, actions: actions, updater: updater, onRequestQuitForUpdate: onRequestQuitForUpdate, localization: localization))
             created.appearance = Self.appearance(preferences.value.appearance)
             backing = GlassWindowBacking(window: created, content: hosting)
@@ -60,10 +63,19 @@ import Combine
         }
         actions.refreshLoginStatus()
         navigation.navigate(to: section)
-        if let window { presentWindow(window) }
+        if let window {
+            if let regularWindows {
+                regularWindows.present(window, kind: .settings, show: presentWindow)
+            } else {
+                presentWindow(window)
+            }
+        }
     }
     func close() { shortcuts.cancel(); ocr.cancel(); translation.cancel(); languagePacks.cancel(); window?.close() }
-    func windowWillClose(_ notification: Notification) { shortcuts.cancel(); ocr.cancel(); translation.cancel(); languagePacks.cancel() }
+    func windowWillClose(_ notification: Notification) {
+        shortcuts.cancel(); ocr.cancel(); translation.cancel(); languagePacks.cancel()
+        regularWindows?.markClosed(.settings)
+    }
     func windowDidResignKey(_ notification: Notification) {
         // A conflict alert may take key focus; preserve its three explicit choices.
         if shortcuts.conflict == nil { shortcuts.cancel() }

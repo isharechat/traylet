@@ -24,6 +24,7 @@ import Combine
     @Published private(set) var settings: ClipboardSettings
     @Published var query = "" { didSet { if query != oldValue { visibleEntriesCache = nil; reconcileVisibleSelection() } } }
     @Published var favoritesOnly = false { didSet { if favoritesOnly != oldValue { visibleEntriesCache = nil; reconcileVisibleSelection() } } }
+    @Published var kindFilter: ClipboardKindFilter = .all { didSet { if kindFilter != oldValue { visibleEntriesCache = nil; reconcileVisibleSelection() } } }
     @Published var selectedID: UUID?
     @Published private(set) var pendingDeletionID: UUID?
     @Published private(set) var message: String?
@@ -63,9 +64,13 @@ import Combine
     }
     private var visibleEntriesCache: [ClipboardEntry]?
     var filteredEntries: [ClipboardEntry] {
-        guard favoritesOnly || !query.isEmpty else { return entries }
+        guard favoritesOnly || kindFilter != .all || !query.isEmpty else { return entries }
         if let visibleEntriesCache { return visibleEntriesCache }
-        let visible = entries.filter { (!favoritesOnly || $0.favorite) && (query.isEmpty || display($0).text.localizedCaseInsensitiveContains(query) || $0.application.localizedCaseInsensitiveContains(query)) }
+        let visible = entries.filter {
+            (!favoritesOnly || $0.favorite)
+            && kindFilter.matches(display($0).kind)
+            && (query.isEmpty || display($0).text.localizedCaseInsensitiveContains(query) || $0.application.localizedCaseInsensitiveContains(query))
+        }
         visibleEntriesCache = visible
         return visible
     }
@@ -250,7 +255,7 @@ import Combine
     /// Reorders the complete favorite set. A failed save keeps the intended order in memory.
     @discardableResult func reorderFavorites(_ ids: [UUID]) async -> Bool {
         let current = orderedFavoriteIDs
-        guard favoritesLoaded, query.isEmpty, ids.count == current.count, Set(ids).count == ids.count, Set(ids) == Set(current) else { return false }
+        guard favoritesLoaded, query.isEmpty, kindFilter == .all, ids.count == current.count, Set(ids).count == ids.count, Set(ids) == Set(current) else { return false }
         if ids == current {
             guard favoritesNeedPersistence else { return true }
             let saved = await persistFavorites()

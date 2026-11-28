@@ -21,6 +21,8 @@ import UniformTypeIdentifiers
     private var imageObservations: Set<AnyCancellable> = []
     private let presentWindow: (NSPanel) -> Void
     private let dismissWindow: (NSPanel) -> Void
+    private let presentPreviewWindow: (NSPanel) -> Void
+    private let dismissPreviewWindow: (NSPanel) -> Void
     private weak var searchField: NSTextField?
     private var wantsSearchFocus = false
     private var panel: NSPanel?
@@ -29,6 +31,7 @@ import UniformTypeIdentifiers
     private var closeObservation: NSObjectProtocol?
     private var mainMoveObservation: NSObjectProtocol?
     private var mainResizeObservation: NSObjectProtocol?
+    private var appResignObservation: NSObjectProtocol?
     private var detailPanel: NSPanel?
     private var detailBacking: GlassWindowBacking?
     private var detailHosting: NSHostingView<AnyView>?
@@ -36,9 +39,15 @@ import UniformTypeIdentifiers
     private var detailResignObservation: NSObjectProtocol?
     private var detailResizeObservation: NSObjectProtocol?
     private var detailEndLiveResizeObservation: NSObjectProtocol?
+    private var imagePreviewPanel: NSPanel?
+    private var imagePreviewBacking: GlassWindowBacking?
+    private var imagePreviewHosting: NSHostingView<AnyView>?
+    private var imagePreviewCloseObservation: NSObjectProtocol?
+    private var imagePreviewResignObservation: NSObjectProtocol?
     private var focusObservations: [NSObjectProtocol] = []
     private var syncingPanelSize = false
     @Published private(set) var isWindowFocused = false
+    @Published private(set) var previewedImageEntryID: UUID?
     private(set) var renderedDetailID: UUID?
     private let preferences: Task<Void, Never>
     private var pendingMutations: [UUID: Task<Void, Never>] = [:]
@@ -47,21 +56,32 @@ import UniformTypeIdentifiers
     init(directory: URL, source: (any ClipboardSource)? = nil, writer: (any ClipboardWriting)? = nil, archive: (any ClipboardArchiving)? = nil, clock: @escaping () -> Date = Date.init,
          imageEditing: ClipboardImageEditing = ClipboardImageEditing(), autoStart: Bool = false,
          presentWindow: @escaping (NSPanel) -> Void = { window in window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) },
-         dismissWindow: @escaping (NSPanel) -> Void = { $0.orderOut(nil) }) {
+         dismissWindow: @escaping (NSPanel) -> Void = { $0.orderOut(nil) },
+         presentPreviewWindow: @escaping (NSPanel) -> Void = { window in window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) },
+         dismissPreviewWindow: @escaping (NSPanel) -> Void = { $0.orderOut(nil) }) {
         let controller = ClipboardController(source: source ?? ClipboardNativeSource(), writer: writer ?? ClipboardNativeWriter(), archive: archive ?? ClipboardArchive(directory: directory), clock: clock)
         self.controller = controller
         self.imageEditing = imageEditing
         self.storageDirectory = directory
         self.presentWindow = presentWindow; self.dismissWindow = dismissWindow
+        self.presentPreviewWindow = presentPreviewWindow; self.dismissPreviewWindow = dismissPreviewWindow
         preferences = Task { await controller.loadPreferences() }
         controller.$query.removeDuplicates().dropFirst().sink { [weak imageEditing] _ in imageEditing?.cancel() }.store(in: &imageObservations)
         controller.$favoritesOnly.removeDuplicates().dropFirst().sink { [weak imageEditing] _ in imageEditing?.cancel() }.store(in: &imageObservations)
+        controller.$kindFilter.removeDuplicates().dropFirst().sink { [weak imageEditing] _ in imageEditing?.cancel() }.store(in: &imageObservations)
         controller.$selectedID.removeDuplicates().dropFirst().sink { [weak imageEditing] _ in imageEditing?.cancel() }.store(in: &imageObservations)
         controller.$selectedID.removeDuplicates().dropFirst().sink { [weak self] _ in
             // `@Published` fires during `willSet`, before `selectedID` is stored, so read the new selection on the next actor turn.
             Task { @MainActor [weak self] in self?.syncDetailPanel() }
         }.store(in: &imageObservations)
-        controller.$entries.sink { [weak imageEditing] in imageEditing?.validate(entries: $0) }.store(in: &imageObservations)
+        controller.$entries.sink { [weak self, weak imageEditing] entries in
+            imageEditing?.validate(entries: entries)
+            Task { @MainActor [weak self] in
+                guard let self, let previewID = self.previewedImageEntryID,
+                      !self.controller.entries.contains(where: { $0.id == previewID }) else { return }
+                self.closeImagePreview(restoreListFocus: false)
+            }
+        }.store(in: &imageObservations)
         // The application records for the whole run with no user on/off or pause; it passes autoStart to begin collecting here.
         if autoStart { Task { await start(poll: true) } }
     }
@@ -86,9 +106,48 @@ import UniformTypeIdentifiers
         dismissing = true
         defer { dismissing = false }
         imageEditing.cancel()
+        closeImagePreview(restoreListFocus: false)
         isWindowFocused = false
         hideDetailPanel()
         if let panel { dismissWindow(panel) }
+        controller.kindFilter = .all
+    }
+    var isImagePreviewOpen: Bool { previewedImageEntryID != nil }
+    var imagePreviewPanelForTesting: NSPanel? { imagePreviewPanel }
+    func canDismissOnResignKey() -> Bool { !isImagePreviewOpen }
+    func openImagePreview(_ id: UUID) {
+        guard !shuttingDown,
+              let entry = controller.filteredEntries.first(where: { $0.id == id }),
+              let data = entry.imageData else { return }
+        controller.selectedID = id
+        previewedImageEntryID = id
+        ensureImagePreviewPanel()
+        guard let preview = imagePreviewPanel else { return }
+        let targetSize = Self.preferredPreviewSize(for: data, relativeTo: panel)
+        if !preview.isVisible {
+            preview.setContentSize(targetSize)
+            Self.centerPreviewPanel(preview, relativeTo: panel)
+        }
+        imagePreviewHosting?.rootView = AnyView(ClipboardImagePreviewView(feature: self, entry: entry).id(entry.id))
+        imagePreviewHosting?.layoutSubtreeIfNeeded()
+        refreshTitle()
+        presentPreviewWindow(preview)
+        refreshWindowFocus()
+    }
+    func openSelectedImagePreview() {
+        guard let entry = controller.selectedEntry, entry.imageData != nil else { return }
+        openImagePreview(entry.id)
+    }
+    func closeImagePreview(restoreListFocus: Bool = true) {
+        let wasOpen = previewedImageEntryID != nil || imagePreviewPanel?.isVisible == true
+        previewedImageEntryID = nil
+        if let imagePreviewPanel {
+            dismissPreviewWindow(imagePreviewPanel)
+        }
+        if wasOpen && restoreListFocus, let panel, panel.isVisible {
+            presentWindow(panel)
+        }
+        refreshWindowFocus()
     }
     /// Explicit image action, separate from Return/double-click's original-format copy.
     @discardableResult func editImage(_ id: UUID, itemIndex: Int) -> Task<Void, Never>? {
@@ -121,7 +180,7 @@ import UniformTypeIdentifiers
     }
     @discardableResult func moveFavorites(from offsets: IndexSet, to destination: Int) async -> Bool {
         var ids = controller.orderedFavoriteIDs
-        guard !shuttingDown, controller.query.isEmpty, !offsets.isEmpty, offsets.allSatisfy(ids.indices.contains),
+        guard !shuttingDown, controller.query.isEmpty, controller.kindFilter == .all, !offsets.isEmpty, offsets.allSatisfy(ids.indices.contains),
               destination >= 0, destination <= ids.count else { return false }
         ids.move(fromOffsets: offsets, toOffset: destination)
         return await controller.reorderFavorites(ids)
@@ -154,7 +213,21 @@ import UniformTypeIdentifiers
             window.isReleasedWhenClosed = false
             backing = GlassWindowBacking(window: window, content: NSHostingView(rootView: ClipboardFeatureView(feature: self)))
             window.center(); panel = window
-            dismissal = FloatingWindow.hideOnResignKey(window) { [weak self] in self?.dismiss() }
+            dismissal = FloatingWindow.hideOnResignKey(
+                window,
+                canHide: { [weak self] in self?.canDismissOnResignKey() ?? true }
+            ) { [weak self] in self?.dismiss() }
+            appResignObservation = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, !self.shuttingDown,
+                          self.panel?.isVisible == true || self.imagePreviewPanel?.isVisible == true,
+                          self.panel?.attachedSheet == nil,
+                          self.detailPanel?.attachedSheet == nil,
+                          self.imagePreviewPanel?.attachedSheet == nil,
+                          NSApp.modalWindow == nil else { return }
+                    self.dismiss()
+                }
+            }
             closeObservation = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self, !self.shuttingDown else { return }
@@ -245,7 +318,9 @@ import UniformTypeIdentifiers
                 MainActor.assumeIsolated {
                     guard let self, let detailPanel = self.detailPanel, let mainPanel = self.panel,
                           detailPanel.isVisible, !self.shuttingDown else { return }
-                    let keepOpen = NSApp.keyWindow === mainPanel || FloatingWindow.ownsKeyPopup(of: mainPanel)
+                    let keepOpen = NSApp.keyWindow === mainPanel
+                        || self.imagePreviewPanel?.isKeyWindow == true
+                        || FloatingWindow.ownsKeyPopup(of: mainPanel)
                     if !keepOpen, mainPanel.isVisible, detailPanel.attachedSheet == nil, NSApp.modalWindow == nil {
                         self.dismiss()
                     }
@@ -276,8 +351,86 @@ import UniformTypeIdentifiers
     private func hideDetailPanel() {
         detailPanel?.orderOut(nil)
     }
+    private func ensureImagePreviewPanel() {
+        guard imagePreviewPanel == nil else { return }
+        let window = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 540),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = L("图片预览")
+        window.minSize = NSSize(width: 420, height: 340)
+        window.hidesOnDeactivate = false
+        window.isReleasedWhenClosed = false
+        let hosting = NSHostingView(rootView: AnyView(EmptyView()))
+        imagePreviewBacking = GlassWindowBacking(window: window, content: hosting)
+        hosting.layoutSubtreeIfNeeded()
+        imagePreviewHosting = hosting
+        imagePreviewPanel = window
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            focusObservations.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshWindowFocus() }
+            })
+        }
+        imagePreviewCloseObservation = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.shuttingDown else { return }
+                self.handleImagePreviewWillClose()
+            }
+        }
+        imagePreviewResignObservation = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, let preview = self.imagePreviewPanel, preview.isVisible, !self.shuttingDown else { return }
+                    let keepOpen = preview.isKeyWindow
+                        || self.panel?.isKeyWindow == true
+                        || self.detailPanel?.isKeyWindow == true
+                        || FloatingWindow.ownsKeyPopup(of: preview)
+                        || self.panel.map { FloatingWindow.ownsKeyPopup(of: $0) } == true
+                    if !keepOpen, preview.attachedSheet == nil, self.panel?.attachedSheet == nil, NSApp.modalWindow == nil {
+                        self.dismiss()
+                    }
+                }
+            }
+        }
+    }
+    private func handleImagePreviewWillClose() {
+        let wasOpen = previewedImageEntryID != nil
+        previewedImageEntryID = nil
+        if wasOpen, let panel, panel.isVisible {
+            presentWindow(panel)
+        }
+        refreshWindowFocus()
+    }
+    private static func preferredPreviewSize(for data: Data, relativeTo panel: NSPanel?) -> NSSize {
+        let fallback = NSSize(width: 720, height: 540)
+        guard let pixelSize = ClipboardEntry.imagePixelSize(for: data), pixelSize.width > 0, pixelSize.height > 0 else {
+            return fallback
+        }
+        let logicalWidth = max(420, pixelSize.width / 2)
+        let logicalHeight = max(340, pixelSize.height / 2 + 96)
+        let screenFrame = (panel?.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
+        let maxWidth = max(480, screenFrame.width * 0.75)
+        let maxHeight = max(380, screenFrame.height * 0.75)
+        let width = min(maxWidth, max(480, logicalWidth))
+        let height = min(maxHeight, max(380, logicalHeight))
+        return NSSize(width: width, height: height)
+    }
+    private static func centerPreviewPanel(_ preview: NSPanel, relativeTo panel: NSPanel?) {
+        guard let visible = (panel?.screen ?? NSScreen.main)?.visibleFrame else {
+            preview.center()
+            return
+        }
+        let size = preview.frame.size
+        let origin = NSPoint(
+            x: visible.midX - size.width / 2,
+            y: visible.midY - size.height / 2
+        )
+        preview.setFrameOrigin(origin)
+    }
     private func refreshWindowFocus() {
-        isWindowFocused = (panel?.isKeyWindow == true) || (detailPanel?.isKeyWindow == true)
+        isWindowFocused = (panel?.isKeyWindow == true) || (detailPanel?.isKeyWindow == true) || (imagePreviewPanel?.isKeyWindow == true)
     }
     /// Places the detail popup to the right of the list window at the same size, falling back to the left when the right edge has no room.
     private func positionDetailPanel() {
@@ -328,10 +481,11 @@ import UniformTypeIdentifiers
     func refreshTitle() {
         panel?.title = L("剪贴板")
         detailPanel?.title = L("剪贴板详情")
+        imagePreviewPanel?.title = L("图片预览")
     }
-    func shutdown() { shuttingDown = true; imageEditing.cancel(); controller.stop(); detailPanel?.close(); panel?.close(); Task { await awaitPendingMutations(); await controller.shutdown() } }
+    func shutdown() { shuttingDown = true; imageEditing.cancel(); controller.stop(); imagePreviewPanel?.close(); detailPanel?.close(); panel?.close(); Task { await awaitPendingMutations(); await controller.shutdown() } }
     func shutdownAndWait() async {
-        shuttingDown = true; imageEditing.cancel(); controller.stop(); detailPanel?.close(); panel?.close()
+        shuttingDown = true; imageEditing.cancel(); controller.stop(); imagePreviewPanel?.close(); detailPanel?.close(); panel?.close()
         await awaitPendingMutations()
         await controller.shutdown()
     }
@@ -345,6 +499,17 @@ import UniformTypeIdentifiers
 
 extension ClipboardKind {
     @MainActor var title: String { switch self { case .text: L("文本"); case .link: L("链接"); case .image: L("图片") } }
+}
+
+extension ClipboardKindFilter {
+    @MainActor var title: String {
+        switch self {
+        case .all: L("全部")
+        case .text: L("文本")
+        case .image: L("图片")
+        case .link: L("链接")
+        }
+    }
 }
 
 @MainActor struct ClipboardFeatureView: View {
@@ -399,6 +564,9 @@ extension ClipboardKind {
                     if controller.canRetryFavoritesLoading {
                         Button(L("重试加载收藏")) { Task { await controller.retryFavoritesLoading() } }
                     }
+                    if let entry = controller.selectedEntry, entry.imageData != nil {
+                        Button(L("预览图片")) { feature.openImagePreview(entry.id) }
+                    }
                     if let entry = controller.selectedEntry, !controller.display(entry).text.isEmpty {
                         Button(L("复制纯文本")) { controller.copy(entry.id, format: .plainText) }
                     }
@@ -416,7 +584,8 @@ extension ClipboardKind {
                         .v2GlassBackground(in: Circle(), interactive: true)
                 }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help(L("更多")).accessibilityLabel(L("更多"))
-            }.padding(.horizontal, 10).padding(.vertical, 8)
+            }.padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 6)
+            categoryBar
             Divider()
             if let message = activeMessage {
                 Text(message).font(.caption).foregroundStyle(.orange).lineLimit(2)
@@ -424,8 +593,14 @@ extension ClipboardKind {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Divider()
             }
-            historyList
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Group {
+                if controller.kindFilter == .image {
+                    imageGrid
+                } else {
+                    historyList
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
             HStack(spacing: 8) {
                 Text(String(format: L("%d / %d 条 · 保留 %d 天"), controller.entries.count, controller.settings.maximumCount, controller.settings.retentionDays))
@@ -442,13 +617,19 @@ extension ClipboardKind {
         .environment(\.controlActiveState, feature.isWindowFocused ? .key : .inactive)
         .onExitCommand { feature.dismiss() }
         .background {
-            Button {
-                if let entry = controller.selectedEntry { controller.copy(entry.id) }
-            } label: { EmptyView() }
-                .keyboardShortcut("c", modifiers: [.command, .shift])
-                .frame(width: 0, height: 0)
-                .opacity(0)
-                .accessibilityHidden(true)
+            Group {
+                Button {
+                    if let entry = controller.selectedEntry { controller.copy(entry.id) }
+                } label: { EmptyView() }
+                    .keyboardShortcut("c", modifiers: [.command, .shift])
+                Button {
+                    feature.openSelectedImagePreview()
+                } label: { EmptyView() }
+                    .keyboardShortcut("y", modifiers: [.command])
+            }
+            .frame(width: 0, height: 0)
+            .opacity(0)
+            .accessibilityHidden(true)
         }
         .onChange(of: localization.languageCode) { _, _ in feature.refreshTitle() }
         .alert(L("删除所有收藏？"), isPresented: $confirmDeleteFavorites) {
@@ -464,19 +645,54 @@ extension ClipboardKind {
             Button(L("删除"), role: .destructive) { feature.runMutation { await controller.confirmDeletion() } }
         } message: { Text(L("同时删除本机保存的这一项（含收藏），不修改当前系统剪贴板。")) }
     }
-    /// Every row has the same height; long text is truncated to one line with an ellipsis.
+    private var categoryBar: some View {
+        HStack(spacing: 6) {
+            ForEach(ClipboardKindFilter.allCases) { filter in
+                let selected = controller.kindFilter == filter
+                Button {
+                    controller.kindFilter = filter
+                } label: {
+                    Text(filter.title)
+                        .font(.caption.weight(selected ? .semibold : .regular))
+                        .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                        .padding(.horizontal, 10)
+                        .frame(height: 24)
+                        .background(
+                            selected ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.05),
+                            in: Capsule()
+                        )
+                        .overlay {
+                            if selected {
+                                Capsule().strokeBorder(Color.accentColor.opacity(0.35), lineWidth: 0.5)
+                            }
+                        }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.bottom, 8)
+    }
+    /// Every row has the same base layout; image rows expand slightly to display a clear thumbnail.
     private var historyList: some View {
         let favoriteEntries = controller.filteredEntries.filter(\.favorite)
         let recentEntries = controller.filteredEntries.filter { !$0.favorite }
+        let moveLocked = !controller.query.isEmpty || controller.kindFilter != .all
         return List(selection: $controller.selectedID) {
             if controller.favoritesOnly {
-                ForEach(favoriteEntries) { entry in historyRow(entry) }
-                    .onMove { offsets, destination in feature.queueFavoriteMove(from: offsets, to: destination) }
+                ForEach(favoriteEntries) { entry in
+                    historyRow(entry)
+                        .moveDisabled(moveLocked)
+                }
+                .onMove { offsets, destination in feature.queueFavoriteMove(from: offsets, to: destination) }
             } else if !favoriteEntries.isEmpty && !recentEntries.isEmpty {
                 Section {
                     ForEach(favoriteEntries) { entry in
                         historyRow(entry)
-                            .moveDisabled(!controller.query.isEmpty)
+                            .moveDisabled(moveLocked)
                     }
                     .onMove { offsets, destination in feature.queueFavoriteMove(from: offsets, to: destination) }
                 } header: {
@@ -490,7 +706,7 @@ extension ClipboardKind {
             } else if !favoriteEntries.isEmpty {
                 ForEach(favoriteEntries) { entry in
                     historyRow(entry)
-                        .moveDisabled(!controller.query.isEmpty)
+                        .moveDisabled(moveLocked)
                 }
                 .onMove { offsets, destination in feature.queueFavoriteMove(from: offsets, to: destination) }
             } else {
@@ -498,36 +714,105 @@ extension ClipboardKind {
             }
         }
         .listStyle(.plain).scrollContentBackground(.hidden).environment(\.defaultMinListRowHeight, 34)
+        .onKeyPress(.space) {
+            guard controller.selectedEntry?.imageData != nil else { return .ignored }
+            feature.openSelectedImagePreview()
+            return .handled
+        }
         .contextMenu(forSelectionType: UUID.self) { ids in
             if let id = ids.first, let entry = controller.entries.first(where: { $0.id == id }) {
-                Button(L("复制")) { controller.copy(id) }
-                Button(L("复制纯文本")) { controller.copy(id, format: .plainText) }.disabled(controller.display(entry).text.isEmpty)
-                Button(L(entry.favorite ? "取消收藏" : "收藏")) { feature.runMutation { await controller.toggleFavorite(id) } }
-                imageEditActions(entry)
-                imageRecognitionActions(entry)
-                if entry.favorite { favoriteMoveActions(entry) }
-                Button(L("删除"), role: .destructive) { requestDeletion(id) }
+                entryContextMenu(entry)
             }
         } primaryAction: { ids in if let id = ids.first { feature.copyAndClose(id) } }
-        .overlay {
-            if controller.filteredEntries.isEmpty {
-                VStack(spacing: 8) {
-                    if !controller.query.isEmpty || controller.favoritesOnly {
-                        Image(systemName: "magnifyingglass").font(.system(size: 22)).foregroundStyle(.tertiary)
-                        Text(L("暂无匹配历史")).font(.callout.weight(.medium)).foregroundStyle(.secondary)
-                        Button(L("清除筛选")) {
-                            controller.query = ""
-                            controller.favoritesOnly = false
+        .overlay { emptyStateOverlay }
+    }
+    private var imageGrid: some View {
+        let favoriteEntries = controller.filteredEntries.filter(\.favorite)
+        let recentEntries = controller.filteredEntries.filter { !$0.favorite }
+        let columns = [GridItem(.adaptive(minimum: 150), spacing: 10)]
+        return ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 10) {
+                    if controller.favoritesOnly {
+                        LazyVGrid(columns: columns, spacing: 10) {
+                            ForEach(favoriteEntries) { entry in imageGridCard(entry) }
                         }
-                        .controlSize(.small)
+                    } else if !favoriteEntries.isEmpty && !recentEntries.isEmpty {
+                        sectionHeader(title: L("收藏"), count: favoriteEntries.count)
+                        LazyVGrid(columns: columns, spacing: 10) {
+                            ForEach(favoriteEntries) { entry in imageGridCard(entry) }
+                        }
+                        sectionHeader(title: L("最近"), count: recentEntries.count)
+                            .padding(.top, 4)
+                        LazyVGrid(columns: columns, spacing: 10) {
+                            ForEach(recentEntries) { entry in imageGridCard(entry) }
+                        }
                     } else {
-                        Image(systemName: "clipboard").font(.system(size: 24)).foregroundStyle(.tertiary)
-                        Text(L("剪贴板历史为空")).font(.callout.weight(.medium)).foregroundStyle(.secondary)
-                        Text(L("复制文字或图片后会自动出现在这里")).font(.caption).foregroundStyle(.tertiary)
+                        LazyVGrid(columns: columns, spacing: 10) {
+                            ForEach(controller.filteredEntries) { entry in imageGridCard(entry) }
+                        }
                     }
                 }
-                .padding()
+                .padding(10)
             }
+            .onChange(of: controller.selectedID) { _, id in
+                guard let id else { return }
+                withAnimation(Design.Animation.snappy) { proxy.scrollTo(id) }
+            }
+        }
+        .onKeyPress(.space) {
+            guard controller.selectedEntry?.imageData != nil else { return .ignored }
+            feature.openSelectedImagePreview()
+            return .handled
+        }
+        .overlay { emptyStateOverlay }
+    }
+    private func imageGridCard(_ entry: ClipboardEntry) -> some View {
+        ClipboardImageGridCard(
+            entry: entry,
+            selected: controller.selectedID == entry.id,
+            relativeTime: ClipboardThumbnails.relativeTime(from: entry.capturedAt),
+            onSelect: { controller.selectedID = entry.id },
+            onCopyAndClose: { feature.copyAndClose(entry.id) },
+            onPreview: { feature.openImagePreview(entry.id) },
+            onToggleFavorite: { feature.runMutation { await controller.toggleFavorite(entry.id) } },
+            onCopy: { controller.copy(entry.id) }
+        ) {
+            entryContextMenu(entry)
+        }
+        .id(entry.id)
+    }
+    @ViewBuilder private func entryContextMenu(_ entry: ClipboardEntry) -> some View {
+        if entry.imageData != nil {
+            Button(L("预览图片")) { feature.openImagePreview(entry.id) }
+        }
+        Button(L("复制")) { controller.copy(entry.id) }
+        Button(L("复制纯文本")) { controller.copy(entry.id, format: .plainText) }.disabled(controller.display(entry).text.isEmpty)
+        Button(L(entry.favorite ? "取消收藏" : "收藏")) { feature.runMutation { await controller.toggleFavorite(entry.id) } }
+        imageEditActions(entry)
+        imageRecognitionActions(entry)
+        if entry.favorite { favoriteMoveActions(entry) }
+        Button(L("删除"), role: .destructive) { requestDeletion(entry.id) }
+    }
+    @ViewBuilder private var emptyStateOverlay: some View {
+        if controller.filteredEntries.isEmpty {
+            VStack(spacing: 8) {
+                if !controller.query.isEmpty || controller.favoritesOnly || controller.kindFilter != .all {
+                    Image(systemName: "magnifyingglass").font(.system(size: 22)).foregroundStyle(.tertiary)
+                    Text(L("暂无匹配历史")).font(.callout.weight(.medium)).foregroundStyle(.secondary)
+                    Button(L("清除筛选")) {
+                        controller.query = ""
+                        controller.favoritesOnly = false
+                        controller.kindFilter = .all
+                    }
+                    .controlSize(.small)
+                } else {
+                    Image(systemName: "clipboard").font(.system(size: 24)).foregroundStyle(.tertiary)
+                    Text(L("剪贴板历史为空")).font(.callout.weight(.medium)).foregroundStyle(.secondary)
+                    Text(L("复制文字或图片后会自动出现在这里")).font(.caption).foregroundStyle(.tertiary)
+                }
+            }
+            .padding()
         }
     }
     private func sectionHeader(title: String, count: Int) -> some View {
@@ -547,7 +832,8 @@ extension ClipboardKind {
             kind: display.kind,
             line: line,
             onCopy: { controller.copy(entry.id) },
-            onToggleFavorite: { feature.runMutation { await controller.toggleFavorite(entry.id) } }
+            onToggleFavorite: { feature.runMutation { await controller.toggleFavorite(entry.id) } },
+            onPreview: entry.imageData != nil ? { feature.openImagePreview(entry.id) } : nil
         )
         .tag(entry.id)
         .listRowSeparator(.hidden)
@@ -594,10 +880,11 @@ extension ClipboardKind {
     @ViewBuilder private func favoriteMoveActions(_ entry: ClipboardEntry) -> some View {
         let ids = controller.orderedFavoriteIDs
         let index = ids.firstIndex(of: entry.id)
+        let moveDisabled = !controller.query.isEmpty || controller.kindFilter != .all
         Button(L("收藏上移")) { moveFavorite(entry.id, offset: -1) }
-            .disabled(!controller.query.isEmpty || index == nil || index == 0)
+            .disabled(moveDisabled || index == nil || index == 0)
         Button(L("收藏下移")) { moveFavorite(entry.id, offset: 1) }
-            .disabled(!controller.query.isEmpty || index == nil || index == ids.count - 1)
+            .disabled(moveDisabled || index == nil || index == ids.count - 1)
     }
     private func moveFavorite(_ id: UUID, offset: Int) {
         var ids = controller.orderedFavoriteIDs
@@ -633,16 +920,37 @@ extension ClipboardKind {
             }
         }
         .background {
-            Button {
-                if let entry = controller.selectedEntry { controller.copy(entry.id) }
-            } label: { EmptyView() }
-                .keyboardShortcut("c", modifiers: [.command, .shift])
-                .frame(width: 0, height: 0)
-                .opacity(0)
-                .accessibilityHidden(true)
+            Group {
+                Button {
+                    if let entry = controller.selectedEntry { controller.copy(entry.id) }
+                } label: { EmptyView() }
+                    .keyboardShortcut("c", modifiers: [.command, .shift])
+                Button {
+                    if feature.isImagePreviewOpen {
+                        feature.closeImagePreview()
+                    } else {
+                        feature.openSelectedImagePreview()
+                    }
+                } label: { EmptyView() }
+                    .keyboardShortcut(.space, modifiers: [])
+                Button {
+                    if feature.isImagePreviewOpen {
+                        feature.closeImagePreview()
+                    } else {
+                        feature.openSelectedImagePreview()
+                    }
+                } label: { EmptyView() }
+                    .keyboardShortcut("y", modifiers: [.command])
+            }
+            .frame(width: 0, height: 0)
+            .opacity(0)
+            .accessibilityHidden(true)
         }
         .environment(\.controlActiveState, feature.isWindowFocused ? .key : .inactive)
-        .onExitCommand { feature.dismiss() }
+        .onExitCommand {
+            if feature.isImagePreviewOpen { feature.closeImagePreview() }
+            else { feature.dismiss() }
+        }
     }
     private func sourceHeader(entry: ClipboardEntry, display: ClipboardDisplay) -> some View {
         let tint: Color = display.kind == .image ? .indigo : (display.kind == .link ? .teal : .accentColor)
@@ -662,6 +970,17 @@ extension ClipboardKind {
             }
             Spacer(minLength: 10)
             HStack(spacing: 2) {
+                if entry.imageData != nil {
+                    WorkspaceIconButton(
+                        symbol: "eye",
+                        label: "预览",
+                        help: "预览图片",
+                        size: 26,
+                        iconSize: 12
+                    ) {
+                        feature.openImagePreview(entry.id)
+                    }
+                }
                 let imageIndices = ClipboardImageEditing.imageIndices(in: entry)
                 if imageIndices.count == 1, let index = imageIndices.first {
                     WorkspaceIconButton(
@@ -703,7 +1022,7 @@ extension ClipboardKind {
     @ViewBuilder private func content(entry: ClipboardEntry, display: ClipboardDisplay) -> some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 12) {
-                if entry.imageData != nil { ClipboardPreviewImage(entry: entry) }
+                if entry.imageData != nil { ClipboardPreviewImage(entry: entry) { feature.openImagePreview(entry.id) } }
                 if !display.text.isEmpty { ClipboardPreviewText(entryID: entry.id, text: display.text, singleLine: display.singleLine) }
             }
             .padding(14)
@@ -889,25 +1208,43 @@ private struct ClipboardPreviewText: View {
     }
 }
 
-/// Leading mark of a history row: a small thumbnail for images, the kind symbol for everything else.
+/// Leading mark of a history row: a horizontal thumbnail for images, the kind symbol for everything else.
 private struct ClipboardHistoryRow: View {
     let entry: ClipboardEntry
     let kind: ClipboardKind
     let line: String
     let onCopy: () -> Void
     let onToggleFavorite: () -> Void
+    var onPreview: (() -> Void)? = nil
     @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 8) {
             ClipboardRowLeading(entry: entry, kind: kind)
-            Text(line)
-                .font(.callout)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(line)
+                    .font(.callout)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if kind == .image, let data = entry.imageData, let pixelSize = ClipboardEntry.imagePixelSize(for: data) {
+                    Text("\(Int(pixelSize.width)) × \(Int(pixelSize.height)) px")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             if hovering {
                 HStack(spacing: 2) {
+                    if let onPreview {
+                        WorkspaceIconButton(
+                            symbol: "eye",
+                            label: "预览",
+                            help: "预览图片",
+                            size: 22,
+                            iconSize: 11,
+                            action: onPreview
+                        )
+                    }
                     WorkspaceIconButton(
                         symbol: entry.favorite ? "star.fill" : "star",
                         label: entry.favorite ? "取消收藏" : "收藏",
@@ -924,29 +1261,19 @@ private struct ClipboardHistoryRow: View {
                     .foregroundStyle(.yellow)
                     .accessibilityLabel(L("已收藏"))
             } else {
-                Text(Self.relativeTime(from: entry.capturedAt))
+                Text(ClipboardThumbnails.relativeTime(from: entry.capturedAt))
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.tertiary)
             }
         }
         .padding(.vertical, 2)
-        .frame(height: 34)
+        .frame(height: kind == .image ? 56 : 34)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
     }
-
-    private static func relativeTime(from date: Date, now: Date = Date()) -> String {
-        let elapsed = max(0, Int(now.timeIntervalSince(date)))
-        if elapsed < 60 { return L("刚刚") }
-        let minutes = elapsed / 60
-        if minutes < 60 { return "\(minutes)m" }
-        let hours = minutes / 60
-        if hours < 24 { return "\(hours)h" }
-        return date.formatted(.dateTime.month(.defaultDigits).day(.defaultDigits))
-    }
 }
 
-/// Leading mark of a history row: a small thumbnail for images, the kind symbol for everything else.
+/// Leading mark of a history row: a clear thumbnail for images, the kind symbol for everything else.
 private struct ClipboardRowLeading: View {
     let entry: ClipboardEntry
     let kind: ClipboardKind
@@ -959,9 +1286,9 @@ private struct ClipboardRowLeading: View {
                     if let thumbnail { Image(nsImage: thumbnail).resizable().scaledToFill() }
                     else { Color.primary.opacity(0.08) }
                 }
-                .frame(width: 22, height: 22)
-                .clipShape(RoundedRectangle(cornerRadius: 5))
-                .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 0.5))
+                .frame(width: 64, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 0.5))
             } else {
                 Image(systemName: kind.symbol)
                     .font(.system(size: 11, weight: .medium))
@@ -973,7 +1300,7 @@ private struct ClipboardRowLeading: View {
         .help(kind.title).accessibilityHidden(true)
         .task(id: entry.id) {
             guard thumbnail == nil, let data = entry.imageData else { return }
-            thumbnail = await ClipboardThumbnails.image(data, key: entry.digest, maxPixels: 84, size: NSSize(width: 22, height: 22))
+            thumbnail = await ClipboardThumbnails.image(data, key: entry.digest, maxPixels: 160, size: nil)
         }
     }
 }
@@ -981,7 +1308,9 @@ private struct ClipboardRowLeading: View {
 /// The preview decodes a screen-sized thumbnail off the main thread instead of the full image on every render.
 private struct ClipboardPreviewImage: View {
     let entry: ClipboardEntry
+    var onPreview: (() -> Void)? = nil
     @State private var image: NSImage?
+    @State private var hovering = false
     var body: some View {
         Group {
             if let image {
@@ -1000,6 +1329,23 @@ private struct ClipboardPreviewImage: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: Design.Radius.control))
         .overlay(RoundedRectangle(cornerRadius: Design.Radius.control).strokeBorder(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 0.5))
+        .overlay(alignment: .bottomTrailing) {
+            if image != nil && hovering && onPreview != nil {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .padding(6)
+                    .background(.regularMaterial, in: Circle())
+                    .overlay(Circle().strokeBorder(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 0.5))
+                    .padding(8)
+            }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: Design.Radius.control))
+        .onHover { hovering = $0 }
+        .onTapGesture { onPreview?() }
+        .help(L("点击查看大图"))
+        .accessibilityAddTraits(onPreview == nil ? [] : .isButton)
+        .accessibilityLabel(L("预览图片"))
         .task(id: entry.id) {
             image = nil
             guard let data = entry.imageData else { return }
@@ -1024,11 +1370,23 @@ enum ClipboardThumbnails {
         if let cacheKey, let hit = cache.storage.object(forKey: cacheKey) { return hit }
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
               let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: maxPixels, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary) else { return nil }
-        let rendered = NSImage(cgImage: image, size: size ?? NSSize(width: image.width / 2, height: image.height / 2))
+        let rendered = NSImage(cgImage: image, size: size ?? NSSize(width: max(1, image.width / 2), height: max(1, image.height / 2)))
         if let cacheKey {
             let cost = image.bytesPerRow * image.height
             cache.storage.setObject(rendered, forKey: cacheKey, cost: cost)
         }
         return rendered
+    }
+    nonisolated static func fullImage(_ data: Data, key: String? = nil, maxPixels: Int = 4096) async -> NSImage? {
+        await image(data, key: key, maxPixels: maxPixels, size: nil)
+    }
+    @MainActor static func relativeTime(from date: Date, now: Date = Date()) -> String {
+        let elapsed = max(0, Int(now.timeIntervalSince(date)))
+        if elapsed < 60 { return L("刚刚") }
+        let minutes = elapsed / 60
+        if minutes < 60 { return "\(minutes)m" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h" }
+        return date.formatted(.dateTime.month(.defaultDigits).day(.defaultDigits))
     }
 }

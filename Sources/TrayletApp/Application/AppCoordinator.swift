@@ -16,6 +16,8 @@ import TrayletCore
     let clipboardEditing: ClipboardEditorBridge
     let clipboardTranslation: ClipboardTranslationBridge
     let permissionStatus: PermissionStatus
+    let regularWindows: RegularWindowSession
+    private let presentRegularWindow: @MainActor (NSWindow) -> Void
     private var permissionRecovery: PermissionRecovery!
     private var statusItem: NSStatusItem?
     private var welcome: NSWindow?
@@ -40,7 +42,13 @@ import TrayletCore
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Traylet/v2", isDirectory: true)
     }
-    init(directory: URL = AppCoordinator.dataRoot) {
+    init(
+        directory: URL = AppCoordinator.dataRoot,
+        regularWindows: RegularWindowSession = RegularWindowSession(),
+        presentRegularWindow: @escaping @MainActor (NSWindow) -> Void = RegularWindowSession.showStandardWindow
+    ) {
+        self.regularWindows = regularWindows
+        self.presentRegularWindow = presentRegularWindow
         let preferences = PreferencesStore(file: directory.appendingPathComponent("preferences.json"))
         let credentialVault = LocalEncryptedCredentialVault(directory: directory)
         let configuration = TranslationConfiguration(storageURL: directory.appendingPathComponent("translation.json"),
@@ -84,7 +92,9 @@ import TrayletCore
             clipboard: clipboard,
             actions: settingsActions,
             updater: updater,
-            onRequestQuitForUpdate: { NSApp.terminate(nil) }
+            regularWindows: regularWindows,
+            onRequestQuitForUpdate: { NSApp.terminate(nil) },
+            presentWindow: presentRegularWindow
         )
         let permissionStatus = PermissionStatus()
         self.permissionStatus = permissionStatus
@@ -172,10 +182,24 @@ import TrayletCore
         let bar = NSMenu()
         let application = NSMenuItem(); bar.addItem(application)
         let submenu = NSMenu(title: "Traylet"); application.submenu = submenu
-        for (title, id, key) in [(L("设置"), "settings", ","), (L("退出"), "quit", "q")] {
-            let item = NSMenuItem(title: title, action: #selector(menuAction(_:)), keyEquivalent: key)
-            item.keyEquivalentModifierMask = [.command]; item.target = self; item.representedObject = id; submenu.addItem(item)
-        }
+        let settingsItem = NSMenuItem(title: L("设置"), action: #selector(menuAction(_:)), keyEquivalent: ",")
+        settingsItem.keyEquivalentModifierMask = [.command]; settingsItem.target = self; settingsItem.representedObject = "settings"
+        submenu.addItem(settingsItem)
+        submenu.addItem(.separator())
+        let hideItem = NSMenuItem(title: L("隐藏 Traylet"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        hideItem.keyEquivalentModifierMask = [.command]; hideItem.target = NSApp
+        submenu.addItem(hideItem)
+        let hideOthersItem = NSMenuItem(title: L("隐藏其他"), action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        hideOthersItem.keyEquivalentModifierMask = [.command, .option]; hideOthersItem.target = NSApp
+        submenu.addItem(hideOthersItem)
+        let showAllItem = NSMenuItem(title: L("全部显示"), action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        showAllItem.target = NSApp
+        submenu.addItem(showAllItem)
+        submenu.addItem(.separator())
+        let quitItem = NSMenuItem(title: L("退出 Traylet"), action: #selector(menuAction(_:)), keyEquivalent: "q")
+        quitItem.keyEquivalentModifierMask = [.command]; quitItem.target = self; quitItem.representedObject = "quit"
+        submenu.addItem(quitItem)
+
         let editing = NSMenuItem(title: L("编辑"), action: nil, keyEquivalent: ""); bar.addItem(editing)
         let edit = NSMenu(title: editing.title); editing.submenu = edit
         for (title, selector, key) in [(L("撤销"), "undo:", "z"), (L("重做"), "redo:", "Z"),
@@ -184,7 +208,22 @@ import TrayletCore
             let item = NSMenuItem(title: title, action: NSSelectorFromString(selector), keyEquivalent: key.lowercased())
             item.keyEquivalentModifierMask = key == "Z" ? [.command, .shift] : [.command]; edit.addItem(item)
         }
+
+        let windowItem = NSMenuItem(title: L("窗口"), action: nil, keyEquivalent: ""); bar.addItem(windowItem)
+        let windowMenu = NSMenu(title: windowItem.title); windowItem.submenu = windowMenu
+        let closeItem = NSMenuItem(title: L("关闭窗口"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        closeItem.keyEquivalentModifierMask = [.command]
+        windowMenu.addItem(closeItem)
+        let minimizeItem = NSMenuItem(title: L("最小化"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        minimizeItem.keyEquivalentModifierMask = [.command]
+        windowMenu.addItem(minimizeItem)
+        windowMenu.addItem(.separator())
+        let bringAllItem = NSMenuItem(title: L("前置全部窗口"), action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
+        bringAllItem.target = NSApp
+        windowMenu.addItem(bringAllItem)
+
         NSApp.mainMenu = bar
+        NSApp.windowsMenu = windowMenu
     }
     @objc private func menuAction(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
@@ -274,12 +313,14 @@ import TrayletCore
     }
     private func presentPermissionRecovery(losses: PermissionLoss) {
         if recoveryWindow == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 320), styleMask: [.titled], backing: .buffered, defer: false)
-            window.title = english ? "Permissions" : "权限"
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 320), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
+            window.hidesOnDeactivate = false
+            window.level = .normal
             window.center()
             recoveryWindow = window
         }
+        recoveryWindow?.title = english ? "Permissions" : "权限"
         let hosting = NSHostingView(rootView: PermissionRecoveryView(
             status: permissionStatus,
             losses: losses,
@@ -290,8 +331,9 @@ import TrayletCore
         } else if let recoveryWindow {
             recoveryBacking = GlassWindowBacking(window: recoveryWindow, content: hosting)
         }
-        recoveryWindow?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        if let recoveryWindow {
+            regularWindows.present(recoveryWindow, kind: .permissionRecovery, show: presentRegularWindow)
+        }
     }
     private func requestScreenRecording() {
         permissionStatus.requestScreenRecording()
@@ -322,19 +364,47 @@ import TrayletCore
         guard let welcome else { return }
         if let welcomeBacking { welcomeBacking.replaceContent(hosting) } else { welcomeBacking = GlassWindowBacking(window: welcome, content: hosting) }
     }
+    private func handleWelcomeClosed() {
+        authorizationTimer?.invalidate()
+        authorizationTimer = nil
+    }
     private func showWelcome() {
         if welcome == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 260), styleMask: [.titled], backing: .buffered, defer: false)
-            window.title = "Traylet"; window.isReleasedWhenClosed = false
-            window.center(); welcome = window
-            screenRecordingGranted = CGPreflightScreenCaptureAccess(); renderWelcome()
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 260), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+            window.title = "Traylet"
+            window.isReleasedWhenClosed = false
+            window.hidesOnDeactivate = false
+            window.level = .normal
+            window.center()
+            welcome = window
+            screenRecordingGranted = CGPreflightScreenCaptureAccess()
+            renderWelcome()
         }
         authorizationTimer?.invalidate()
         authorizationTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshAuthorization() }
         }
-        welcome?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        if let welcome {
+            regularWindows.present(welcome, kind: .welcome, onClose: { [weak self] in
+                self?.handleWelcomeClosed()
+            }, show: presentRegularWindow)
+        }
     }
+    func handleReopen(hasVisibleWindows: Bool) -> Bool {
+        if regularWindows.handleReopen() { return true }
+        guard !hasVisibleWindows else { return false }
+        if !AuthorizationGate.allowsFeatures(welcomeCompleted: preferences.value.hasCompletedWelcome) {
+            showWelcome()
+        } else {
+            settings.present()
+        }
+        return true
+    }
+    var welcomeWindowForTesting: NSWindow? { welcome }
+    var recoveryWindowForTesting: NSWindow? { recoveryWindow }
+    var hasAuthorizationTimerForTesting: Bool { authorizationTimer != nil }
+    func presentWelcomeForTesting() { showWelcome() }
+    func presentPermissionRecoveryForTesting(losses: PermissionLoss) { presentPermissionRecovery(losses: losses) }
     private func showProblem(_ message: String) {
         guard !terminating else { return }
         NSApp.activate(ignoringOtherApps: true)
@@ -376,6 +446,7 @@ import TrayletCore
             guard confirmed else { return .terminateCancel }
         }
         terminating = true
+        regularWindows.prepareForTermination()
         authorizationTimer?.invalidate(); authorizationTimer = nil
         welcome?.close(); welcome = nil; welcomeBacking = nil
         recoveryWindow?.close(); recoveryWindow = nil; recoveryBacking = nil

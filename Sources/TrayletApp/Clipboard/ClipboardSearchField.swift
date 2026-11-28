@@ -33,7 +33,9 @@ import SwiftUI
             case #selector(NSResponder.moveDown(_:)): feature.controller.moveVisibleSelection(by: 1)
             case #selector(NSResponder.moveUp(_:)): feature.controller.moveVisibleSelection(by: -1)
             case #selector(NSResponder.insertNewline(_:)): feature.copySelectedAndClose()
-            case #selector(NSResponder.cancelOperation(_:)): feature.dismiss()
+            case #selector(NSResponder.cancelOperation(_:)):
+                if feature.isImagePreviewOpen { feature.closeImagePreview() }
+                else { feature.dismiss() }
             default: return false
             }
             return true

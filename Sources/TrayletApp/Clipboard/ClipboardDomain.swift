@@ -80,6 +80,16 @@ struct ClipboardEntry: Identifiable, Codable, Equatable, Sendable {
     var plainText: String? { items.compactMap(\.plainText).joined(separator: "\n").nilIfEmpty }
     var byteCount: Int { items.reduce(0) { $0 + $1.byteCount } }
     var imageData: Data? { items.compactMap(\.imageData).first }
+
+    nonisolated static func imagePixelSize(for data: Data) -> CGSize? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let w = props[kCGImagePropertyPixelWidth] as? Int,
+              let h = props[kCGImagePropertyPixelHeight] as? Int,
+              w > 0, h > 0 else { return nil }
+        let orientation = props[kCGImagePropertyOrientation] as? Int ?? 1
+        return (5...8).contains(orientation) ? CGSize(width: h, height: w) : CGSize(width: w, height: h)
+    }
 }
 private extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
 
@@ -107,6 +117,19 @@ private extension Character {
 enum ClipboardKind {
     case text, link, image
     var symbol: String { switch self { case .text: "text.alignleft"; case .link: "link"; case .image: "photo" } }
+}
+
+enum ClipboardKindFilter: String, CaseIterable, Identifiable, Sendable {
+    case all, text, image, link
+    var id: Self { self }
+    func matches(_ kind: ClipboardKind) -> Bool {
+        switch self {
+        case .all: true
+        case .text: kind == .text
+        case .image: kind == .image
+        case .link: kind == .link
+        }
+    }
 }
 
 /// What the list shows for an entry, computed once instead of decoding the body on every render.
